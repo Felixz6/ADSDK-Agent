@@ -1,0 +1,78 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+
+# ===== pytest / 测试缓存 =====
+.pytest_cache/
+.pytest_tmp/
+.pytest_tmp*/
+.test-tmp/
+.test-tmp*/
+pytest-cache-files-*/
+.coverage
+htmlcov/
+
+# ===== 输出产物 =====
+output/
+
+# ===== 运行期日志(联调时本地生成,不纳入版本控制)=====
+*.log
+backend.log
+frontend-dev.log
+
+# ===== 原子写入异常中断的临时文件 =====
+.*.tmp
+
+# ===== 本地环境与 IDE =====
+.env
+.env.local
+.vscode/
+.idea/
+*.swp
+
+# ===== 前端 web (Vite) =====
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== APK 与采集数据 / 大体积二进制 =====
+*.apk
+*.apks
+*.dex
+samples/*.apk
+# 大体积、未被任何源码引用的二进制图片不纳入版本控制
+Elana.png
+
+# ===== 主机本地分析/采集二进制 (frida-server / apktool) — 仅本地用, 永不入库 =====
+# frida-server 官方二进制及其 xz 压缩包(动态真机联调本地部署)
+tools/frida-server
+tools/frida-server*
+tools/frida-server-*.xz
+tools/*.xz
+# apktool jar 与 .venv\Scripts 下的 .bat shim(类比 frida-server: 主机本地工具, 不入 git/docs)
+tools/apktool.jar
+.venv/Scripts/apktool.bat
+.venv/Scripts/apktool.BAT
+# flows.mitm / 原始流量文件(含敏感请求, 永不入库)
+*.mitm
+flows.mitm
+traffic/requests.jsonl
+
+# ===== Agent / 工作区本地缓存 =====
+.agents/
+.claude/
