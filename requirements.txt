@@ -1,0 +1,8 @@
+fastapi==0.140.0
+uvicorn==0.35.0
+pydantic==2.13.4
+python-dotenv==1.1.1
+
+# --- 开发/测试依赖(可选,运行时不需要) ---
+pytest==8.4.1
+httpx==0.28.1

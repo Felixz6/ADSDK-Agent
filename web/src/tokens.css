@@ -1,0 +1,77 @@
+/* =========================================================================
+ * AdSDK Agent · 全局设计令牌
+ * 所有颜色统一以 CSS Variables 暴露,禁止在页面中硬编码十六进制色值。
+ * ========================================================================== */
+
+:root {
+  /* 基底背景 */
+  --bg-deep: #071126;
+  --bg-panel: rgba(10, 22, 48, 0.62);
+  --bg-panel-strong: rgba(8, 17, 38, 0.82);
+  --bg-panel-elevated: rgba(12, 26, 56, 0.72);
+
+  /* 边框 */
+  --border-soft: rgba(157, 192, 255, 0.18);
+  --border-active: rgba(145, 205, 255, 0.55);
+  --border-soft-purple: rgba(182, 161, 255, 0.22);
+
+  /* 文字 */
+  --text-primary: #f5f7ff;
+  --text-secondary: #b9c5df;
+  --text-tertiary: #8593b4;
+  --text-on-accent: #051024;
+
+  /* 强调色 */
+  --accent-blue: #78d8ff;
+  --accent-purple: #b6a1ff;
+  --accent-pink: #f5b8d7;
+
+  /* 状态色(柔和) */
+  --success: #79e0c3;
+  --warning: #f2cb77;
+  --danger: #f28b9b;
+  --status-neutral: #7f93ba;
+
+  /* 背景遮罩(左侧深,右侧轻,人物偏右) */
+  --bg-overlay: linear-gradient(
+    90deg,
+    rgba(4, 10, 28, 0.92) 0%,
+    rgba(6, 15, 38, 0.74) 42%,
+    rgba(8, 18, 45, 0.5) 100%
+  );
+  /* 顶部用于顶栏可读性的轻微压暗 */
+  --bg-overlay-top: linear-gradient(
+    180deg,
+    rgba(4, 10, 28, 0.78) 0%,
+    rgba(4, 10, 28, 0) 140px
+  );
+
+  /* 装饰光晕 */
+  --glow-blue: radial-gradient(40% 60% at 78% 30%, rgba(120, 216, 255, 0.18), transparent 70%);
+  --glow-purple: radial-gradient(50% 70% at 20% 80%, rgba(182, 161, 255, 0.14), transparent 72%);
+
+  /* 半径与阴影 */
+  --radius-glass: 18px;
+  --radius-control: 12px;
+  --shadow-glass: 0 8px 32px rgba(3, 8, 22, 0.45);
+  --shadow-glow: 0 0 0 1px var(--border-active), 0 0 24px rgba(120, 216, 255, 0.18);
+
+  /* 折叠侧边栏 */
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 72px;
+  --topbar-h: 56px;
+}
+
+/* 浅色主题(可选切换,保持低对比柔和) */
+html[data-theme='light'] {
+  --bg-deep: #eef2fb;
+  --bg-overlay: linear-gradient(90deg, rgba(238, 242, 251, 0.94) 0%, rgba(238, 242, 251, 0.7) 60%, rgba(238, 242, 251, 0.4) 100%);
+  --text-primary: #0d1530;
+  --text-secondary: #3a4768;
+  --text-tertiary: #5b6990;
+  --bg-panel: rgba(226, 233, 250, 0.7);
+  --bg-panel-strong: rgba(214, 224, 245, 0.86);
+  --shadow-glass: 0 8px 32px rgba(20, 40, 90, 0.12);
+  --border-soft: rgba(40, 70, 140, 0.16);
+  --border-active: rgba(40, 110, 200, 0.5);
+}

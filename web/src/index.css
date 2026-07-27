@@ -1,0 +1,175 @@
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================================
+ * 基础重置与排版
+ * ========================================================================== */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-deep);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* =========================================================================
+ * 全局星空背景层级
+ *  background  ->  overlay  ->  decorative glow  ->  application content
+ * ========================================================================== */
+.app-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: url('/src/assets/ad-sdk-background.jpg');
+  background-size: cover;
+  background-position: center right;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  /* 保持原始比例,不拉伸变形 */
+}
+
+.app-background::before {
+  /* 遮罩:左侧深,保证侧边栏/表单可读 */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--bg-overlay);
+}
+
+.app-background::after {
+  /* 装饰光晕 */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--glow-blue), var(--glow-purple);
+  pointer-events: none;
+}
+
+/* 顶栏可读性压暗 */
+.app-overlay-top {
+  pointer-events: none;
+  background: var(--bg-overlay-top);
+}
+
+/* 移动端:提升遮罩透明度,避免人物遮挡表单 */
+@media (max-width: 768px) {
+  .app-background {
+    background-attachment: scroll;
+    background-position: center top;
+  }
+  .app-background::before {
+    background: linear-gradient(
+      180deg,
+      rgba(4, 10, 28, 0.86) 0%,
+      rgba(4, 10, 28, 0.66) 40%,
+      rgba(4, 10, 28, 0.74) 100%
+    );
+  }
+}
+
+/* =========================================================================
+ * 玻璃拟态工具类
+ * ========================================================================== */
+@layer components {
+  .glass {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-glass);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-strong {
+    background: var(--bg-panel-strong);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-glass);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: var(--shadow-glass);
+  }
+
+  /* 卡片顶部极弱高光 */
+  .glass-highlight::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-active), transparent);
+    opacity: 0.5;
+    border-radius: var(--radius-glass) var(--radius-glass) 0 0;
+  }
+}
+
+/* =========================================================================
+ * 控件基线
+ * ========================================================================== */
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* 自定义滚动条(玻璃感) */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(157, 192, 255, 0.18);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(157, 192, 255, 0.32);
+  background-clip: padding-box;
+}
+
+/* 焦点可见性 */
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* =========================================================================
+ * prefers-reduced-motion:关闭明显动画
+ * ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* utility: 文本截断 */
+.truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
