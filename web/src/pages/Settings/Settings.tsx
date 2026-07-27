@@ -136,7 +136,7 @@ export default function Settings() {
           <Info size={15} /> 关于
         </h3>
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-          AdSDK Agent Web —— 星空中的二次元安全分析控制台。前端采用 React 18 + TypeScript + Vite + Tailwind,
+          AdSDK Agent Web —— 星空视觉安全分析控制台。前端采用 React 18 + TypeScript + Vite + Tailwind,
           与本地 FastAPI Agent 后端对接,提供静态/动态分析与隐私合规取证可视化。
           所有敏感标识(设备标识、Cookie、鉴权令牌、原始 URL)一律脱敏或不予展示。
         </p>

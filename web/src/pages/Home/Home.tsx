@@ -40,7 +40,7 @@ export default function Home() {
             <Sparkles size={14} /> AdSDK Agent · 隐私合规取证控制台
           </span>
           <h1 className="text-3xl sm:text-4xl font-semibold text-[var(--text-primary)] tracking-tight leading-tight">
-            星空中的二次元
+            星穹之下的守望
             <br className="hidden sm:block" />
             <span className="text-[var(--accent-blue)]"> 安全分析控制台</span>
           </h1>
