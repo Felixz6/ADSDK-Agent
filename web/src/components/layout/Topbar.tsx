@@ -13,7 +13,7 @@ function formatTimestamp(ms: number | undefined): string {
 }
 
 const TITLE_MAP: Record<string, { title: string; sub: string }> = {
-  '/': { title: '首页', sub: '星空中的二次元安全分析控制台' },
+  '/': { title: '首页', sub: '星穹主题安全分析控制台' },
   '/dashboard': { title: '仪表盘', sub: '历史任务与分析统计' },
   '/analysis/new': { title: '新建分析', sub: '四步提交向导' },
   '/tasks': { title: '任务列表', sub: '本地历史记录' },

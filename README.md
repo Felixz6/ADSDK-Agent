@@ -204,8 +204,8 @@ npm install
 创建 `web/.env`：
 
 ```env
-VITE_API_BASE_URL=http://127.0.0.1:8000
-VITE_USE_MOCK=false
+$env:VITE_API_BASE_URL = "http://127.0.0.1:8000"
+$env:VITE_USE_MOCK = "false"
 ```
 
 启动开发服务器：
