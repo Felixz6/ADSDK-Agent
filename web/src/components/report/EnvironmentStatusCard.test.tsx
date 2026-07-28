@@ -181,25 +181,65 @@ describe('EnvironmentStatusCard — REDACTION_HMAC_KEY 隐私不变量', () => {
     expect(ROW('REDACTION_HMAC_KEY')).toHaveTextContent('未配置')
   })
 
-  it('APK_ALLOWED_ROOTS 已配置展示「正常」并带根目录数目/路径', () => {
+  it('APK_ALLOWED_ROOTS 单目录:摘要显示「已配置 1 个允许目录」,路径只出现一次', () => {
+    const env = makeEnv({ apk_allowed_roots_configured: true }, true)
+    env.details.apk_allowed_roots = ['/data/samples']
+    render(<EnvironmentStatusCard env={env} />)
+    const row = ROW('APK_ALLOWED_ROOTS')
+    expect(row).toHaveTextContent('正常')
+    expect(row).toHaveTextContent('已配置 1 个允许目录')
+    expect(row).toHaveTextContent('/data/samples')
+    // 路径不得因「摘要=detail」与「详情=note」重复显示两行
+    const occurrences = (row.textContent!.match(/\/data\/samples/g) || []).length
+    expect(occurrences).toBe(1)
+  })
+
+  it('APK_ALLOWED_ROOTS 多目录:显示正确数量,各路径各出现一次', () => {
     const env = makeEnv({ apk_allowed_roots_configured: true }, true)
     env.details.apk_allowed_roots = ['/data/samples', '/data/apks']
     render(<EnvironmentStatusCard env={env} />)
     const row = ROW('APK_ALLOWED_ROOTS')
     expect(row).toHaveTextContent('正常')
-    expect(row).toHaveTextContent('2 个允许根目录')
+    expect(row).toHaveTextContent('已配置 2 个允许目录')
+    for (const p of ['/data/samples', '/data/apks']) {
+      // 每条路径各出现一次,不拼接成一行也不重复
+      const n = (row.textContent!.match(new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length
+      expect(n).toBe(1)
+    }
   })
 
-  it('APK_ALLOWED_ROOTS 为空数组展示「未配置」', () => {
+  it('APK_ALLOWED_ROOTS 为空数组展示「未配置」,且说明为尚未配置', () => {
     const env = makeEnv({ apk_allowed_roots_configured: false }, false)
     env.details.apk_allowed_roots = []
     render(<EnvironmentStatusCard env={env} />)
-    expect(ROW('APK_ALLOWED_ROOTS')).toHaveTextContent('未配置')
+    const row = ROW('APK_ALLOWED_ROOTS')
+    expect(row).toHaveTextContent('未配置')
+    expect(row).toHaveTextContent('尚未配置允许的 APK 根目录。')
   })
 
-  it('APK_ALLOWED_ROOTS 字段缺失展示「未提供」', () => {
+  it('APK_ALLOWED_ROOTS 字段缺失展示「未提供」,且说明后端未提供', () => {
     render(<EnvironmentStatusCard env={makeEnv()} />)
-    expect(ROW('APK_ALLOWED_ROOTS')).toHaveTextContent('未提供')
+    const row = ROW('APK_ALLOWED_ROOTS')
+    expect(row).toHaveTextContent('未提供')
+    expect(row).toHaveTextContent('当前后端版本未提供允许目录信息。')
+  })
+
+  it('APK_ALLOWED_ROOTS 渲染不影响其他检测项(ADB 正常、Frida Python 正常)', () => {
+    const env = makeEnv(
+      { apk_allowed_roots_configured: true, frida_python_available: true },
+      true,
+    )
+    env.details.apk_allowed_roots = ['/data/samples']
+    env.details.frida_python = {
+      frida_python_available: true,
+      frida_python_version: '16.7.19',
+      frida_python_error: null,
+      frida_python_error_detail: null,
+    }
+    render(<EnvironmentStatusCard env={env} />)
+    expect(ROW('ADB 工具')).toHaveTextContent('正常')
+    expect(ROW('Frida Python 包')).toHaveTextContent('正常')
+    expect(ROW('APK_ALLOWED_ROOTS')).toHaveTextContent('已配置 1 个允许目录')
   })
 })
 
