@@ -46,7 +46,8 @@ AdSDK Agent 由 Web 控制台和本地分析引擎共同组成：
 - APK 路径、ZIP 格式、文件大小和允许根目录校验；
 - 原子快照与 SHA-256 二次复核；
 - Android Manifest、应用信息和权限解析；
-- 常见广告 SDK 识别及证据路径展示；
+- 由本地知识库识别广告、统计、推送、归因、定位和社交 SDK，并展示厂商、分类、风险等级与证据路径；
+- 使用 `risk-v1` 生成 0–100 分的可解释风险摘要；仅有静态证据时明确降低置信度；
 - 结构化规则结果和报告展示。
 
 ### 动态行为
@@ -55,6 +56,7 @@ AdSDK Agent 由 Web 控制台和本地分析引擎共同组成：
 - 采用 suspended spawn，确保 Hook 先于应用恢复；
 - 展示完整分析流水线和步骤状态；
 - 将事件划分为 `pre_consent`、`post_consent` 和 `unknown`；
+- 使用 `timeline-v1` 统一编排 Frida 行为与网络请求，并保留来源、时间、同意阶段和摘要；
 - 展示严格规则、事件数量和协议错误；
 - `not_evaluated` 始终表示证据不足，不会展示为“安全”。
 
@@ -80,6 +82,7 @@ collector_success_requests_observed
 ### 报告与任务历史
 
 - 展示 `matched`、`not_matched`、`not_evaluated`、`error` 四种规则状态；
+- 展示风险摘要、证据限制和由 `insight-v1` 本地规则生成的合规解读及 P0/P1 整改建议；
 - 查看静态分析和动态分析结果；
 - 任务历史保存在当前浏览器的 `localStorage`；
 - 本地历史不代表后端持久化任务，清理浏览器数据后会丢失。
@@ -606,3 +609,16 @@ docs/screenshots/
 ## 许可证
 
 本项目采用 [Apache License 2.0](LICENSE)。
+
+---
+
+## 静态解包缓存
+
+- 默认位置：`output/cache/static-unpack/<APK_SHA256>/`。
+- 缓存键仅使用 APK SHA-256，与 `output/runs/<run_id>/` 分离。
+- `metadata.json` 记录 apktool 版本和缓存格式版本；版本变化、元数据异常或 Manifest 缺失时自动重建。
+- 发布采用临时目录和原子替换，同 SHA-256 并发请求在进程内串行构建。
+- 清理方式：停止后端后删除 `output/cache/static-unpack/`；下次请求会自动冷启动重建。
+- `output/` 已被 `.gitignore` 排除，缓存和真实分析产物都不进入 Git。
+
+MuMu/QEMU 流量采集需显式配置 `MITM_LISTEN_HOST=0.0.0.0` 和经实测可达的 `MITM_DEVICE_PROXY_HOST`；任务结束时恢复设备原 `http_proxy` 值。

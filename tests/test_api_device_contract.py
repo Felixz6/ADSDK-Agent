@@ -60,6 +60,28 @@ def test_device_selection_requires_id_when_multiple_devices_are_online(
     assert caught.value.code == "multiple_devices"
 
 
+def test_device_selection_resolves_public_redacted_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_serial = "TARGET-SERIAL"
+    public_token = DeviceContext(serial=raw_serial).public_serial
+    monkeypatch.setattr(
+        adb_runner,
+        "adb_devices",
+        lambda: {
+            "returncode": 0,
+            "stdout": f"List of devices attached\n{raw_serial}\tdevice\n",
+            "stderr": "",
+            "cmd": ["adb", "devices"],
+        },
+    )
+
+    selected = adb_runner.select_device_context(public_token)
+
+    assert selected.serial == raw_serial
+    assert selected.public_serial == public_token
+
+
 def test_selected_device_is_used_by_adb_install_and_launch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

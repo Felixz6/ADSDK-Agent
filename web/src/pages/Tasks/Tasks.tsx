@@ -5,6 +5,7 @@ import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
 import { EmptyState } from '@/components/common/States'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { RiskBadge } from '@/components/common/RiskBadge'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { cn } from '@/utils'
 import { listLocalTasks, clearLocalTasks, deleteLocalTask, type LocalTaskRecord } from '@/api/tasks'
@@ -132,6 +133,9 @@ export default function Tasks() {
                     label={t.kind === 'static' ? '静态' : '动态'}
                     size="sm"
                   />
+                  {t.risk_level && (
+                    <RiskBadge level={t.risk_level === 'critical' ? 'high' : t.risk_level} label={t.risk_level} />
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-[var(--text-primary)] font-mono truncate">{t.package_name || t.apk_path}</p>
                     <p className="text-[11px] text-[var(--text-tertiary)] truncate">

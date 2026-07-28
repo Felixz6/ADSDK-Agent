@@ -50,6 +50,38 @@ class FridaSessionError(RuntimeError):
         super().__init__(f"{code}: {message}")
 
 
+def _classify_frida_exception(exc: BaseException, fallback: str) -> str:
+    text = str(exc).casefold()
+    if any(
+        marker in text
+        for marker in (
+            "need gadget",
+            "frida gadget",
+            "server is not running",
+            "unable to connect to remote frida-server",
+            "connection refused",
+            "connection closed",
+        )
+    ):
+        return "frida_server_unavailable"
+    if "version" in text and any(
+        marker in text
+        for marker in ("mismatch", "incompatible", "different", "protocol")
+    ):
+        return "frida_version_mismatch"
+    if any(
+        marker in text
+        for marker in (
+            "device not found",
+            "unable to find device",
+            "device is gone",
+            "no such device",
+        )
+    ):
+        return "frida_device_not_found"
+    return fallback
+
+
 class FridaAdapter(Protocol):
     def get_device(self, serial: str, timeout_seconds: float) -> Any: ...
 
@@ -211,18 +243,18 @@ class FridaSession:
     def _script_source(self) -> str:
         if not self.script_path.is_file():
             self._raise_failure(
-                "frida_script_load_failed",
+                "hook_load_failed",
                 "Frida script is missing",
             )
         try:
             source = self.script_path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
             self._set_failure(
-                "frida_script_load_failed",
+                "hook_load_failed",
                 "Frida script could not be read",
             )
             raise FridaSessionError(
-                "frida_script_load_failed",
+                "hook_load_failed",
                 "Frida script could not be read",
             ) from exc
 
@@ -271,19 +303,23 @@ class FridaSession:
                 "Frida Python package is not installed",
             ) from exc
         except Exception as exc:
+            code = _classify_frida_exception(
+                exc,
+                "frida_device_not_found",
+            )
             self._set_failure(
-                "frida_device_unavailable",
+                code,
                 "The selected Frida device is unavailable",
             )
             raise FridaSessionError(
-                "frida_device_unavailable",
+                code,
                 "The selected Frida device is unavailable",
             ) from exc
 
         selected_serial = getattr(handle, "id", None)
         if selected_serial != self.device.serial:
             self._raise_failure(
-                "frida_device_unavailable",
+                "frida_device_not_found",
                 "Frida returned a different device than DeviceContext",
             )
         self._device_handle = handle
@@ -291,12 +327,13 @@ class FridaSession:
         try:
             pid = handle.spawn([self.package_name])
         except Exception as exc:
+            code = _classify_frida_exception(exc, "frida_spawn_failed")
             self._set_failure(
-                "frida_spawn_failed",
+                code,
                 "Frida could not spawn the target package",
             )
             raise FridaSessionError(
-                "frida_spawn_failed",
+                code,
                 "Frida could not spawn the target package",
             ) from exc
         if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
@@ -315,13 +352,21 @@ class FridaSession:
                 return
             if self.state is not FridaSessionState.STARTING or self.pid is None:
                 raise FridaSessionError(
-                    "frida_script_load_failed",
-                    "Frida spawn must complete before script load",
-                )
+                "hook_load_failed",
+                "Frida spawn must complete before script load",
+            )
 
         source = self._script_source()
         try:
             attached = self._device_handle.attach(self.pid)
+        except Exception as exc:
+            code = _classify_frida_exception(exc, "frida_attach_failed")
+            self._set_failure(code, "Frida could not attach to the spawned process")
+            raise FridaSessionError(
+                code,
+                "Frida could not attach to the spawned process",
+            ) from exc
+        try:
             if hasattr(attached, "on"):
                 attached.on("detached", self._on_detached)
             script = attached.create_script(source)
@@ -333,11 +378,11 @@ class FridaSession:
             raise
         except Exception as exc:
             self._set_failure(
-                "frida_script_load_failed",
+                "hook_load_failed",
                 "Frida hook script could not be loaded",
             )
             raise FridaSessionError(
-                "frida_script_load_failed",
+                "hook_load_failed",
                 "Frida hook script could not be loaded",
             ) from exc
 
@@ -379,8 +424,16 @@ class FridaSession:
             )
             self.stderr = None
             self._set_failure(
-                "frida_process_exited",
-                "Frida session detached before collection completed",
+                (
+                    "app_exited_after_resume"
+                    if self._resumed
+                    else "frida_process_exited"
+                ),
+                (
+                    "Target app exited after resume"
+                    if self._resumed
+                    else "Frida session detached before collection completed"
+                ),
             )
             self._ready_signal.set()
 
@@ -510,12 +563,12 @@ class FridaSession:
             )
 
         self._set_failure(
-            "frida_ready_timeout",
+            "hook_ready_timeout",
             "Hook-ready message was not received before the deadline",
         )
         self.stop(timeout_seconds=self.stop_timeout_seconds)
         raise FridaSessionError(
-            "frida_ready_timeout",
+            "hook_ready_timeout",
             "Hook-ready message was not received before the deadline",
         )
 

@@ -13,6 +13,16 @@ def test_env_check(monkeypatch):
         lambda device_id=None: {"ok": True, "device_id": device_id, "target": {"device_id": "emulator-5554", "status": "device"}},
     )
     monkeypatch.setattr(main_module, "check_frida_connection", lambda device_id=None: {"ok": True, "stdout": "frida", "stderr": "", "cmd": ["frida-ps", "-U"]})
+    monkeypatch.setattr(
+        main_module,
+        "check_frida_device_runtime",
+        lambda device_id=None: {
+            "status": "server_available",
+            "server_running": True,
+            "abi": "x86_64",
+            "mode_hint": "exact-device frida-server transport",
+        },
+    )
     monkeypatch.setattr(main_module, "check_port_listening", lambda port=8080: True)
     monkeypatch.setattr(main_module, "_check_output_writable", lambda: {"ok": True, "path": "D:/adsdk-agent/output", "error": None})
     # New env-check probes — patch so the test does not depend on the real

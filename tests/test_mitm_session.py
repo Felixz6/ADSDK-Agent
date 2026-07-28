@@ -328,11 +328,58 @@ def test_process_exit_before_ready_is_explicit(tmp_path: Path) -> None:
     factory = FakeProcessFactory(process)
     session, _factory, _ = _session(tmp_path, factory=factory)
     assert session.start() is True
+    assert session._stderr_handle is not None
+    session._stderr_handle.write("ModuleNotFoundError: No module named 'app'\n")
+    session._stderr_handle.flush()
 
     assert session.wait_ready(timeout=1.0) is False
     assert session.error_code == "mitm_process_exited"
     assert session.exit_code == 23
     assert session.state is MitmSessionState.FAILED
+    status = session.to_status()
+    assert status["exit_code"] == 23
+    assert "ModuleNotFoundError" in status["stderr_tail"]
+    assert status["command"][0] == "mitmdump"
+    assert status["addon_path"].endswith("mitm_addon.py")
+    assert status["ready_timeout"] == 1.0
+
+
+def test_device_proxy_is_restored_after_failed_collection(tmp_path: Path) -> None:
+    commands: list[list[str]] = []
+
+    def command_runner(command: list[str]) -> dict[str, Any]:
+        commands.append(command)
+        if command[-4:] == ["settings", "get", "global", "http_proxy"]:
+            return {"returncode": 0, "stdout": ":null\n", "stderr": ""}
+        return {"returncode": 0, "stdout": "", "stderr": ""}
+
+    factory = FakeProcessFactory()
+    clock = FakeClock()
+    session = MitmSession(
+        run_id="proxy-restore",
+        device=DeviceContext("emulator-5554"),
+        traffic_dir=tmp_path / "proxy-restore" / "traffic",
+        port_pool=PortPool(
+            [18080],
+            availability_probe=lambda _host, _port: True,
+        ),
+        process_factory=factory,
+        process_tree_terminator=FakeTreeTerminator(),
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+        device_proxy_host="10.0.2.2",
+        command_runner=command_runner,
+    )
+    assert session.start() is True
+    _append(session.jsonl_path, _ready_payload(session))
+    assert session.wait_ready(timeout=1.0) is True
+    session.mark_collecting()
+    session._set_failure("fixture_failure", "fixture")
+
+    assert session.stop(timeout=1.0) is True
+    assert session.device_proxy_restored is True
+    assert any(command[-1] == "10.0.2.2:18080" for command in commands)
+    assert commands[-1][-1] == ":null"
 
 
 def test_stop_timeout_kills_only_owned_process_and_is_idempotent(
