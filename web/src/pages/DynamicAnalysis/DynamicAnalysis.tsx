@@ -7,6 +7,9 @@ import {
   Eye,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
+import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
+import { BehaviorTimeline } from '@/components/analysis/BehaviorTimeline'
+import { ComplianceInsight } from '@/components/report/ComplianceInsight'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { ConsentTimeline } from '@/components/report/ConsentTimeline'
@@ -33,6 +36,8 @@ export default function DynamicAnalysis() {
   const counts = countConsentStates(events)
   const strict = resp.strict_dynamic_findings
   const mild = resp.dynamic_findings
+  const fridaSession = resp.collector_sessions?.frida
+  const mitmSession = resp.collector_sessions?.mitm
 
   return (
     <div className="flex flex-col gap-5">
@@ -49,6 +54,8 @@ export default function DynamicAnalysis() {
         <StatCard label="时间不明" value={counts.unknown} tone="warning" icon={<ShieldQuestion size={18} />} />
       </div>
 
+      <RiskSummaryCard summary={resp.risk_summary} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <GlassCard padding="md" highlight>
           <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">同意时间线</h3>
@@ -64,17 +71,24 @@ export default function DynamicAnalysis() {
         <GlassCard padding="md" highlight className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">动态采集状态</h3>
           <KV k="采集状态" v={resp.collection_status ?? '—'} />
+          <KV k="动态验收等级" v={resp.dynamic_validation_level ?? 'C'} />
           <KV k="流量覆盖度" v={coverageLabel(resp.traffic_coverage)} />
           <KV k="同意前/后窗口" v={`${resp.pre_consent_seconds ?? '—'} / ${resp.post_consent_seconds ?? '—'} 秒`} />
           <KV k="启用流量采集" v={resp.enable_traffic ? '是' : '否'} />
           <KV k="UI 刺激" v={resp.enable_ui_stimulation ? '是' : '否'} />
           <KV k="采集超时" v={`${resp.collection_timeout_seconds ?? '—'} 秒`} />
           <KV k="设备序列号(脱敏)" v={resp.device?.serial ?? '—'} mono />
+          {fridaSession && <KV k="Frida" v={collectorSummary(fridaSession)} mono />}
+          {mitmSession && <KV k="mitmproxy" v={collectorSummary(mitmSession)} mono />}
         </GlassCard>
       </div>
 
       <ReportRuleCard findings={strict} strict />
       <ReportRuleCard findings={mild} />
+
+      <BehaviorTimeline timeline={resp.timeline} />
+
+      <ComplianceInsight insight={resp.compliance_insight} />
 
       <GlassCard padding="md">
         <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">动态分析步骤</h3>
@@ -234,6 +248,15 @@ function filterDynamicSteps(steps: StepResult[]): StepResult[] {
 function coverageLabel(c: string | null): string {
   if (!c) return '—'
   return ({ unavailable: '不可用', no_observations: '无观测', observed: '已观测' } as Record<string, string>)[c] ?? c
+}
+
+function collectorSummary(session: Record<string, unknown>): string {
+  const state = String(session.state ?? 'unknown')
+  const code = session.error_code ? String(session.error_code) : null
+  const stderr = session.stderr_tail
+    ? String(session.stderr_tail).replace(/\s+/g, ' ').slice(0, 180)
+    : null
+  return [state, code, stderr].filter(Boolean).join(' · ')
 }
 
 function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {

@@ -113,12 +113,24 @@ def select_device_context(device_id: str | None = None) -> DeviceContext:
             (item for item in online if item.get("device_id") == device_id),
             None,
         )
+        if target is None and device_id.startswith("redacted:"):
+            target = next(
+                (
+                    item
+                    for item in online
+                    if DeviceContext(
+                        serial=str(item.get("device_id") or "")
+                    ).public_serial
+                    == device_id
+                ),
+                None,
+            )
         if target is None:
             raise DeviceSelectionError(
                 "device_not_online",
                 "requested device is missing, offline, or unauthorized",
             )
-        return DeviceContext(serial=device_id)
+        return DeviceContext(serial=str(target["device_id"]))
 
     if not online:
         raise DeviceSelectionError("no_online_device", "no online ADB device found")

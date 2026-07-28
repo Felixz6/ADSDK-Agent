@@ -294,7 +294,10 @@ def test_apktool_and_adb_commands_receive_snapshot_path(
     )
     commands: list[list[str]] = []
 
-    def record_command(command: list[str]) -> dict[str, object]:
+    def record_command(
+        command: list[str],
+        **_: object,
+    ) -> dict[str, object]:
         commands.append(command)
         return {"returncode": 0, "stdout": "", "stderr": "", "cmd": command}
 
