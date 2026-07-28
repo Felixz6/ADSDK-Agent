@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import threading
+import time
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -15,6 +16,9 @@ from app.core.artifacts import atomic_write_json
 
 CACHE_FORMAT_VERSION = "static-unpack-v1"
 Unpacker = Callable[[str, str], dict[str, Any]]
+
+_RETRY_ATTEMPTS = 5
+_RETRY_DELAY_SECONDS = 0.1
 
 _LOCKS_GUARD = threading.Lock()
 _KEY_LOCKS: dict[str, threading.Lock] = {}
@@ -64,6 +68,101 @@ def _metadata_valid(
     )
 
 
+def _retry_delay(attempt: int) -> None:
+    """Apply a short bounded backoff for transient Windows file locks."""
+    time.sleep(_RETRY_DELAY_SECONDS * (attempt + 1))
+
+
+def _remove_tree_with_retries(
+    path: Path,
+    *,
+    error_code: str,
+    attempts: int = _RETRY_ATTEMPTS,
+) -> None:
+    """Remove a directory without silently swallowing transient failures."""
+    last_error: OSError | None = None
+
+    for attempt in range(attempts):
+        if not path.exists():
+            return
+
+        try:
+            shutil.rmtree(path)
+        except OSError as exc:
+            last_error = exc
+        else:
+            if not path.exists():
+                return
+
+        if attempt < attempts - 1:
+            _retry_delay(attempt)
+
+    raise StaticUnpackCacheError(
+        error_code,
+        f"unable to remove static unpack cache directory: {path}",
+        {
+            "path": str(path),
+            "attempts": attempts,
+            "os_error": str(last_error) if last_error else None,
+        },
+    ) from last_error
+
+
+def _cleanup_tree_best_effort(path: Path) -> None:
+    """Clean temporary artifacts without hiding the primary failure."""
+    try:
+        _remove_tree_with_retries(
+            path,
+            error_code="apk_cache_cleanup_failed",
+        )
+    except StaticUnpackCacheError:
+        # Temporary cleanup failure is diagnostic-only here. The original
+        # build/publish exception must remain the exception seen by callers.
+        pass
+
+
+def _publish_cache_with_retries(
+    temporary_dir: Path,
+    cache_dir: Path,
+    *,
+    apk_sha256: str,
+    apktool_version: str,
+    attempts: int = _RETRY_ATTEMPTS,
+) -> None:
+    """Publish a completed cache entry, tolerating short Windows locks."""
+    last_error: OSError | None = None
+
+    for attempt in range(attempts):
+        try:
+            os.replace(temporary_dir, cache_dir)
+            return
+        except OSError as exc:
+            # A different process may have published the same cache key first.
+            # Adopt it only after validating the complete metadata and manifest.
+            if _metadata_valid(
+                cache_dir,
+                apk_sha256=apk_sha256,
+                apktool_version=apktool_version,
+            ):
+                _cleanup_tree_best_effort(temporary_dir)
+                return
+
+            last_error = exc
+            if attempt < attempts - 1:
+                _retry_delay(attempt)
+
+    raise StaticUnpackCacheError(
+        "apk_cache_publish_failed",
+        f"unable to publish static unpack cache: {cache_dir}",
+        {
+            "temporary_dir": str(temporary_dir),
+            "cache_dir": str(cache_dir),
+            "attempts": attempts,
+            "os_error": str(last_error) if last_error else None,
+        },
+    ) from last_error
+
+
 def prepare_static_unpack(
     *,
     snapshot_path: Path,
@@ -91,11 +190,16 @@ def prepare_static_unpack(
             )
 
         if cache_dir.exists():
-            shutil.rmtree(cache_dir, ignore_errors=True)
+            _remove_tree_with_retries(
+                cache_dir,
+                error_code="apk_cache_invalidation_failed",
+            )
+
         cache_root.mkdir(parents=True, exist_ok=True)
         temporary_dir = cache_root / f".{normalized_sha256}.{uuid4().hex}.tmp"
         unpacked_dir = temporary_dir / "unpacked"
         temporary_dir.mkdir()
+
         try:
             result = unpacker(str(snapshot_path), str(unpacked_dir))
             if result.get("returncode") != 0:
@@ -111,12 +215,14 @@ def prepare_static_unpack(
                     or "apktool failed",
                     result,
                 )
+
             if not (unpacked_dir / "AndroidManifest.xml").is_file():
                 raise StaticUnpackCacheError(
                     "apk_cache_invalid",
                     "apktool output did not contain AndroidManifest.xml",
                     result,
                 )
+
             atomic_write_json(
                 temporary_dir / "metadata.json",
                 {
@@ -128,21 +234,14 @@ def prepare_static_unpack(
                     .replace("+00:00", "Z"),
                 },
             )
-            try:
-                os.replace(temporary_dir, cache_dir)
-            except FileExistsError:
-                # Another publisher won a cross-request race. Only adopt it
-                # after the same metadata and manifest validation.
-                shutil.rmtree(temporary_dir, ignore_errors=True)
-                if not _metadata_valid(
-                    cache_dir,
-                    apk_sha256=normalized_sha256,
-                    apktool_version=apktool_version,
-                ):
-                    raise StaticUnpackCacheError(
-                        "apk_cache_publish_failed",
-                        "published cache entry failed validation",
-                    )
+
+            _publish_cache_with_retries(
+                temporary_dir,
+                cache_dir,
+                apk_sha256=normalized_sha256,
+                apktool_version=apktool_version,
+            )
+
             return StaticUnpackCacheResult(
                 unpacked_dir=cache_dir / "unpacked",
                 cache_hit=False,
@@ -150,5 +249,5 @@ def prepare_static_unpack(
                 apktool_version=apktool_version,
             )
         except BaseException:
-            shutil.rmtree(temporary_dir, ignore_errors=True)
+            _cleanup_tree_best_effort(temporary_dir)
             raise
