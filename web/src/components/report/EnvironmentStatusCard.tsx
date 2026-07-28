@@ -47,6 +47,9 @@ interface Row {
   detail?: string
   /** 流量自检使用独立文案「尚未检测」,覆盖五态标签。 */
   customLabel?: string
+  /** 逐行展示的说明(如允许目录列表),每行单独一个 <p>;与 note 互斥使用。
+   *  仅用于需要保留换行的列表型说明,避免与 summary detail 重复渲染同一路径。 */
+  noteLines?: string[]
 }
 
 const STATUS_LABEL: Record<CheckStatus, string> = {
@@ -157,24 +160,27 @@ export function EnvironmentStatusCard({ env, traffic, trafficTriggered }: Enviro
   }
 
   // —— APK_ALLOWED_ROOTS ——
+  // 摘要(detail)只显示数量(「已配置 N 个允许目录」,1/N 同文),实际路径逐行
+  // 进 noteLines —— 避免同一路径既当 summary 又当 detail 重复显示两行。
   let rootsStatus: CheckStatus
   let rootsDetail: string | undefined
   let rootsNote: string | undefined
+  let rootsNoteLines: string[] | undefined
   if (!env) {
     rootsStatus = 'unknown'
     rootsNote = '后端不可达,无法检测。'
   } else if (allowedRoots === undefined) {
     rootsStatus = 'provided'
-    rootsNote = '后端未返回允许根目录;请确认 APK 位于允许根内再提交。'
+    rootsNote = '当前后端版本未提供允许目录信息。'
   } else if (allowedRoots.length === 0) {
     rootsStatus = 'missing'
     rootsDetail = '未配置'
+    rootsNote = '尚未配置允许的 APK 根目录。'
   } else {
     rootsStatus = 'ok'
-    rootsDetail = allowedRoots.length === 1
-      ? allowedRoots[0]
-      : `${allowedRoots.length} 个允许根目录`
-    rootsNote = allowedRoots.join('\n')
+    rootsDetail = `已配置 ${allowedRoots.length} 个允许目录`
+    // 每个路径单独一行,Windows 路径原样保留,不拼接成一行。
+    rootsNoteLines = allowedRoots.map((p) => p)
   }
 
   // —— 流量捕获自检 ——
@@ -267,6 +273,7 @@ export function EnvironmentStatusCard({ env, traffic, trafficTriggered }: Enviro
       status: rootsStatus,
       detail: rootsDetail,
       note: rootsNote,
+      noteLines: rootsNoteLines,
     },
     {
       key: 'traffic',
@@ -321,7 +328,13 @@ function Row({ row }: { row: Row }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm text-[var(--text-primary)] truncate">{row.label}</p>
         {row.detail && <p className="text-[11px] text-[var(--text-tertiary)] truncate">{row.detail}</p>}
-        {row.note && <p className="text-[11px] text-[var(--text-tertiary)] truncate">{row.note}</p>}
+        {row.noteLines
+          ? row.noteLines.map((line, i) => (
+              <p key={i} className="text-[11px] text-[var(--text-tertiary)] truncate">
+                {line}
+              </p>
+            ))
+          : row.note && <p className="text-[11px] text-[var(--text-tertiary)] truncate">{row.note}</p>}
         <p
           className={cn(
             'text-[11px] mt-0.5',
