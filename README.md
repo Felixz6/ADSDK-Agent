@@ -2,7 +2,7 @@
 
 > 面向 Android APK 的本地隐私与合规分析平台。通过 Web 控制台完成 APK 提交、环境检测、静态分析、动态行为观测、网络流量采集与合规报告查看。
 
-![AdSDK Agent Web 控制台](docs/screenshots/01-home.png)
+![AdSDK Agent Web 控制台](./docs/screenshots/01-home.png)
 
 > [!IMPORTANT]
 > 本项目仅用于已获得授权的 APK 测试、隐私审计与合规分析。请勿用于未授权目标。
@@ -23,7 +23,7 @@ AdSDK Agent 由 Web 控制台和本地分析引擎共同组成：
 5. 查看权限、广告 SDK、动态事件、网络请求和规则状态；
 6. 浏览本地任务历史及 JSON / Markdown 报告。
 
----
+------
 
 ## Web 控制台
 
@@ -87,7 +87,7 @@ collector_success_requests_observed
 - 任务历史保存在当前浏览器的 `localStorage`；
 - 本地历史不代表后端持久化任务，清理浏览器数据后会丢失。
 
----
+------
 
 ## 技术架构
 
@@ -136,7 +136,7 @@ collector_success_requests_observed
 - mitmproxy / mitmdump
 - pytest
 
----
+------
 
 ## 快速开始
 
@@ -177,53 +177,73 @@ frida --version
 mitmdump --version
 ```
 
-### 3. 启动后端
+### 3. 安装前端依赖
 
-```powershell
-uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-后端地址：
-
-```text
-http://127.0.0.1:8000
-```
-
-API 文档：
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-### 4. 启动 Web 控制台
-
-另开一个 PowerShell：
+首次使用时执行：
 
 ```powershell
 cd web
 npm install
+cd ..
 ```
 
-创建 `web/.env`：
+如需自定义前端后端地址，可创建 `web/.env`：
 
 ```env
-$env:VITE_API_BASE_URL = "http://127.0.0.1:8000"
-$env:VITE_USE_MOCK = "false"
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_USE_MOCK=false
 ```
 
-启动开发服务器：
+### 4. Windows 一键启动
+
+完成后端虚拟环境和前端依赖安装后，可直接双击项目根目录中的：
+
+```text
+start-adsdk-agent.bat
+```
+
+脚本会自动：
+
+- 使用 `.venv` 中的 Python 启动 FastAPI 后端；
+- 启动 Vite Web 控制台；
+- 检查 `8000` 和 `5173` 端口，避免重复启动；
+- 服务就绪后自动打开浏览器。
+
+默认地址：
+
+```text
+Web 控制台：http://127.0.0.1:5173
+后端服务：http://127.0.0.1:8000
+API 文档：http://127.0.0.1:8000/docs
+```
+
+停止前后端时双击：
+
+```text
+stop-adsdk-agent.bat
+```
+
+脚本仅停止由当前项目启动的前后端进程，并清理本地 `.run/` 进程记录目录。
+
+### 5. 手动启动
+
+需要分别查看或调试前后端时，也可以手动启动。
+
+启动后端：
 
 ```powershell
+.venv\Scripts\Activate.ps1
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+另开一个 PowerShell 启动前端：
+
+```powershell
+cd web
 npm run dev
 ```
 
-默认访问：
-
-```text
-http://localhost:5173
-```
-
----
+------
 
 ## 基本使用流程
 
@@ -258,7 +278,7 @@ adb devices -l
 
 多台设备在线时必须传入精确 `device_id`。ADB 安装、Frida 设备选择和 `MitmSession` 会绑定同一个 `DeviceContext`。
 
----
+------
 
 ## 仓库结构
 
@@ -297,10 +317,14 @@ adsdk-agent/
 ├─ requirements.txt
 ├─ pytest.ini
 ├─ capture-screenshots.ps1
+├─ start-adsdk-agent.bat        # Windows 一键启动入口
+├─ start-adsdk-agent.ps1        # 前后端启动逻辑
+├─ stop-adsdk-agent.bat         # Windows 一键停止入口
+├─ stop-adsdk-agent.ps1         # 前后端停止与清理逻辑
 └─ README.md
 ```
 
----
+------
 
 ## 分析流程
 
@@ -326,22 +350,22 @@ Web 提交分析请求
   -> Web 控制台展示结果
 ```
 
----
+------
 
 ## 配置说明
 
-| 配置项 | 默认值 | 说明 |
-|---|---:|---|
-| `APK_ALLOWED_ROOTS` | `samples` | 允许访问的 APK 根目录；Windows 多目录使用分号分隔 |
-| `APK_MAX_SIZE_MB` | `1024` | APK 校验和快照的大小上限 |
-| `REDACTION_HMAC_KEY` | 开发占位值 | 稳定 HMAC 脱敏密钥，部署时必须替换 |
-| `FRIDA_READY_TIMEOUT_SECONDS` | `15` | Hook-ready 等待超时 |
-| `FRIDA_STOP_TIMEOUT_SECONDS` | `5` | Frida 停止和清理超时 |
-| `MITM_PORT_START` | `8080` | mitmproxy 端口池起点 |
-| `MITM_PORT_END` | `8090` | mitmproxy 端口池终点 |
-| `MITM_LISTEN_HOST` | `127.0.0.1` | mitmdump 监听地址 |
-| `MITM_READY_TIMEOUT_SECONDS` | `10` | mitmproxy addon ready 超时 |
-| `MITM_STOP_TIMEOUT_SECONDS` | `5` | mitmproxy 进程树清理超时 |
+| 配置项                        |      默认值 | 说明                                              |
+| ----------------------------- | ----------: | ------------------------------------------------- |
+| `APK_ALLOWED_ROOTS`           |   `samples` | 允许访问的 APK 根目录；Windows 多目录使用分号分隔 |
+| `APK_MAX_SIZE_MB`             |      `1024` | APK 校验和快照的大小上限                          |
+| `REDACTION_HMAC_KEY`          |  开发占位值 | 稳定 HMAC 脱敏密钥，部署时必须替换                |
+| `FRIDA_READY_TIMEOUT_SECONDS` |        `15` | Hook-ready 等待超时                               |
+| `FRIDA_STOP_TIMEOUT_SECONDS`  |         `5` | Frida 停止和清理超时                              |
+| `MITM_PORT_START`             |      `8080` | mitmproxy 端口池起点                              |
+| `MITM_PORT_END`               |      `8090` | mitmproxy 端口池终点                              |
+| `MITM_LISTEN_HOST`            | `127.0.0.1` | mitmdump 监听地址                                 |
+| `MITM_READY_TIMEOUT_SECONDS`  |        `10` | mitmproxy addon ready 超时                        |
+| `MITM_STOP_TIMEOUT_SECONDS`   |         `5` | mitmproxy 进程树清理超时                          |
 
 ### `MITM_LISTEN_HOST` 安全说明
 
@@ -353,17 +377,17 @@ Web 提交分析请求
 
 端口租约目前由进程内资源管理器维护。使用多个 Uvicorn worker 时，应为各 worker 配置不同的 mitmproxy 端口段。
 
----
+------
 
 ## API
 
-| 方法 | 路径 | 用途 |
-|---|---|---|
-| `GET` | `/` | 服务状态 |
-| `GET` | `/env/check` | 环境和设备检查 |
-| `GET` | `/traffic/check` | 流量采集环境自检 |
-| `POST` | `/analyze` | 静态分析 |
-| `POST` | `/dynamic/analyze` | 动态分析 |
+| 方法   | 路径               | 用途             |
+| ------ | ------------------ | ---------------- |
+| `GET`  | `/`                | 服务状态         |
+| `GET`  | `/env/check`       | 环境和设备检查   |
+| `GET`  | `/traffic/check`   | 流量采集环境自检 |
+| `POST` | `/analyze`         | 静态分析         |
+| `POST` | `/dynamic/analyze` | 动态分析         |
 
 ### 静态分析请求
 
@@ -392,18 +416,18 @@ curl -X POST http://127.0.0.1:8000/dynamic/analyze `
 
 ### 动态分析参数
 
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `apk_path` | 必填 | APK 绝对路径，且必须位于允许根目录 |
-| `device_id` | 多设备时必填 | 精确的 ADB serial |
-| `consent_after_seconds` | 按需设置 | 从 `collection_started` 起计算的同意时间点 |
-| `pre_consent_seconds` | `10` | Consent 前采集窗口 |
-| `post_consent_seconds` | `10` | Consent 后采集窗口 |
-| `enable_traffic` | `true` | 是否启用网络采集 |
-| `enable_ui_stimulation` | `false` | 是否启用 UI 刺激 |
-| `collection_timeout_seconds` | `300` | 动态分析总超时 |
+| 参数                         | 默认值       | 说明                                       |
+| ---------------------------- | ------------ | ------------------------------------------ |
+| `apk_path`                   | 必填         | APK 绝对路径，且必须位于允许根目录         |
+| `device_id`                  | 多设备时必填 | 精确的 ADB serial                          |
+| `consent_after_seconds`      | 按需设置     | 从 `collection_started` 起计算的同意时间点 |
+| `pre_consent_seconds`        | `10`         | Consent 前采集窗口                         |
+| `post_consent_seconds`       | `10`         | Consent 后采集窗口                         |
+| `enable_traffic`             | `true`       | 是否启用网络采集                           |
+| `enable_ui_stimulation`      | `false`      | 是否启用 UI 刺激                           |
+| `collection_timeout_seconds` | `300`        | 动态分析总超时                             |
 
----
+------
 
 ## Consent 时间语义
 
@@ -437,7 +461,7 @@ consent_state = unknown
 
 依赖严格时间证据的规则将返回 `not_evaluated`。
 
----
+------
 
 ## 输出产物
 
@@ -460,42 +484,42 @@ output/runs/<run_id>/
 └─ report.md
 ```
 
-| 文件 | 说明 |
-|---|---|
-| `input/app.apk` | 经过校验和 SHA-256 复核的任务快照 |
-| `unpacked/` | APK 静态解包结果 |
-| `hook.log` | 安全生命周期诊断日志 |
-| `events.raw.jsonl` | 通过协议校验的结构化 Frida 事件 |
-| `events.json` | 兼容旧消费者的规范化事件数组 |
-| `frida.protocol-errors.jsonl` | 无效消息和协议错误 |
-| `traffic/flows.mitm` | mitmproxy 会话文件 |
-| `traffic/requests.jsonl` | 脱敏后的结构化请求 |
-| `traffic_summary.json` | 网络采集摘要 |
-| `sessions.json` | run / session 所有权、状态和脱敏设备信息 |
-| `report.json` | 最终机器可读报告及完成标记 |
-| `report.md` | 最终人工可读报告 |
+| 文件                          | 说明                                     |
+| ----------------------------- | ---------------------------------------- |
+| `input/app.apk`               | 经过校验和 SHA-256 复核的任务快照        |
+| `unpacked/`                   | APK 静态解包结果                         |
+| `hook.log`                    | 安全生命周期诊断日志                     |
+| `events.raw.jsonl`            | 通过协议校验的结构化 Frida 事件          |
+| `events.json`                 | 兼容旧消费者的规范化事件数组             |
+| `frida.protocol-errors.jsonl` | 无效消息和协议错误                       |
+| `traffic/flows.mitm`          | mitmproxy 会话文件                       |
+| `traffic/requests.jsonl`      | 脱敏后的结构化请求                       |
+| `traffic_summary.json`        | 网络采集摘要                             |
+| `sessions.json`               | run / session 所有权、状态和脱敏设备信息 |
+| `report.json`                 | 最终机器可读报告及完成标记               |
+| `report.md`                   | 最终人工可读报告                         |
 
----
+------
 
 ## 状态语义
 
 ### 步骤状态
 
-| 状态 | 含义 |
-|---|---|
-| `success` | 成功完成 |
+| 状态      | 含义           |
+| --------- | -------------- |
+| `success` | 成功完成       |
 | `partial` | 仅获得部分结果 |
-| `failed` | 执行失败 |
-| `skipped` | 未执行 |
+| `failed`  | 执行失败       |
+| `skipped` | 未执行         |
 
 ### 规则状态
 
-| 状态 | 含义 |
-|---|---|
-| `matched` | 证据满足规则 |
-| `not_matched` | 证据有效，但未满足规则 |
+| 状态            | 含义                   |
+| --------------- | ---------------------- |
+| `matched`       | 证据满足规则           |
+| `not_matched`   | 证据有效，但未满足规则 |
 | `not_evaluated` | 缺少可信证据，无法判断 |
-| `error` | 规则执行发生错误 |
+| `error`         | 规则执行发生错误       |
 
 采集失败、Hook-ready 超时或协议不可信时，依赖相关证据的规则必须为 `not_evaluated`，不能解释为“未发现行为”。
 
@@ -507,7 +531,7 @@ coverage = no_observations
 
 这只表示当前采集窗口没有观测结果，不代表应用没有网络行为。
 
----
+------
 
 ## 隐私与安全
 
@@ -520,7 +544,7 @@ coverage = no_observations
 - 报告仅保留脱敏设备 token；
 - Web 页面不会将 `not_evaluated` 展示为“安全”。
 
----
+------
 
 ## 测试
 
@@ -578,7 +602,7 @@ docs/FRONTEND_COMPLETION_REPORT.md
 docs/screenshots/
 ```
 
----
+------
 
 ## 已知限制
 
@@ -591,7 +615,7 @@ docs/screenshots/
 - 部分 APK 的反调试、兼容性或启动行为可能导致动态采集失败；
 - 当前报告以 JSON 和 Markdown 为主要持久化格式。
 
----
+------
 
 ## 后续规划
 
@@ -604,13 +628,13 @@ docs/screenshots/
 7. HTML / 可导出可视化报告；
 8. 前端任务实时更新与历史持久化。
 
----
+------
 
 ## 许可证
 
 本项目采用 [Apache License 2.0](LICENSE)。
 
----
+------
 
 ## 静态解包缓存
 
