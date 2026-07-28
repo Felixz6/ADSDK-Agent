@@ -127,7 +127,7 @@ collector_success_requests_observed
 
 ### 后端技术栈
 
-- Python 3.11+
+- Python 3.12+（推荐 Python 3.14）
 - FastAPI
 - Pydantic
 - apktool
@@ -147,34 +147,60 @@ git clone <your-repository-url>
 cd adsdk-agent
 ```
 
-### 2. 配置后端
+### 2. 配置 Python 环境
+
+项目统一使用一个 `.venv`，后端、Frida 和 mitmproxy 均安装在该环境中。
+
+推荐使用 Python 3.14：
 
 ```powershell
-python -m venv .venv
+py -3.14 -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+
+$env:PYTHONUTF8 = "1"
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-正式使用前，请修改 `.env` 中的脱敏密钥：
-
-```env
-REDACTION_HMAC_KEY=replace-with-a-strong-random-secret
-```
-
-动态分析还需要：
+检查 Python 依赖：
 
 ```powershell
-pip install frida frida-tools mitmproxy
+python -m pip check
 ```
 
-并确保以下命令可用：
+预期输出：
+
+```text
+No broken requirements found.
+```
+
+确认项目命令优先来自当前虚拟环境：
+
+```powershell
+Get-Command python, frida, frida-ps, mitmdump |
+  Select-Object Name, Source
+```
+
+`python`、`frida`、`frida-ps` 和 `mitmdump` 应优先指向：
+
+```text
+<项目目录>\.venv\Scripts\
+```
+
+并确保外部 Android 工具可用：
 
 ```powershell
 adb version
 apktool --version
 frida --version
 mitmdump --version
+```
+
+正式使用前，请修改 `.env` 中的脱敏密钥：
+
+```env
+REDACTION_HMAC_KEY=replace-with-a-strong-random-secret
 ```
 
 ### 3. 安装前端依赖
@@ -204,7 +230,7 @@ start-adsdk-agent.bat
 
 脚本会自动：
 
-- 使用 `.venv` 中的 Python 启动 FastAPI 后端；
+- 使用 `.venv` 中的 Python 启动 FastAPI 后端，并优先调用同一环境中的 Frida 与 mitmdump；
 - 启动 Vite Web 控制台；
 - 检查 `8000` 和 `5173` 端口，避免重复启动；
 - 服务就绪后自动打开浏览器。
@@ -233,7 +259,7 @@ stop-adsdk-agent.bat
 
 ```powershell
 .venv\Scripts\Activate.ps1
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 另开一个 PowerShell 启动前端：
