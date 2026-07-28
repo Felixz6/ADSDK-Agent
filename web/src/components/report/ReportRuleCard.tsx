@@ -22,6 +22,17 @@ export interface ReportRuleCardProps {
   strict?: boolean
 }
 
+function formatSummary(value: unknown): string | null {
+  if (value == null || value === '') return null
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return '后端返回了无法序列化的摘要'
+  }
+}
+
 export function ReportRuleCard({ findings, strict = false }: ReportRuleCardProps) {
   const rules = findings?.rules as RuleLike[] | undefined
   if (!rules || rules.length === 0) {
@@ -34,8 +45,10 @@ export function ReportRuleCard({ findings, strict = false }: ReportRuleCardProps
     )
   }
 
-  const summary = (findings as { summary?: string; evaluation_summary?: string | null }).summary
-  const evaluationSummary = (findings as { evaluation_summary?: string | null }).evaluation_summary
+  const summary = formatSummary((findings as { summary?: unknown }).summary)
+  const evaluationSummary = formatSummary(
+    (findings as { evaluation_summary?: unknown }).evaluation_summary,
+  )
 
   return (
     <GlassCard padding="md" highlight className="flex flex-col gap-3">

@@ -8,6 +8,10 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = str(BASE_DIR / "output")
 SAMPLES_DIR = str(BASE_DIR / "samples")
+STATIC_UNPACK_CACHE_DIR = (
+    os.getenv("STATIC_UNPACK_CACHE_DIR", "").strip()
+    or str(Path(OUTPUT_DIR) / "cache" / "static-unpack")
+)
 
 # 当前未使用,预留后续 AI 辅助分析扩展。
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -16,7 +20,7 @@ DEFAULT_PORT = int(os.getenv("PORT", "8000"))
 
 # 子进程默认超时(秒)。集中管理,避免魔法数字散落各 runner。
 ADB_TIMEOUT = int(os.getenv("ADB_TIMEOUT", "120"))
-APKTOOL_TIMEOUT = int(os.getenv("APKTOOL_TIMEOUT", "300"))
+APKTOOL_TIMEOUT = int(os.getenv("APKTOOL_TIMEOUT", "1800"))
 FRIDA_CHECK_TIMEOUT = 10
 
 
@@ -95,6 +99,9 @@ DEFAULT_MITM_PORT = MITM_PORT_START
 # point the device proxy at ``10.0.2.2:<port>``. No default is changed for
 # non-emulator deployments unless this env var is set.
 MITM_LISTEN_HOST = os.getenv("MITM_LISTEN_HOST", "127.0.0.1").strip()
+MITM_DEVICE_PROXY_HOST = (
+    os.getenv("MITM_DEVICE_PROXY_HOST", "").strip() or None
+)
 
 # Development fallback only. Deployments should set a stable random value in .env.
 REDACTION_HMAC_KEY = os.getenv(

@@ -19,6 +19,7 @@ from app.config import (
     FRIDA_READY_TIMEOUT_SECONDS,
     FRIDA_STOP_TIMEOUT_SECONDS,
     MITM_LISTEN_HOST,
+    MITM_DEVICE_PROXY_HOST,
     MITM_READY_TIMEOUT_SECONDS,
     MITM_STOP_TIMEOUT_SECONDS,
     OUTPUT_DIR,
@@ -31,12 +32,20 @@ from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
 from app.core.paths import ApkPathValidationError, ApkPathValidator, sha256_file
 from app.core.redaction import Redactor
 from app.core.run_context import AnalysisRunContext, create_analysis_run_context
+from app.core.static_unpack_cache import (
+    StaticUnpackCacheError,
+    prepare_static_unpack,
+)
 from app.core.status import (
     StepResult,
     StepStatus,
     derive_overall_status,
     make_step_result,
 )
+from app.analyzers.compliance_insight import generate_compliance_insight
+from app.analyzers.risk_scoring import calculate_risk_summary
+from app.analyzers.sdk_intelligence import correlate_sdk_evidence
+from app.analyzers.timeline_builder import build_timeline
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
 from app.tools.adb_runner import (
     DeviceSelectionError,
@@ -47,7 +56,11 @@ from app.tools.adb_runner import (
     select_device_context,
 )
 from app.tools.apk_unpack import unpack_apk
-from app.tools.frida_runner import check_frida_connection, spawn_and_inject
+from app.tools.frida_runner import (
+    check_frida_connection,
+    check_frida_device_runtime,
+    spawn_and_inject,
+)
 from app.tools.frida_session import FridaSession
 from app.tools.dynamic_collection import (
     DynamicCollectionConfig,
@@ -253,7 +266,9 @@ def _overall_status(steps: list[StepResult]) -> str:
 def _redact_device_diagnostic(
     value: Any,
     device_context: DeviceContext | None,
-) -> str:
+) -> str | None:
+    if value is None:
+        return None
     text = str(value)
     if device_context is None:
         return text
@@ -604,30 +619,86 @@ def _finalize_report(
     context: AnalysisRunContext,
     steps: list[StepResult],
 ) -> tuple[dict[str, Any], Exception | None]:
-    report_started = _utc_now()
-    successful_write = _step_result(
-        "report_write",
-        StepStatus.SUCCESS,
-        report_started,
-        outputs=[
-            str(context.report_json_path),
-            str(context.report_markdown_path),
-        ],
+    # Enrichment is deterministic and local.  It runs immediately before
+    # publishing so JSON, Markdown and the API response share one data model.
+    report["sdks"] = correlate_sdk_evidence(
+        list(report.get("sdks") or []),
+        report,
     )
-    candidate_steps = [*steps, successful_write]
+    report["sdk_count"] = len(report["sdks"])
+    risk_started = time.perf_counter()
+    risk_summary = calculate_risk_summary(report)
+    risk_duration_ms = max(
+        0,
+        int((time.perf_counter() - risk_started) * 1000),
+    )
+    report["risk_summary"] = risk_summary.model_dump()
+    report["timeline"] = build_timeline(report).model_dump()
+    report["compliance_insight"] = generate_compliance_insight(
+        risk_summary,
+        limitations=[str(item) for item in report.get("limitations") or []],
+    ).model_dump()
+    report_started = _utc_now()
+    report_write_started = time.perf_counter()
+    candidate_status = _overall_status([*steps, StepStatus.SUCCESS])
     report.update(
         {
-            "status": _overall_status(candidate_steps),
-            "ok": _overall_status(candidate_steps) != "failed",
-            "steps": _steps_payload(candidate_steps),
-            "warnings": _collect_warnings(candidate_steps),
+            "status": candidate_status,
+            "ok": candidate_status != "failed",
+            "steps": _steps_payload(steps),
+            "warnings": _collect_warnings(steps),
         }
     )
+    step_durations = {
+        step.name: step.duration_ms or 0
+        for step in steps
+    }
+    report["diagnostics"] = {
+        "snapshot_duration_ms": step_durations.get("apk_snapshot", 0),
+        "apktool_duration_ms": step_durations.get("apk_unpack", 0),
+        "manifest_duration_ms": step_durations.get("manifest_parse", 0),
+        "sdk_scan_duration_ms": step_durations.get("sdk_scan", 0),
+        "risk_scoring_duration_ms": risk_duration_ms,
+        "report_write_duration_ms": 0,
+        "total_duration_ms": max(
+            0,
+            int((_utc_now() - context.started_at).total_seconds() * 1000),
+        ),
+    }
 
     try:
         # Publish Markdown first and JSON last so report.json is the final
         # machine-readable completion marker for a run.
         write_markdown_report(report, str(context.report_markdown_path))
+        report_write_duration_ms = max(
+            0,
+            int((time.perf_counter() - report_write_started) * 1000),
+        )
+        successful_write = _step_result(
+            "report_write",
+            StepStatus.SUCCESS,
+            report_started,
+            outputs=[
+                str(context.report_json_path),
+                str(context.report_markdown_path),
+            ],
+        )
+        candidate_steps = [*steps, successful_write]
+        report.update(
+            {
+                "status": _overall_status(candidate_steps),
+                "ok": _overall_status(candidate_steps) != "failed",
+                "steps": _steps_payload(candidate_steps),
+                "warnings": _collect_warnings(candidate_steps),
+            }
+        )
+        report["diagnostics"]["report_write_duration_ms"] = (
+            report_write_duration_ms
+        )
+        report["diagnostics"]["total_duration_ms"] = max(
+            0,
+            int((_utc_now() - context.started_at).total_seconds() * 1000),
+        )
         write_json_report(report, str(context.report_json_path))
     except Exception as exc:
         failed_write = _step_result(
@@ -657,6 +728,7 @@ def env_check(device_id: str | None = None):
     adb_info = check_adb_available()
     device_info = check_device_online(device_id=device_id)
     frida_info = check_frida_connection(device_id=device_id)
+    frida_runtime_info = check_frida_device_runtime(device_id)
     mitm_listen_port = DEFAULT_MITM_PORT
     mitm_8080_listening = check_port_listening(port=mitm_listen_port)
     output_info = _check_output_writable()
@@ -671,6 +743,10 @@ def env_check(device_id: str | None = None):
         "adb_available": adb_info.get("ok", False),
         "device_online": device_info.get("ok", False),
         "frida_connectable": frida_info.get("ok", False),
+        "frida_server_running": frida_runtime_info.get(
+            "server_running",
+            False,
+        ),
         "frida_python_available": frida_python_info.get(
             "frida_python_available", False
         ),
@@ -702,6 +778,7 @@ def env_check(device_id: str | None = None):
                 serials,
             ),
             "frida": _redact_known_device_serials(frida_info, serials),
+            "frida_runtime": frida_runtime_info,
             "mitm": {"port": mitm_listen_port, "listening": mitm_8080_listening},
             "output": output_info,
             "apktool": _public(apktool_info),
@@ -769,18 +846,53 @@ def analyze(req: AnalyzeRequest):
 
     app_info: dict[str, Any] | None = None
     sdk_hits: list[dict[str, Any]] = []
+    analysis_dir = context.unpacked_dir
 
     unpack_started = _utc_now()
     try:
-        unpack_result = unpack_apk(
-            str(context.apk_path),
-            str(context.unpacked_dir),
+        apktool_info = check_apktool()
+        apktool_version = str(
+            apktool_info.get("apktool_version") or "unknown"
         )
+        configured_cache_root = os.environ.get(
+            "STATIC_UNPACK_CACHE_DIR",
+            "",
+        ).strip()
+        cache_root = Path(
+            configured_cache_root
+            or str(context.output_root / "cache" / "static-unpack")
+        )
+        cache_result = prepare_static_unpack(
+            snapshot_path=context.apk_path,
+            apk_sha256=context.apk_sha256,
+            cache_root=cache_root,
+            apktool_version=apktool_version,
+            unpacker=unpack_apk,
+        )
+        analysis_dir = cache_result.unpacked_dir
+        unpack_result = {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "",
+            "cache_hit": cache_result.cache_hit,
+            "cache_key": cache_result.cache_key,
+            "apktool_version": cache_result.apktool_version,
+            "cache_format_version": cache_result.cache_format_version,
+        }
+    except StaticUnpackCacheError as exc:
+        unpack_result = {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc),
+            "error_code": exc.code,
+            **exc.result,
+        }
     except Exception as exc:
         unpack_result = {
             "returncode": -1,
             "stdout": "",
             "stderr": f"apktool execution failed: {type(exc).__name__}",
+            "error_code": "analysis_failed",
         }
     if unpack_result.get("returncode") == 0:
         steps.append(
@@ -788,7 +900,15 @@ def analyze(req: AnalyzeRequest):
                 "apk_unpack",
                 StepStatus.SUCCESS,
                 unpack_started,
-                outputs=[str(context.unpacked_dir)],
+                outputs=[str(analysis_dir)],
+                details={
+                    "cache_hit": bool(unpack_result.get("cache_hit")),
+                    "cache_key": unpack_result.get("cache_key"),
+                    "apktool_version": unpack_result.get("apktool_version"),
+                    "cache_format_version": unpack_result.get(
+                        "cache_format_version"
+                    ),
+                },
             )
         )
     else:
@@ -797,7 +917,8 @@ def analyze(req: AnalyzeRequest):
                 "apk_unpack",
                 StepStatus.FAILED,
                 unpack_started,
-                error_code="apk_unpack_failed",
+                error_code=unpack_result.get("error_code")
+                or "apk_unpack_failed",
                 error_message=(
                     unpack_result.get("stderr")
                     or unpack_result.get("stdout")
@@ -809,7 +930,7 @@ def analyze(req: AnalyzeRequest):
     if steps[-1].status is StepStatus.SUCCESS:
         manifest_started = _utc_now()
         try:
-            app_info = parse_manifest_info(str(context.unpacked_dir))
+            app_info = parse_manifest_info(str(analysis_dir))
             steps.append(
                 _step_result(
                     "manifest_parse",
@@ -817,7 +938,7 @@ def analyze(req: AnalyzeRequest):
                     manifest_started,
                     required=False,
                     outputs=[
-                        str(context.unpacked_dir / "AndroidManifest.xml")
+                        str(analysis_dir / "AndroidManifest.xml")
                     ],
                 )
             )
@@ -835,7 +956,7 @@ def analyze(req: AnalyzeRequest):
 
         sdk_started = _utc_now()
         try:
-            sdk_hits = scan_for_sdks(str(context.unpacked_dir))
+            sdk_hits = scan_for_sdks(str(analysis_dir))
             steps.append(
                 _step_result(
                     "sdk_scan",
@@ -1017,6 +1138,32 @@ def _session_status(session: Any, device: DeviceContext) -> dict[str, Any]:
             device,
         ),
     }
+    command = value.get("command")
+    if isinstance(command, list):
+        safe["command"] = [
+            _redact_device_diagnostic(argument, device) for argument in command
+        ]
+    for name in (
+        "listen_host",
+        "listen_port",
+        "addon_path",
+        "ready_timeout",
+        "stderr_tail",
+        "exit_code",
+        "device_proxy_host",
+        "device_proxy_configured",
+        "device_proxy_restored",
+        "started_at",
+        "ready_at",
+        "stopped_at",
+    ):
+        if value.get(name) is not None:
+            item = value[name]
+            safe[name] = (
+                _redact_device_diagnostic(item, device)
+                if isinstance(item, str)
+                else item
+            )
     for name in (
         "traffic_dir",
         "flow_file",
@@ -1056,6 +1203,16 @@ def _append_collection_steps(
         "app_resume",
         "dynamic_collection",
     }
+    network_only = bool(
+        enable_traffic
+        and result.outcomes.get("mitm_ready") == "success"
+        and result.outcomes.get("frida_ready") != "success"
+        and result.outcomes.get("app_resume") == "success"
+    )
+    if network_only:
+        required.difference_update(
+            {"frida_spawn", "frida_script_load", "frida_ready"}
+        )
     for name in names:
         status_text = result.outcomes.get(name)
         if status_text is None:
@@ -1112,16 +1269,51 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
 
     app_info: dict[str, Any] | None = None
     sdk_hits: list[dict[str, Any]] = []
+    analysis_dir = context.unpacked_dir
     unpack_started = _utc_now()
     try:
-        unpack_result = unpack_apk(
-            str(context.apk_path),
-            str(context.unpacked_dir),
+        apktool_info = check_apktool()
+        apktool_version = str(
+            apktool_info.get("apktool_version") or "unknown"
         )
+        configured_cache_root = os.environ.get(
+            "STATIC_UNPACK_CACHE_DIR",
+            "",
+        ).strip()
+        cache_root = Path(
+            configured_cache_root
+            or str(context.output_root / "cache" / "static-unpack")
+        )
+        cache_result = prepare_static_unpack(
+            snapshot_path=context.apk_path,
+            apk_sha256=context.apk_sha256,
+            cache_root=cache_root,
+            apktool_version=apktool_version,
+            unpacker=unpack_apk,
+        )
+        analysis_dir = cache_result.unpacked_dir
+        unpack_result = {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "",
+            "cache_hit": cache_result.cache_hit,
+            "cache_key": cache_result.cache_key,
+            "apktool_version": cache_result.apktool_version,
+            "cache_format_version": cache_result.cache_format_version,
+        }
+    except StaticUnpackCacheError as exc:
+        unpack_result = {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc),
+            "error_code": exc.code,
+            **exc.result,
+        }
     except Exception as exc:
         unpack_result = {
             "returncode": -1,
             "stderr": f"apktool execution failed: {type(exc).__name__}",
+            "error_code": "analysis_failed",
         }
     unpack_ok = unpack_result.get("returncode") == 0
     steps.append(
@@ -1129,7 +1321,9 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             "apk_unpack",
             StepStatus.SUCCESS if unpack_ok else StepStatus.FAILED,
             unpack_started,
-            error_code=None if unpack_ok else "apk_unpack_failed",
+            error_code=None
+            if unpack_ok
+            else unpack_result.get("error_code") or "apk_unpack_failed",
             error_message=(
                 None
                 if unpack_ok
@@ -1139,14 +1333,26 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                     or "apktool failed"
                 )
             ),
-            outputs=[str(context.unpacked_dir)] if unpack_ok else [],
+            outputs=[str(analysis_dir)] if unpack_ok else [],
+            details=(
+                {
+                    "cache_hit": bool(unpack_result.get("cache_hit")),
+                    "cache_key": unpack_result.get("cache_key"),
+                    "apktool_version": unpack_result.get("apktool_version"),
+                    "cache_format_version": unpack_result.get(
+                        "cache_format_version"
+                    ),
+                }
+                if unpack_ok
+                else {}
+            ),
         )
     )
 
     if unpack_ok:
         started = _utc_now()
         try:
-            app_info = parse_manifest_info(str(context.unpacked_dir))
+            app_info = parse_manifest_info(str(analysis_dir))
             steps.append(
                 _step_result(
                     "manifest_parse",
@@ -1168,7 +1374,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             )
         started = _utc_now()
         try:
-            sdk_hits = scan_for_sdks(str(context.unpacked_dir))
+            sdk_hits = scan_for_sdks(str(analysis_dir))
             steps.append(
                 _step_result(
                     "sdk_scan",
@@ -1345,6 +1551,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                     device=device_context,
                     traffic_dir=context.traffic_dir,
                     listen_host=MITM_LISTEN_HOST,
+                    device_proxy_host=MITM_DEVICE_PROXY_HOST,
                     stop_timeout=MITM_STOP_TIMEOUT_SECONDS,
                 )
 
@@ -1376,6 +1583,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 event,
             ),
             stimulate_ui=stimulate_ui,
+            resume_without_frida=stimulate_ui,
         )
         _append_collection_steps(
             steps,
@@ -1429,54 +1637,80 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         collection_result
         and collection_result.status in {"success", "partial"}
         and frida_session is not None
+        and collection_result.outcomes.get("frida_ready") == "success"
+    )
+    network_collector_available = bool(
+        req.enable_traffic
+        and collection_result
+        and collection_result.status in {"success", "partial"}
+        and collection_result.outcomes.get("mitm_ready") == "success"
     )
     event_started = _utc_now()
-    try:
-        dynamic_events = _normalize_events(
-            transport_path,
-            context.events_path,
-            device_context=device_context,
-        )
-        event_status = (
-            StepStatus.PARTIAL
-            if getattr(frida_session, "protocol_errors", [])
-            else StepStatus.SUCCESS
-        )
-        if not hook_evidence_available:
-            raise RuntimeError("Frida collector did not become trustworthy")
-        steps.append(
-            _step_result(
-                "event_validation",
-                event_status,
-                event_started,
-                required=True,
-                outputs=[str(context.events_path)],
-                details={
-                    "event_count": len(dynamic_events),
-                    "protocol_error_count": len(
-                        getattr(frida_session, "protocol_errors", [])
-                    ),
-                },
-            )
-        )
-    except Exception as exc:
+    if not hook_evidence_available and network_collector_available:
         dynamic_events = []
-        hook_evidence_available = False
         atomic_write_json(context.events_path, [])
         steps.append(
             _step_result(
                 "event_validation",
-                StepStatus.FAILED,
+                StepStatus.SKIPPED,
                 event_started,
-                required=True,
-                error_code="hook_evidence_unavailable",
-                error_message=f"hook evidence unavailable: {type(exc).__name__}",
+                required=False,
+                warnings=[
+                    "Frida hook evidence unavailable; network-only collection retained"
+                ],
+                details={"event_count": 0, "protocol_error_count": 0},
             )
         )
-    finally:
-        if legacy_mode:
-            transport_path.unlink(missing_ok=True)
         context.events_raw_path.touch(exist_ok=True)
+    else:
+        try:
+            dynamic_events = _normalize_events(
+                transport_path,
+                context.events_path,
+                device_context=device_context,
+            )
+            event_status = (
+                StepStatus.PARTIAL
+                if getattr(frida_session, "protocol_errors", [])
+                else StepStatus.SUCCESS
+            )
+            if not hook_evidence_available:
+                raise RuntimeError("Frida collector did not become trustworthy")
+            steps.append(
+                _step_result(
+                    "event_validation",
+                    event_status,
+                    event_started,
+                    required=True,
+                    outputs=[str(context.events_path)],
+                    details={
+                        "event_count": len(dynamic_events),
+                        "protocol_error_count": len(
+                            getattr(frida_session, "protocol_errors", [])
+                        ),
+                    },
+                )
+            )
+        except Exception as exc:
+            dynamic_events = []
+            hook_evidence_available = False
+            atomic_write_json(context.events_path, [])
+            steps.append(
+                _step_result(
+                    "event_validation",
+                    StepStatus.FAILED,
+                    event_started,
+                    required=True,
+                    error_code="hook_evidence_unavailable",
+                    error_message=(
+                        f"hook evidence unavailable: {type(exc).__name__}"
+                    ),
+                )
+            )
+        finally:
+            if legacy_mode:
+                transport_path.unlink(missing_ok=True)
+            context.events_raw_path.touch(exist_ok=True)
 
     traffic_started = _utc_now()
     if not req.enable_traffic:
@@ -1600,6 +1834,17 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 )
             )
     write_traffic_summary(traffic_summary, str(context.traffic_summary_path))
+    network_evidence_available = traffic_summary.get("collector_outcome") in {
+        "collector_success_zero_requests",
+        "collector_success_requests_observed",
+    }
+    dynamic_validation_level = (
+        "A"
+        if hook_evidence_available and network_evidence_available
+        else "B"
+        if hook_evidence_available or network_evidence_available
+        else "C"
+    )
 
     sessions_payload = {
         "schema_version": SCHEMA_VERSION,
@@ -1663,7 +1908,9 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             "enable_ui_stimulation": req.enable_ui_stimulation,
             "collection_timeout_seconds": req.collection_timeout_seconds,
             "collection_status": collection_result.status,
+            "dynamic_validation_level": dynamic_validation_level,
             "dynamic_timeline": collection_result.timeline.to_dict(),
+            "collector_sessions": sessions_payload,
             "device": (
                 device_context.to_public_dict()
                 if device_context is not None

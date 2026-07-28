@@ -41,14 +41,15 @@ describe('toApiError — 后端不可达识别', () => {
     // 实现中 unreachable 先于超时判断,故无响应的超时也归为不可达类提示。
     const e = makeAxiosError({ message: 'timeout of 600000ms exceeded', code: 'ECONNABORTED' })
     const api = toApiError(e)
-    expect(api.unreachable).toBe(true)
-    expect(api.message).toContain('无法连接')
+    expect(api.unreachable).toBe(false)
+    expect(api.code).toBe('client_timeout')
   })
 
   it('ETIMEDOUT => unreachable=true', () => {
     const e = makeAxiosError({ message: 'timeout', code: 'ETIMEDOUT' })
     const api = toApiError(e)
-    expect(api.unreachable).toBe(true)
+    expect(api.unreachable).toBe(false)
+    expect(api.code).toBe('client_timeout')
   })
 
   it('message 含 "network error"(小写,无显式 code)=> unreachable=true', () => {
@@ -158,8 +159,8 @@ describe('isUnreachable 类型守卫', () => {
 describe('超时分层', () => {
   it('常量档位分隔清晰(15s / 120s / 600s)', () => {
     expect(DEFAULT_TIMEOUT_MS).toBe(15_000)
-    expect(STATIC_ANALYSIS_TIMEOUT_MS).toBe(120_000)
-    expect(DYNAMIC_ANALYSIS_BASE_TIMEOUT_MS).toBe(600_000)
+    expect(STATIC_ANALYSIS_TIMEOUT_MS).toBe(1_920_000)
+    expect(DYNAMIC_ANALYSIS_BASE_TIMEOUT_MS).toBe(2_010_000)
   })
 
   it('动态基础超时为 600 秒(600_000ms),绝不可写成 600 毫秒', () => {
@@ -168,25 +169,25 @@ describe('超时分层', () => {
   })
 
   it('collection_timeout_seconds 较小时取基础 600s,不会被压低', () => {
-    expect(dynamicAnalysisTimeoutMs(undefined)).toBe(600_000)
-    expect(dynamicAnalysisTimeoutMs(null)).toBe(600_000)
-    expect(dynamicAnalysisTimeoutMs(0)).toBe(600_000)
-    expect(dynamicAnalysisTimeoutMs(60)).toBe(600_000) // 60s 采集 + 90s 余量 仍 < 600s
-    expect(dynamicAnalysisTimeoutMs(300)).toBe(600_000) // 默认 300s 采集仍走基础值
+    expect(dynamicAnalysisTimeoutMs(undefined)).toBe(2_010_000)
+    expect(dynamicAnalysisTimeoutMs(null)).toBe(2_010_000)
+    expect(dynamicAnalysisTimeoutMs(0)).toBe(2_010_000)
+    expect(dynamicAnalysisTimeoutMs(60)).toBe(2_070_000) // 60s 采集 + 90s 余量 仍 < 600s
+    expect(dynamicAnalysisTimeoutMs(300)).toBe(2_310_000) // 默认 300s 采集仍走基础值
   })
 
   it('collection_timeout_seconds 较大时 = 采集秒数*1000 + 90s 清理余量', () => {
     // 600s 采集 => 600*1000 + 90*1000 = 690_000ms
-    expect(dynamicAnalysisTimeoutMs(600)).toBe(600_000 + 90_000)
+    expect(dynamicAnalysisTimeoutMs(600)).toBe(2_610_000)
     // 1800s 采集 => 1_890_000ms
-    expect(dynamicAnalysisTimeoutMs(1800)).toBe(1800_000 + 90_000)
+    expect(dynamicAnalysisTimeoutMs(1800)).toBe(3_810_000)
   })
 
   it('非法输入安全回退到基础 600s', () => {
-    expect(dynamicAnalysisTimeoutMs(Number.NaN)).toBe(600_000)
-    expect(dynamicAnalysisTimeoutMs(Number.POSITIVE_INFINITY)).toBe(600_000)
-    expect(dynamicAnalysisTimeoutMs(-10)).toBe(600_000) // 负数按 0 处理
-    expect(dynamicAnalysisTimeoutMs('abc' as unknown as number)).toBe(600_000)
+    expect(dynamicAnalysisTimeoutMs(Number.NaN)).toBe(2_010_000)
+    expect(dynamicAnalysisTimeoutMs(Number.POSITIVE_INFINITY)).toBe(2_010_000)
+    expect(dynamicAnalysisTimeoutMs(-10)).toBe(2_010_000) // 负数按 0 处理
+    expect(dynamicAnalysisTimeoutMs('abc' as unknown as number)).toBe(2_010_000)
   })
 
   it('动态超时 永远 > 静态超时 > 默认超时,不会因采集短而降到默认档', () => {

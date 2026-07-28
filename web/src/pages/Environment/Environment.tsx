@@ -96,6 +96,12 @@ export default function Environment() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DetailCard title="ADB 详情" data={env.data.details.adb} />
             <DetailCard title="Frida 详情" data={env.data.details.frida} />
+            {env.data.details.frida_runtime && (
+              <DetailCard
+                title="设备端 Frida 运行时"
+                data={env.data.details.frida_runtime}
+              />
+            )}
             <DetailCard title="mitmproxy 详情" data={env.data.details.mitm} />
             <DetailCard title="输出目录详情" data={env.data.details.output} />
           </div>

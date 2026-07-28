@@ -213,6 +213,7 @@ def run_dynamic_collection(
     emit_control_event: Callable[[dict[str, Any]], Any],
     clock: CollectionClock | None = None,
     stimulate_ui: Callable[[], Any] | None = None,
+    resume_without_frida: Callable[[], Any] | None = None,
 ) -> DynamicCollectionResult:
     """Run one spawn-gated collection and always clean its owned sessions.
 
@@ -229,6 +230,7 @@ def run_dynamic_collection(
     result = DynamicCollectionResult(status="success", timeline=timeline)
     mitm_attempted = False
     frida_attempted = False
+    traffic_ready = False
     collection_deadline: float | None = None
 
     def fail(exc: BaseException, fallback_code: str) -> None:
@@ -236,6 +238,15 @@ def run_dynamic_collection(
             result.primary_error_code = _error_code(exc, fallback_code)
             result.primary_error = str(exc) or type(exc).__name__
         result.status = "failed"
+
+    def degrade(exc: BaseException, fallback_code: str) -> None:
+        if result.primary_error_code is None:
+            result.primary_error_code = _error_code(exc, fallback_code)
+            result.primary_error = str(exc) or type(exc).__name__
+        result.status = "partial"
+        result.warnings.append(
+            f"{_error_code(exc, fallback_code)}: one dynamic collector is unavailable"
+        )
 
     def sleep_with_deadline(seconds: float) -> None:
         if seconds <= 0:
@@ -261,29 +272,29 @@ def run_dynamic_collection(
                 result.outcomes["mitm_start"] = "success"
             except BaseException as exc:
                 result.outcomes["mitm_start"] = "failed"
-                fail(exc, "mitm_start_failed")
-                return result
-            try:
-                ready = _call_timeout_method(
-                    mitm_session,
-                    "wait_ready",
-                    config.mitm_ready_timeout_seconds,
-                )
-                if ready is False:
-                    raise _session_error(
+                result.outcomes["mitm_ready"] = "skipped"
+                degrade(exc, "mitm_start_failed")
+            else:
+                try:
+                    ready = _call_timeout_method(
                         mitm_session,
-                        "mitm_ready_failed",
-                        "mitm session did not become ready",
+                        "wait_ready",
+                        config.mitm_ready_timeout_seconds,
                     )
-                result.outcomes["mitm_ready"] = "success"
-            except TimeoutError as exc:
-                result.outcomes["mitm_ready"] = "failed"
-                fail(exc, "mitm_ready_timeout")
-                return result
-            except BaseException as exc:
-                result.outcomes["mitm_ready"] = "failed"
-                fail(exc, "mitm_ready_failed")
-                return result
+                    if ready is False:
+                        raise _session_error(
+                            mitm_session,
+                            "mitm_ready_failed",
+                            "mitm session did not become ready",
+                        )
+                    result.outcomes["mitm_ready"] = "success"
+                    traffic_ready = True
+                except TimeoutError as exc:
+                    result.outcomes["mitm_ready"] = "failed"
+                    degrade(exc, "mitm_ready_timeout")
+                except BaseException as exc:
+                    result.outcomes["mitm_ready"] = "failed"
+                    degrade(exc, "mitm_ready_failed")
         else:
             result.outcomes["mitm_start"] = "skipped"
             result.outcomes["mitm_ready"] = "skipped"
@@ -315,10 +326,55 @@ def run_dynamic_collection(
             )
             result.outcomes["frida_script_load"] = (
                 "failed"
-                if session_error_code == "frida_script_load_failed"
+                if session_error_code in {"frida_attach_failed", "hook_load_failed"}
                 else "skipped"
             )
-            fail(exc, "frida_spawn_failed")
+            result.outcomes["frida_ready"] = "skipped"
+            if not traffic_ready or mitm_session is None:
+                fail(exc, "frida_spawn_failed")
+                return result
+            degrade(exc, "frida_spawn_failed")
+            collection_deadline = (
+                active_clock.monotonic() + config.collection_timeout_seconds
+            )
+            timeline.collection_started_at = active_clock.utc_now()
+            timeline.collection_started_monotonic_ms = (
+                active_clock.monotonic() * 1000.0
+            )
+            try:
+                mark_collecting = getattr(
+                    mitm_session,
+                    "mark_collecting",
+                    None,
+                )
+                if callable(mark_collecting):
+                    mark_collecting()
+                if resume_without_frida is None:
+                    raise RuntimeError(
+                        "network-only collection has no app launch callback"
+                    )
+                resume_without_frida()
+                result.outcomes["app_resume"] = "success"
+                timeline.app_resumed_at = active_clock.utc_now()
+                timeline.app_resumed_monotonic_ms = (
+                    active_clock.monotonic() * 1000.0
+                )
+                # There is no trustworthy consent boundary without Hook-ready.
+                result.outcomes["consent_event"] = "skipped"
+                network_window = max(
+                    config.pre_consent_seconds,
+                    (config.consent_after_seconds or 0)
+                    + config.post_consent_seconds,
+                )
+                sleep_with_deadline(network_window)
+                result.outcomes["dynamic_collection"] = "partial"
+            except TimeoutError as network_exc:
+                result.outcomes["dynamic_collection"] = "failed"
+                fail(network_exc, "dynamic_collection_timeout")
+            except BaseException as network_exc:
+                result.outcomes["app_resume"] = "failed"
+                result.outcomes["dynamic_collection"] = "failed"
+                fail(network_exc, "network_only_collection_failed")
             return result
 
         try:
@@ -330,13 +386,13 @@ def run_dynamic_collection(
             if ready is False:
                 raise _session_error(
                     frida_session,
-                    "frida_ready_timeout",
+                    "hook_ready_timeout",
                     "Frida session did not become ready",
                 )
             result.outcomes["frida_ready"] = "success"
         except TimeoutError as exc:
             result.outcomes["frida_ready"] = "failed"
-            fail(exc, "frida_ready_timeout")
+            fail(exc, "hook_ready_timeout")
             return result
         except BaseException as exc:
             result.outcomes["frida_ready"] = "failed"
@@ -357,7 +413,7 @@ def run_dynamic_collection(
                 _control_event("collection_started", active_clock)
             )
             mark_collecting = getattr(mitm_session, "mark_collecting", None)
-            if config.enable_traffic and callable(mark_collecting):
+            if traffic_ready and callable(mark_collecting):
                 mark_collecting()
         except BaseException as exc:
             result.outcomes["dynamic_collection"] = "failed"

@@ -8,6 +8,7 @@
  */
 import { makeLocalRunId } from '@/utils'
 import type { AnalyzeResponse } from '@/types/api'
+import type { RiskLevel } from '@/types/api'
 
 const STORAGE_KEY = 'adsdk-agent:local-tasks:v1'
 const MAX_RECORDS = 100
@@ -25,6 +26,8 @@ export interface LocalTaskRecord {
   created_at: string // ISO
   status: string | null // AnalyzeResponse.status
   sdk_count: number | null
+  risk_score?: number | null
+  risk_level?: RiskLevel | null
   has_report: boolean
   report_md_path: string | null
   artifacts_count: number
@@ -132,6 +135,8 @@ export function recordTask(
     created_at: new Date().toISOString(),
     status: result?.status ?? failure ? 'failed' : null,
     sdk_count: result?.sdk_count ?? null,
+    risk_score: result?.risk_summary?.score ?? null,
+    risk_level: result?.risk_summary?.level ?? null,
     has_report: Boolean(result?.report_md) || Boolean(result?.report_json),
     report_md_path: result?.report_md ?? null,
     artifacts_count: result?.artifacts?.length ?? 0,
