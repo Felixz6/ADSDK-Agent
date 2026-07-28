@@ -81,6 +81,13 @@ export interface EnvCheckFrida {
   cmd: string[]
 }
 
+export interface EnvCheckFridaRuntime {
+  status: 'device_not_selected' | 'server_available' | 'server_not_observed'
+  server_running: boolean
+  abi: string | null
+  mode_hint: string
+}
+
 export interface EnvCheckMitm {
   port: number
   listening: boolean
@@ -121,6 +128,7 @@ export interface EnvCheckSummary {
   adb_available: boolean
   device_online: boolean
   frida_connectable: boolean
+  frida_server_running?: boolean
   /** 后端较新版本新增;旧后端不返回 ⇒ undefined ⇒ 前端展示「未提供」。 */
   frida_python_available?: boolean
   apktool_available?: boolean
@@ -134,6 +142,7 @@ export interface EnvCheckDetails {
   adb: EnvCheckAdb
   device: EnvCheckDevice
   frida: EnvCheckFrida
+  frida_runtime?: EnvCheckFridaRuntime
   mitm: EnvCheckMitm
   output: EnvCheckOutput
   /**
@@ -238,6 +247,12 @@ export interface AppInfo {
   version_name: string | null
   version_code: string | number | null
   application_label: string | null
+  permissions?: string[]
+  declared_permissions?: string[]
+  custom_permissions?: string[]
+  component_permissions?: string[]
+  sensitive_permissions?: string[]
+  high_attention_permissions?: string[]
 }
 
 /** 证据项 */
@@ -250,11 +265,92 @@ export interface SdkEvidence {
 
 /** SDK 命中项 */
 export interface SdkHit {
+  id?: string | null
   sdk_name: string
   package: string
+  vendor?: string | null
+  category?: string | null
+  risk_level?: RiskLevel | null
   confidence: number
   version: string | null
   evidence: SdkEvidence[]
+  capabilities?: string[]
+  static_only?: boolean
+  dynamic_correlated?: boolean
+}
+
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
+export type RiskConfidence = 'low' | 'medium' | 'high'
+
+export interface RiskCategoryScore {
+  category: string
+  label: string
+  score: number
+  max_score: number
+}
+
+export interface TopRisk {
+  id: string
+  title: string
+  severity: RiskLevel
+  score: number
+  evidence_refs: string[]
+}
+
+export interface RiskSummary {
+  score: number
+  level: RiskLevel
+  confidence: RiskConfidence
+  evaluated_rule_count: number
+  unevaluated_rule_count: number
+  category_scores: RiskCategoryScore[]
+  top_risks: TopRisk[]
+  confidence_reasons: string[]
+  calculation_version: string
+}
+
+export interface TimelineEvent {
+  id: string
+  relative_ms: number | null
+  timestamp_utc: string | null
+  source: 'frida' | 'network' | 'system' | 'control'
+  category: string
+  title: string
+  description: string
+  consent_state: ConsentState
+  severity: RiskLevel
+  evidence_ref: string | null
+}
+
+export interface BehaviorTimelineData {
+  start_monotonic: number | null
+  consent_monotonic: number | null
+  timing_reliable: boolean
+  warnings: string[]
+  events: TimelineEvent[]
+  timeline_version: string
+}
+
+export interface ComplianceFinding {
+  title: string
+  severity: RiskLevel
+  summary: string
+  recommendation: string
+  evidence_refs: string[]
+}
+
+export interface PriorityAction {
+  priority: 'P0' | 'P1' | 'P2'
+  action: string
+  reason: string
+}
+
+export interface ComplianceInsightData {
+  overall_assessment: string
+  key_findings: ComplianceFinding[]
+  priority_actions: PriorityAction[]
+  limitations: string[]
+  generator_version: string
 }
 
 /** 静态分析步骤结果 */
@@ -515,8 +611,27 @@ export interface AnalyzeResponse {
   enable_ui_stimulation: boolean | null
   collection_timeout_seconds: number | null
   collection_status: CollectionStatus | null
+  dynamic_validation_level?: 'A' | 'B' | 'C' | null
   traffic_coverage: TrafficCoverage | null
   dynamic_timeline: DynamicTimeline | null
+  collector_sessions?: {
+    frida?: Record<string, unknown> | null
+    mitm?: Record<string, unknown> | null
+    collection_status?: CollectionStatus
+    [key: string]: unknown
+  } | null
+  risk_summary?: RiskSummary | null
+  timeline?: BehaviorTimelineData | null
+  compliance_insight?: ComplianceInsightData | null
+  diagnostics?: {
+    snapshot_duration_ms: number
+    apktool_duration_ms: number
+    manifest_duration_ms: number
+    sdk_scan_duration_ms: number
+    risk_scoring_duration_ms: number
+    report_write_duration_ms: number
+    total_duration_ms: number
+  } | null
   error: string | null
   error_code: string | null
   limitations: string[]

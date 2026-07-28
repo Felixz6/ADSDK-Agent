@@ -9,11 +9,11 @@ import type {
 } from '@/types/api'
 
 /**
- * POST /analyze  提交静态分析(长耗时同步,超时 120 秒)
+ * POST /analyze  提交静态分析(长耗时同步,超时 720 秒)
  */
 export async function submitStaticAnalysis(req: AnalyzeRequest): Promise<AnalyzeResponse> {
   const { data } = await api.post<AnalyzeResponse>('/analyze', req, STATIC_SUBMIT_CONFIG)
-  return data
+  return normalizeAnalyzeResponse(data)
 }
 
 /**
@@ -28,5 +28,38 @@ export async function submitDynamicAnalysis(req: DynamicAnalyzeRequest): Promise
     req,
     dynamicSubmitConfig(req.collection_timeout_seconds),
   )
-  return data
+  return normalizeAnalyzeResponse(data)
+}
+
+/** Central compatibility boundary for reports produced before enrichment-v1. */
+export function normalizeAnalyzeResponse(data: AnalyzeResponse): AnalyzeResponse {
+  const appInfo = data.app_info
+  const declaredPermissions = appInfo
+    ? Array.isArray(appInfo.declared_permissions)
+      ? appInfo.declared_permissions
+      : Array.isArray(appInfo.permissions)
+        ? appInfo.permissions
+        : []
+    : undefined
+  return {
+    ...data,
+    app_info: appInfo
+      ? {
+          ...appInfo,
+          permissions: Array.isArray(appInfo.permissions) ? appInfo.permissions : declaredPermissions,
+          declared_permissions: declaredPermissions,
+          custom_permissions: Array.isArray(appInfo.custom_permissions) ? appInfo.custom_permissions : [],
+          component_permissions: Array.isArray(appInfo.component_permissions) ? appInfo.component_permissions : [],
+          sensitive_permissions: Array.isArray(appInfo.sensitive_permissions) ? appInfo.sensitive_permissions : [],
+          high_attention_permissions: Array.isArray(appInfo.high_attention_permissions) ? appInfo.high_attention_permissions : [],
+        }
+      : appInfo,
+    sdks: Array.isArray(data.sdks) ? data.sdks : [],
+    dynamic_events: Array.isArray(data.dynamic_events) ? data.dynamic_events : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings : [],
+    limitations: Array.isArray(data.limitations) ? data.limitations : [],
+    risk_summary: data.risk_summary ?? null,
+    timeline: data.timeline ?? null,
+    compliance_insight: data.compliance_insight ?? null,
+  }
 }

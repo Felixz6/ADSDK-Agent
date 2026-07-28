@@ -76,6 +76,7 @@ traffic/requests.jsonl
 # ===== Agent / 工作区本地缓存 =====
 .agents/
 .claude/
+.codegraph/
 
 # Local analysis tool binaries
 /tools/

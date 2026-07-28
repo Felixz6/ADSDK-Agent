@@ -8,8 +8,16 @@ import {
   Hand,
   Network,
   Download,
+  Boxes,
+  Megaphone,
+  BadgeCheck,
+  ShieldAlert,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
+import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
+import { SdkIntelligencePanel } from '@/components/analysis/SdkIntelligencePanel'
+import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryPanel'
+import { ComplianceInsight } from '@/components/report/ComplianceInsight'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { EmptyState } from '@/components/common/States'
@@ -37,6 +45,9 @@ export default function Reports() {
   const mild = resp.dynamic_findings
   const counts = countStatuses([...(strict?.rules ?? []), ...(mild?.rules ?? [])])
   const traffic = resp.traffic_summary
+  const advertisingSdkCount = resp.sdks.filter((sdk) => sdk.category === 'advertising').length
+  const dynamicSdkCount = resp.sdks.filter((sdk) => sdk.dynamic_correlated).length
+  const attentionSdkCount = resp.sdks.filter((sdk) => sdk.risk_level === 'high' || sdk.risk_level === 'critical').length
 
   return (
     <div className="flex flex-col gap-5">
@@ -52,6 +63,23 @@ export default function Reports() {
         <StatCard label="未评估" value={counts.not_evaluated} tone="neutral" icon={<ShieldQuestion size={18} />} />
         <StatCard label="异常" value={counts.error} tone="warning" icon={<Activity size={18} />} />
       </div>
+
+      <RiskSummaryCard summary={resp.risk_summary} />
+
+      <ComplianceInsight insight={resp.compliance_insight} />
+      <PermissionSummaryPanel appInfo={resp.app_info} />
+
+      {resp.sdks.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatCard label="SDK 总数" value={resp.sdks.length} tone="default" icon={<Boxes size={18} />} />
+            <StatCard label="广告 SDK" value={advertisingSdkCount} tone="accent" icon={<Megaphone size={18} />} />
+            <StatCard label="动态佐证" value={dynamicSdkCount} tone="success" icon={<BadgeCheck size={18} />} />
+            <StatCard label="高关注 SDK" value={attentionSdkCount} tone="warning" icon={<ShieldAlert size={18} />} />
+          </div>
+          <SdkIntelligencePanel sdks={resp.sdks} />
+        </>
+      )}
 
       <div className="flex items-center gap-1 glass rounded-[12px] p-1 w-fit">
         {([

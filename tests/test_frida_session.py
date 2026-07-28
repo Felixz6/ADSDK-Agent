@@ -87,11 +87,13 @@ class FakeDevice:
         script: FakeScript,
         *,
         spawn_error: Exception | None = None,
+        attach_error: Exception | None = None,
     ) -> None:
         self.id = serial
         self.calls = calls
         self.script = script
         self.spawn_error = spawn_error
+        self.attach_error = attach_error
         self.attached = FakeAttachedSession(calls, script)
 
     def spawn(self, argv: list[str]) -> int:
@@ -102,6 +104,8 @@ class FakeDevice:
 
     def attach(self, pid: int) -> FakeAttachedSession:
         self.calls.append(("device.attach", pid))
+        if self.attach_error is not None:
+            raise self.attach_error
         return self.attached
 
     def resume(self, pid: int) -> None:
@@ -127,6 +131,7 @@ def _make_session(
     serial: str = "SERIAL-EXACT-2",
     load_error: Exception | None = None,
     spawn_error: Exception | None = None,
+    attach_error: Exception | None = None,
     unload_gate: threading.Event | None = None,
 ):
     calls: list[tuple] = []
@@ -142,6 +147,7 @@ def _make_session(
         calls,
         script,
         spawn_error=spawn_error,
+        attach_error=attach_error,
     )
     adapter = FakeAdapter(device, calls)
     session = FridaSession(
@@ -210,8 +216,8 @@ def test_ready_timeout_never_resumes_and_preserves_error_code(tmp_path):
     with pytest.raises(FridaSessionError) as captured:
         session.wait_ready(timeout_seconds=0.001)
 
-    assert captured.value.code == "frida_ready_timeout"
-    assert session.error_code == "frida_ready_timeout"
+    assert captured.value.code == "hook_ready_timeout"
+    assert session.error_code == "hook_ready_timeout"
     assert session.state is FridaSessionState.FAILED
     assert not any(call[0] == "device.resume" for call in calls)
     assert ("device.kill", 4242) in calls
@@ -230,7 +236,7 @@ def test_mismatched_ready_session_is_protocol_error_not_ready(tmp_path):
     with pytest.raises(FridaSessionError) as captured:
         session.wait_ready(timeout_seconds=0.001)
 
-    assert captured.value.code == "frida_ready_timeout"
+    assert captured.value.code == "hook_ready_timeout"
     assert session.protocol_errors
     assert session.protocol_errors[0]["code"] == "session_mismatch"
 
@@ -303,7 +309,7 @@ def test_collection_and_consent_controls_share_device_monotonic_stream(tmp_path)
     ("failure_kind", "expected_code"),
     [
         ("spawn", "frida_spawn_failed"),
-        ("load", "frida_script_load_failed"),
+        ("load", "hook_load_failed"),
     ],
 )
 def test_start_failure_maps_to_specific_error(tmp_path, failure_kind, expected_code):
@@ -322,6 +328,46 @@ def test_start_failure_maps_to_specific_error(tmp_path, failure_kind, expected_c
 
     assert captured.value.code == expected_code
     assert session.error_code == expected_code
+    assert session.state is FridaSessionState.FAILED
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_code"),
+    [
+        (
+            RuntimeError("need Gadget to attach on jailed Android"),
+            "frida_server_unavailable",
+        ),
+        (
+            RuntimeError("incompatible frida version protocol mismatch"),
+            "frida_version_mismatch",
+        ),
+    ],
+)
+def test_spawn_runtime_failures_are_precisely_classified(
+    tmp_path,
+    error,
+    expected_code,
+):
+    session, _script, _calls = _make_session(tmp_path, spawn_error=error)
+
+    with pytest.raises(FridaSessionError) as captured:
+        session.start()
+
+    assert captured.value.code == expected_code
+
+
+def test_attach_failure_is_distinct_from_hook_load_failure(tmp_path):
+    session, _script, _calls = _make_session(
+        tmp_path,
+        attach_error=RuntimeError("attach denied"),
+    )
+
+    with pytest.raises(FridaSessionError) as captured:
+        session.start()
+
+    assert captured.value.code == "frida_attach_failed"
+    assert session.error_code == "frida_attach_failed"
     assert session.state is FridaSessionState.FAILED
 
 

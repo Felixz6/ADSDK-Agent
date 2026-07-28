@@ -164,7 +164,7 @@ def test_frida_ready_failure_cleans_only_started_mitm_session() -> None:
     )
 
     assert result.status == "failed"
-    assert result.primary_error_code == "frida_ready_timeout"
+    assert result.primary_error_code == "hook_ready_timeout"
     assert calls == [
         "mitm.start",
         "mitm.wait_ready",
@@ -177,7 +177,7 @@ def test_frida_ready_failure_cleans_only_started_mitm_session() -> None:
     assert mitm.stop_calls == 1
 
 
-def test_mitm_ready_failure_prevents_frida_start_and_releases_mitm() -> None:
+def test_mitm_ready_failure_degrades_to_hook_only_and_releases_mitm() -> None:
     DynamicCollectionConfig, run_dynamic_collection = _import_collection_api()
     calls: list[str] = []
     frida = FakeFridaSession(calls)
@@ -195,10 +195,56 @@ def test_mitm_ready_failure_prevents_frida_start_and_releases_mitm() -> None:
         clock=FakeClock(),
     )
 
-    assert result.status == "failed"
+    assert result.status == "partial"
     assert result.primary_error_code == "mitm_ready_timeout"
-    assert calls == ["mitm.start", "mitm.wait_ready", "mitm.stop"]
-    assert frida.stop_calls == 0
+    assert calls == [
+        "mitm.start",
+        "mitm.wait_ready",
+        "frida.start",
+        "frida.wait_ready",
+        "frida.resume",
+        "frida.stop",
+        "mitm.stop",
+    ]
+    assert frida.stop_calls == 1
+
+
+def test_frida_failure_degrades_to_network_only_without_consent() -> None:
+    DynamicCollectionConfig, run_dynamic_collection = _import_collection_api()
+    calls: list[str] = []
+
+    class NetworkMitm(FakeMitmSession):
+        def mark_collecting(self) -> None:
+            calls.append("mitm.mark_collecting")
+
+    frida = FakeFridaSession(
+        calls,
+        start_error=RuntimeError("need Gadget to attach on jailed Android"),
+    )
+    mitm = NetworkMitm(calls)
+
+    result = run_dynamic_collection(
+        frida_session=frida,
+        mitm_session=mitm,
+        config=DynamicCollectionConfig(
+            consent_after_seconds=8,
+            pre_consent_seconds=10,
+            post_consent_seconds=10,
+        ),
+        emit_control_event=lambda _: pytest.fail(
+            "network-only mode must not synthesize consent controls"
+        ),
+        resume_without_frida=lambda: calls.append("adb.launch"),
+        clock=FakeClock(),
+    )
+
+    assert result.status == "partial"
+    assert result.outcomes["frida_spawn"] == "failed"
+    assert result.outcomes["app_resume"] == "success"
+    assert result.outcomes["consent_event"] == "skipped"
+    assert result.timeline.consent_at is None
+    assert "mitm.mark_collecting" in calls
+    assert "adb.launch" in calls
 
 
 def test_primary_failure_and_cleanup_failures_are_preserved_together() -> None:

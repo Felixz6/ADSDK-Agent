@@ -165,6 +165,10 @@ def _install_common_fakes(
         )
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / ".source_apk").write_text(str(apk_path), encoding="utf-8")
+        (out_dir / "AndroidManifest.xml").write_text(
+            "<manifest package='fixture'/>",
+            encoding="utf-8",
+        )
         return _result_ok()
 
     def fake_manifest(unpack_dir: str) -> dict[str, str]:

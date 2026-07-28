@@ -76,6 +76,7 @@ function boolToStatus(value: boolean | null | undefined, env: EnvCheckResponse |
 export function EnvironmentStatusCard({ env, traffic, trafficTriggered }: EnvironmentStatusCardProps) {
   const apktool: EnvCheckApktool | undefined = env?.details.apktool
   const fridaPython: EnvCheckFridaPython | undefined = env?.details.frida_python
+  const fridaRuntime = env?.details.frida_runtime
   const redaction: EnvCheckRedactionHmacKey | undefined = env?.details.redaction_hmac_key
   const allowedRoots: string[] | undefined = env?.details.apk_allowed_roots
 
@@ -235,6 +236,16 @@ export function EnvironmentStatusCard({ env, traffic, trafficTriggered }: Enviro
       status: fridaPyStatus,
       detail: fridaPyDetail,
       note: fridaPyNote,
+    },
+    {
+      key: 'frida-runtime',
+      label: '设备端 Frida 运行时',
+      icon: Activity,
+      status: boolToStatus(fridaRuntime?.server_running, env ?? null),
+      detail: fridaRuntime
+        ? `${fridaRuntime.status}${fridaRuntime.abi ? ` · ${fridaRuntime.abi}` : ''}`
+        : undefined,
+      note: fridaRuntime?.mode_hint,
     },
     {
       key: 'mitm',

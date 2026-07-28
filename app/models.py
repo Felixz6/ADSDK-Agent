@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -58,12 +58,24 @@ class EvidenceRef(BaseModel):
     description: Optional[str] = None
 
 
+RiskLevel = Literal["low", "medium", "high", "critical"]
+RiskConfidence = Literal["low", "medium", "high"]
+ConsentState = Literal["pre_consent", "post_consent", "unknown"]
+
+
 class SDKHit(BaseModel):
+    id: Optional[str] = None
     sdk_name: str
     package: str
+    vendor: Optional[str] = None
+    category: Optional[str] = None
+    risk_level: Optional[RiskLevel] = None
     confidence: float = 0.8
     version: Optional[str] = None
     evidence: List[EvidenceRef] = Field(default_factory=list)
+    capabilities: List[str] = Field(default_factory=list)
+    static_only: bool = True
+    dynamic_correlated: bool = False
 
 
 class AppInfo(BaseModel):
@@ -71,6 +83,93 @@ class AppInfo(BaseModel):
     version_name: Optional[str] = None
     version_code: Optional[str] = None
     application_label: Optional[str] = None
+    permissions: List[str] = Field(default_factory=list)
+    declared_permissions: List[str] = Field(default_factory=list)
+    custom_permissions: List[str] = Field(default_factory=list)
+    component_permissions: List[str] = Field(default_factory=list)
+    sensitive_permissions: List[str] = Field(default_factory=list)
+    high_attention_permissions: List[str] = Field(default_factory=list)
+
+
+class RiskCategoryScore(BaseModel):
+    category: str
+    label: str
+    score: int = Field(ge=0, le=100)
+    max_score: int = Field(ge=0, le=100)
+
+
+class TopRisk(BaseModel):
+    id: str
+    title: str
+    severity: RiskLevel
+    score: int = Field(ge=0, le=100)
+    evidence_refs: List[str] = Field(default_factory=list)
+
+
+class RiskSummary(BaseModel):
+    score: int = Field(ge=0, le=100)
+    level: RiskLevel
+    confidence: RiskConfidence
+    evaluated_rule_count: int = Field(ge=0)
+    unevaluated_rule_count: int = Field(ge=0)
+    category_scores: List[RiskCategoryScore] = Field(default_factory=list)
+    top_risks: List[TopRisk] = Field(default_factory=list)
+    confidence_reasons: List[str] = Field(default_factory=list)
+    calculation_version: str = "risk-v1"
+
+
+class TimelineEvent(BaseModel):
+    id: str
+    relative_ms: Optional[int] = Field(default=None, ge=0)
+    timestamp_utc: Optional[str] = None
+    source: Literal["frida", "network", "system", "control"]
+    category: str
+    title: str
+    description: str
+    consent_state: ConsentState
+    severity: RiskLevel
+    evidence_ref: Optional[str] = None
+
+
+class BehaviorTimeline(BaseModel):
+    start_monotonic: Optional[float] = None
+    consent_monotonic: Optional[float] = None
+    timing_reliable: bool = False
+    warnings: List[str] = Field(default_factory=list)
+    events: List[TimelineEvent] = Field(default_factory=list)
+    timeline_version: str = "timeline-v1"
+
+
+class ComplianceFinding(BaseModel):
+    title: str
+    severity: RiskLevel
+    summary: str
+    recommendation: str
+    evidence_refs: List[str] = Field(default_factory=list)
+
+
+class PriorityAction(BaseModel):
+    priority: Literal["P0", "P1", "P2"]
+    action: str
+    reason: str
+
+
+class ComplianceInsight(BaseModel):
+    overall_assessment: str
+    key_findings: List[ComplianceFinding] = Field(default_factory=list)
+    priority_actions: List[PriorityAction] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+    generator_version: str = "insight-v1"
+
+
+class AnalysisDiagnostics(BaseModel):
+    snapshot_duration_ms: int = Field(default=0, ge=0)
+    apktool_duration_ms: int = Field(default=0, ge=0)
+    manifest_duration_ms: int = Field(default=0, ge=0)
+    sdk_scan_duration_ms: int = Field(default=0, ge=0)
+    risk_scoring_duration_ms: int = Field(default=0, ge=0)
+    report_write_duration_ms: int = Field(default=0, ge=0)
+    total_duration_ms: int = Field(default=0, ge=0)
 
 
 class AnalyzeResponse(BaseModel):
@@ -111,8 +210,14 @@ class AnalyzeResponse(BaseModel):
     enable_ui_stimulation: Optional[bool] = None
     collection_timeout_seconds: Optional[int] = None
     collection_status: Optional[str] = None
+    dynamic_validation_level: Optional[str] = None
     traffic_coverage: Optional[str] = None
     dynamic_timeline: Optional[Dict[str, Any]] = None
+    collector_sessions: Optional[Dict[str, Any]] = None
+    risk_summary: Optional[RiskSummary] = None
+    timeline: Optional[BehaviorTimeline] = None
+    compliance_insight: Optional[ComplianceInsight] = None
+    diagnostics: Optional[AnalysisDiagnostics] = None
     error: Optional[str] = None
     error_code: Optional[str] = None
     limitations: List[str] = Field(default_factory=list)

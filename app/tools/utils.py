@@ -1,5 +1,6 @@
 import os
 import shutil
+import signal
 import subprocess
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -47,6 +48,17 @@ def _resolve_spawn_argv(cmd: List[str]) -> List[str]:
     head = cmd[0]
     resolved = shutil.which(head)
     if resolved and resolved.lower().endswith((".bat", ".cmd")):
+        # The bundled apktool wrapper is a one-line ``java -jar`` launcher.
+        # Spawn Java directly so timeout ownership stays on the long-running
+        # process instead of an intermediate cmd.exe that may exit first.
+        if os.path.basename(head).casefold() == "apktool":
+            companion_jar = os.path.join(
+                os.path.dirname(resolved),
+                "apktool.jar",
+            )
+            java = shutil.which("java")
+            if java and os.path.isfile(companion_jar):
+                return [java, "-jar", companion_jar, *cmd[1:]]
         return ["cmd.exe", "/c", *cmd]
     return cmd
 
@@ -63,27 +75,61 @@ def run_cmd(
     of raising, so callers can keep using the same ``returncode`` contract.
     """
     spawn_argv = _resolve_spawn_argv(cmd)
+    process: subprocess.Popen[str] | None = None
     try:
-        result = subprocess.run(
+        process_options = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "shell": False,
+            "cwd": cwd,
+        }
+        if os.name == "nt":
+            process_options["creationflags"] = getattr(
+                subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                0,
+            )
+        else:
+            process_options["start_new_session"] = True
+        process = subprocess.Popen(
             spawn_argv,
-            capture_output=True,
-            text=True,
-            shell=False,
-            cwd=cwd,
-            timeout=timeout,
+            **process_options,
         )
+        stdout, stderr = process.communicate(timeout=timeout)
         return {
-            "returncode": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "returncode": process.returncode,
+            "stdout": stdout,
+            "stderr": stderr,
             "cmd": cmd,
+            "timed_out": False,
         }
     except subprocess.TimeoutExpired as e:
+        if process is not None:
+            _terminate_owned_process_tree(process)
+            try:
+                stdout, stderr = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                try:
+                    stdout, stderr = process.communicate(timeout=1)
+                except (subprocess.TimeoutExpired, OSError):
+                    stdout, stderr = e.stdout or "", e.stderr or ""
+                    for pipe in (process.stdout, process.stderr):
+                        if pipe is not None:
+                            try:
+                                pipe.close()
+                            except OSError:
+                                pass
+        else:
+            stdout, stderr = e.stdout or "", e.stderr or ""
         return {
             "returncode": -1,
-            "stdout": e.stdout or "",
-            "stderr": e.stderr or f"command timed out after {timeout}s",
+            "stdout": stdout or e.stdout or "",
+            "stderr": stderr or e.stderr or f"command timed out after {timeout}s",
             "cmd": cmd,
+            "timed_out": True,
+            "error_code": "command_timeout",
         }
     except FileNotFoundError as e:
         return {
@@ -91,4 +137,33 @@ def run_cmd(
             "stdout": "",
             "stderr": str(e),
             "cmd": cmd,
+            "timed_out": False,
         }
+
+
+def _terminate_owned_process_tree(process: subprocess.Popen[str]) -> None:
+    """Terminate the exact spawned command tree after a hard timeout."""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            completed = subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=False,
+                timeout=5,
+                check=False,
+            )
+            if completed.returncode == 0 or process.poll() is not None:
+                return
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            return
+        except OSError:
+            pass
+    process.kill()

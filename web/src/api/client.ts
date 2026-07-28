@@ -38,18 +38,19 @@ export interface ApiError {
  * - 默认轻量接口(/、/env/check、/traffic/check):15 秒。这些接口只做
  *   本地环境探测,正常应在亚秒级返回;15 秒足以覆盖慢启动,但不会让用户
  *   长时间挂着等待。
- * - 静态分析(POST /analyze):120 秒。解包 + Manifest 解析 + SDK 规则
- *   识别为同步耗时操作,需要更长的窗口。
- * - 动态分析(POST /dynamic/analyze):基础 600 秒(= 10 分钟),并按后端
- *   DynamicAnalyzeRequest.collection_timeout_seconds 额外增加清理余量,
+ * - 静态分析(POST /analyze):1920 秒。后端 apktool 上限为 1800 秒，
+ *   额外窗口用于快照、扫描、报告写入和网络返回；热缓存通常远低于此值。
+ * - 动态分析(POST /dynamic/analyze):静态链路 1920 秒 + 90 秒清理余量,
+ *   再叠加 DynamicAnalyzeRequest.collection_timeout_seconds,
  *   避免后端仍在采集时前端先超时。注意:600_000 是 600 秒(毫秒),不是
  *   600 毫秒 —— 与 collection_timeout_seconds(秒)联动时务必乘以 1000。
  */
 export const DEFAULT_TIMEOUT_MS = 15_000
-export const STATIC_ANALYSIS_TIMEOUT_MS = 120_000
-export const DYNAMIC_ANALYSIS_BASE_TIMEOUT_MS = 600_000
+export const STATIC_ANALYSIS_TIMEOUT_MS = 1_920_000
 /** 动态分析请求超时之外,额外预留的清理余量(毫秒)。 */
 export const DYNAMIC_ANALYSIS_CLEANUP_MARGIN_MS = 90_000
+export const DYNAMIC_ANALYSIS_BASE_TIMEOUT_MS =
+  STATIC_ANALYSIS_TIMEOUT_MS + DYNAMIC_ANALYSIS_CLEANUP_MARGIN_MS
 
 /** 动态分析接口超时(根据 collection_timeout_seconds 动态计算,单位毫秒)。 */
 export function dynamicAnalysisTimeoutMs(
@@ -59,12 +60,7 @@ export function dynamicAnalysisTimeoutMs(
     ? Number(collectionTimeoutSeconds)
     : 0
   const base = Math.max(0, seconds) * 1000
-  // 取「固定基础 600s」与「collection_timeout + 清理余量」二者较大值,
-  // 保证即便 collection_timeout_seconds 较小也不会过早就绪断开。
-  return Math.max(
-    DYNAMIC_ANALYSIS_BASE_TIMEOUT_MS,
-    base + DYNAMIC_ANALYSIS_CLEANUP_MARGIN_MS,
-  )
+  return DYNAMIC_ANALYSIS_BASE_TIMEOUT_MS + base
 }
 
 const instance: AxiosInstance = axios.create({
@@ -102,11 +98,11 @@ instance.interceptors.response.use(
 export function toApiError(error: unknown): ApiError {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status ?? null
+    const timedOut =
+      error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT'
     const unreachable =
       !error.response &&
       (error.code === 'ERR_NETWORK' ||
-        error.code === 'ECONNABORTED' ||
-        error.code === 'ETIMEDOUT' ||
         error.message?.toLowerCase().includes('network error') ||
         false)
 
@@ -120,13 +116,15 @@ export function toApiError(error: unknown): ApiError {
       message =
         (typeof p.detail === 'string' && p.detail) ||
         (typeof p.message === 'string' && p.message) ||
+        (typeof p.error === 'string' && p.error) ||
         ''
     }
+    if (timedOut && !code) code = 'client_timeout'
     if (!message) {
-      if (unreachable) {
+      if (timedOut) {
+        message = '客户端等待分析结果超时；请检查后端任务阶段耗时后重试。'
+      } else if (unreachable) {
         message = '无法连接到 AdSDK Agent 后端(127.0.0.1:8000),请确认服务已启动。'
-      } else if (error.code === 'ECONNABORTED') {
-        message = '请求超时,后端响应时间过长(分析任务可能仍在进行)。'
       } else if (status === 404) {
         message = '请求的接口不存在(404)。'
       } else if (status === 422) {
@@ -155,12 +153,12 @@ export function isUnreachable(err: unknown): err is ApiError {
   return Boolean(err && typeof err === 'object' && 'unreachable' in err && (err as ApiError).unreachable)
 }
 
-/** 静态分析(POST /analyze)请求配置:120 秒超时。 */
+/** 静态分析(POST /analyze)请求配置:1920 秒超时。 */
 export const STATIC_SUBMIT_CONFIG = { timeout: STATIC_ANALYSIS_TIMEOUT_MS } as const
 
 /**
  * 动态分析(POST /dynamic/analyze)请求配置:根据 collection_timeout_seconds
- * 动态计算总超时(基础 600s + 清理余量),单位毫秒。
+ * 动态计算总超时(静态链路 + 采集窗口 + 清理余量),单位毫秒。
  */
 export function dynamicSubmitConfig(collectionTimeoutSeconds: number | null | undefined) {
   return { timeout: dynamicAnalysisTimeoutMs(collectionTimeoutSeconds) } as const

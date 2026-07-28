@@ -24,6 +24,9 @@ def write_markdown_report(report: dict, report_path: str):
     consent_time = report.get("consent_time")
     pre_consent_seconds = report.get("pre_consent_seconds")
     post_consent_seconds = report.get("post_consent_seconds")
+    risk_summary = report.get("risk_summary", {}) or {}
+    compliance_insight = report.get("compliance_insight", {}) or {}
+    timeline = report.get("timeline", {}) or {}
 
     lines = []
     lines.append("# Android 广告 SDK 分析报告")
@@ -52,6 +55,27 @@ def write_markdown_report(report: dict, report_path: str):
         lines.append("")
         for warning in warnings:
             lines.append(f"- {_md_cell(warning)}")
+
+    lines.append("")
+    lines.append("## 综合风险摘要")
+    lines.append("")
+    lines.append(f"- 风险得分: `{_md_cell(risk_summary.get('score'))}/100`")
+    lines.append(f"- 风险等级: `{_md_cell(risk_summary.get('level'))}`")
+    lines.append(f"- 评分置信度: `{_md_cell(risk_summary.get('confidence'))}`")
+    lines.append(
+        f"- 规则覆盖: 已评估 `{_md_cell(risk_summary.get('evaluated_rule_count'))}`，"
+        f"证据不足 `{_md_cell(risk_summary.get('unevaluated_rule_count'))}`"
+    )
+    top_risks = risk_summary.get("top_risks") or []
+    if top_risks:
+        lines.append("")
+        lines.append("| 主要风险 | 严重性 | 分值 |")
+        lines.append("|---|---|---:|")
+        for item in top_risks:
+            lines.append(
+                f"| {_md_cell(item.get('title'))} | "
+                f"{_md_cell(item.get('severity'))} | {_md_cell(item.get('score'))} |"
+            )
 
     steps = report.get("steps") or []
     if steps:
@@ -151,6 +175,20 @@ def write_markdown_report(report: dict, report_path: str):
     lines.append("")
     lines.append("## 网络外发摘要")
     lines.append("")
+    unified_events = timeline.get("events") or []
+    if unified_events:
+        lines.append("")
+        lines.append("## 统一行为时间线")
+        lines.append("")
+        lines.append("| 相对时间(ms) | 来源 | 事件 | Consent | 风险 |")
+        lines.append("|---:|---|---|---|---|")
+        for event in unified_events[:50]:
+            lines.append(
+                f"| {_md_cell(event.get('relative_ms'))} | {_md_cell(event.get('source'))} | "
+                f"{_md_cell(event.get('title'))} | {_md_cell(event.get('consent_state'))} | "
+                f"{_md_cell(event.get('severity'))} |"
+            )
+
     lines.append(f"- collection_status: `{_md_cell(traffic_summary.get('status'))}`")
     lines.append(f"- evaluation_status: `{_md_cell(traffic_summary.get('evaluation_status'))}`")
     lines.append(f"- total_requests: `{_md_cell(traffic_summary.get('total_requests'))}`")
@@ -169,6 +207,38 @@ def write_markdown_report(report: dict, report_path: str):
     lines.append(f"- 本次分析状态：`{_md_cell(report.get('status'))}`")
     if report.get("status") != "success":
         lines.append("- 本次结果包含缺失或失败步骤，请结合警告与原始证据人工复核")
+    lines.append("")
+
+    lines.append("")
+    lines.append("## 合规解读与整改建议")
+    lines.append("")
+    lines.append(
+        f"- 总体评价: {_md_cell(compliance_insight.get('overall_assessment'))}"
+    )
+    for finding in compliance_insight.get("key_findings") or []:
+        lines.append(
+            f"- [{_md_cell(finding.get('severity'))}] "
+            f"{_md_cell(finding.get('title'))}: "
+            f"{_md_cell(finding.get('recommendation'))}"
+        )
+    actions = compliance_insight.get("priority_actions") or []
+    if actions:
+        lines.append("")
+        lines.append("### 整改优先级")
+        lines.append("")
+        for action in actions:
+            lines.append(
+                f"- **{_md_cell(action.get('priority'))}** "
+                f"{_md_cell(action.get('action'))} "
+                f"（{_md_cell(action.get('reason'))}）"
+            )
+    insight_limitations = compliance_insight.get("limitations") or []
+    if insight_limitations:
+        lines.append("")
+        lines.append("### 证据限制")
+        lines.append("")
+        for item in insight_limitations:
+            lines.append(f"- {_md_cell(item)}")
     lines.append("")
 
     atomic_write_text(report_path, "\n".join(lines))

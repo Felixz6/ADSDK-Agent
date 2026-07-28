@@ -24,6 +24,7 @@ from typing import Any, Callable, Iterable, TextIO
 
 from app.config import DEFAULT_MITM_PORT
 from app.core.device import DeviceContext
+from app.tools.utils import run_cmd
 from app.tools.traffic_events import (
     TrafficCollectionResult,
     load_traffic_jsonl,
@@ -33,6 +34,7 @@ from app.tools.traffic_events import (
 ProcessFactory = Callable[..., subprocess.Popen[str]]
 PortAvailabilityProbe = Callable[[str, int], bool]
 ProcessTreeTerminator = Callable[..., None]
+CommandRunner = Callable[[list[str]], dict[str, Any]]
 
 
 class MitmSessionState(str, Enum):
@@ -46,6 +48,12 @@ class MitmSessionState(str, Enum):
 
 
 class PortAllocationError(RuntimeError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class MitmSessionError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
@@ -298,6 +306,8 @@ class MitmSession:
     )
     stop_timeout: float = 3.0
     addon_path: Path | None = None
+    device_proxy_host: str | None = None
+    command_runner: CommandRunner = field(default=run_cmd, repr=False)
 
     process: subprocess.Popen[str] | None = field(
         default=None,
@@ -314,6 +324,10 @@ class MitmSession:
     exit_code: int | None = field(default=None, init=False)
     error_code: str | None = field(default=None, init=False)
     error_message: str | None = field(default=None, init=False)
+    ready_timeout: float | None = field(default=None, init=False)
+    original_device_proxy: str | None = field(default=None, init=False)
+    device_proxy_configured: bool = field(default=False, init=False)
+    device_proxy_restored: bool | None = field(default=None, init=False)
     flow_path: Path = field(init=False)
     jsonl_path: Path = field(init=False)
     stderr_path: Path = field(init=False)
@@ -364,6 +378,15 @@ class MitmSession:
             raise ValueError("listen_port must be between 1 and 65535")
         if self.stop_timeout <= 0:
             raise ValueError("stop_timeout must be positive")
+        if self.device_proxy_host is not None:
+            self.device_proxy_host = self.device_proxy_host.strip()
+            if not self.device_proxy_host:
+                self.device_proxy_host = None
+            elif any(
+                character in self.device_proxy_host
+                for character in ("\x00", "\r", "\n", ":", "@", "/")
+            ):
+                raise ValueError("device_proxy_host is invalid")
 
         self.traffic_dir = Path(self.traffic_dir).resolve(strict=False)
         if (
@@ -480,6 +503,17 @@ class MitmSession:
                     "text": True,
                     "shell": False,
                     "cwd": str(project_root),
+                    "env": {
+                        **os.environ,
+                        "PYTHONPATH": os.pathsep.join(
+                            value
+                            for value in (
+                                str(project_root),
+                                os.environ.get("PYTHONPATH", ""),
+                            )
+                            if value
+                        ),
+                    },
                 }
                 if os.name == "nt":
                     process_options["creationflags"] = getattr(
@@ -638,6 +672,7 @@ class MitmSession:
             raise ValueError("timeout must be positive")
         if poll_interval <= 0:
             raise ValueError("poll_interval must be positive")
+        self.ready_timeout = timeout
         deadline = self.monotonic() + timeout
 
         while True:
@@ -656,9 +691,11 @@ class MitmSession:
                 return_code = process.poll()
                 if return_code is not None:
                     self.exit_code = return_code
+                    stderr_tail = self._stderr_tail()
                     return self._fail_and_cleanup(
                         "mitm_process_exited",
-                        "mitmdump exited before addon ready",
+                        "mitmdump exited before addon ready"
+                        + (f": {stderr_tail}" if stderr_tail else ""),
                     )
 
                 self._assert_owned_paths()
@@ -707,7 +744,75 @@ class MitmSession:
         with self._lock:
             if self.state is not MitmSessionState.READY:
                 raise RuntimeError("mitm session is not ready")
+            if self.device_proxy_host is not None:
+                self._configure_device_proxy()
             self.state = MitmSessionState.COLLECTING
+
+    def _stderr_tail(self, *, max_lines: int = 20, max_chars: int = 2000) -> str:
+        try:
+            if self._stderr_handle is not None:
+                self._stderr_handle.flush()
+            text = self.stderr_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return "\n".join(lines[-max_lines:])[-max_chars:]
+
+    def _configure_device_proxy(self) -> None:
+        if self.device_proxy_configured:
+            return
+        assert self.listen_port is not None
+        current = self.command_runner(
+            self.device.adb_command(
+                "shell", "settings", "get", "global", "http_proxy"
+            )
+        )
+        if current.get("returncode") != 0:
+            self._set_failure(
+                "device_proxy_read_failed",
+                "device proxy value could not be read",
+            )
+            raise MitmSessionError(
+                "device_proxy_read_failed",
+                "device proxy value could not be read",
+            )
+        self.original_device_proxy = str(current.get("stdout") or "").strip()
+        target = f"{self.device_proxy_host}:{self.listen_port}"
+        updated = self.command_runner(
+            self.device.adb_command(
+                "shell", "settings", "put", "global", "http_proxy", target
+            )
+        )
+        if updated.get("returncode") != 0:
+            self._set_failure(
+                "device_proxy_config_failed",
+                "device proxy could not be configured",
+            )
+            raise MitmSessionError(
+                "device_proxy_config_failed",
+                "device proxy could not be configured",
+            )
+        self.device_proxy_configured = True
+        self.device_proxy_restored = False
+
+    def _restore_device_proxy(self) -> bool:
+        if not self.device_proxy_configured:
+            return True
+        original = self.original_device_proxy
+        if original and original.casefold() != "null":
+            command = self.device.adb_command(
+                "shell", "settings", "put", "global", "http_proxy", original
+            )
+        else:
+            command = self.device.adb_command(
+                "shell", "settings", "delete", "global", "http_proxy"
+            )
+        result = self.command_runner(command)
+        restored = result.get("returncode") == 0
+        self.device_proxy_restored = restored
+        if restored:
+            self.device_proxy_configured = False
+        return restored
 
     def stop(self, *, timeout: float | None = None) -> bool:
         """Idempotently stop only the process stored on this object."""
@@ -721,10 +826,19 @@ class MitmSession:
             preserve_failure = self.state is MitmSessionState.FAILED
             if not preserve_failure:
                 self.state = MitmSessionState.STOPPING
-            return self._stop_owned_process(
+            restored = self._restore_device_proxy()
+            stopped = self._stop_owned_process(
                 timeout=selected_timeout,
                 preserve_failure=preserve_failure,
             )
+            if not restored:
+                self._stop_result = False
+                if not preserve_failure:
+                    self._set_failure(
+                        "proxy_restore_failed",
+                        "device proxy could not be restored",
+                    )
+            return stopped and restored
 
     def validate_traffic(self) -> TrafficCollectionResult:
         return validate_traffic_jsonl(
@@ -751,6 +865,14 @@ class MitmSession:
             "pid": process.pid if process is not None else None,
             "port": self.listen_port,
             "listen_host": self.listen_host,
+            "listen_port": self.listen_port,
+            "addon_path": str(self.addon_path) if self.addon_path else None,
+            "command": self._command() if self.listen_port is not None else None,
+            "ready_timeout": self.ready_timeout,
+            "stderr_tail": self._stderr_tail(),
+            "device_proxy_host": self.device_proxy_host,
+            "device_proxy_configured": self.device_proxy_configured,
+            "device_proxy_restored": self.device_proxy_restored,
             "traffic_dir": str(self.traffic_dir),
             "flow_file": str(self.flow_path),
             "jsonl_path": str(self.jsonl_path),

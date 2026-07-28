@@ -1,54 +1,112 @@
+from __future__ import annotations
+
+import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Pattern
+from typing import Any, Iterable, Pattern
 
 
-KNOWN_SDKS = {
-    "com.bytedance.sdk.openadsdk": {"name": "Pangle", "confidence": 0.95},
-    "com.qq.e.comm": {"name": "优量汇/GDT", "confidence": 0.95},
-    "com.baidu.mobads": {"name": "百度广告SDK", "confidence": 0.92},
-    "com.kwad.sdk": {"name": "快手/Kwai Ads", "confidence": 0.92},
-    "com.mbridge.msdk": {"name": "Mintegral", "confidence": 0.92},
-    "com.unity3d.ads": {"name": "Unity Ads", "confidence": 0.90},
-    "com.applovin": {"name": "AppLovin", "confidence": 0.90},
-    "com.google.android.gms.ads": {"name": "AdMob", "confidence": 0.95},
-    "com.ironsource": {"name": "ironSource", "confidence": 0.88},
-    "com.vungle": {"name": "Vungle", "confidence": 0.88},
+KNOWLEDGE_BASE_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "sdk_knowledge_base.json"
+)
+TEXT_FILE_EXTS = {
+    ".smali", ".xml", ".txt", ".json", ".properties", ".html", ".js"
 }
-
-TEXT_FILE_EXTS = {".smali", ".xml", ".txt", ".json", ".properties"}
+SMALI_CONTENT_HINTS = (
+    "config", "constant", "buildconfig", "application", "manifest", "url", "host"
+)
 SMALI_ROOT_PATTERN = re.compile(r"^smali(?:_classes\d+)?$", re.IGNORECASE)
 
 
+def load_sdk_knowledge_base(
+    path: Path = KNOWLEDGE_BASE_PATH,
+) -> list[dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as file_obj:
+        payload = json.load(file_obj)
+    entries = payload.get("sdks")
+    if not isinstance(entries, list):
+        raise ValueError("sdk knowledge base must contain an sdks list")
+    required = {
+        "id",
+        "name",
+        "vendor",
+        "category",
+        "risk_level",
+        "package_patterns",
+        "domain_patterns",
+        "capabilities",
+    }
+    for entry in entries:
+        if not isinstance(entry, dict) or not required.issubset(entry):
+            raise ValueError("invalid sdk knowledge base entry")
+    return entries
+
+
+SDK_KNOWLEDGE_BASE = load_sdk_knowledge_base()
+SDK_BY_PACKAGE = {
+    package: entry
+    for entry in SDK_KNOWLEDGE_BASE
+    for package in entry["package_patterns"]
+}
+# Compatibility export retained for existing callers and tests.
+KNOWN_SDKS = {
+    package: {"name": entry["name"], "confidence": 0.95}
+    for package, entry in SDK_BY_PACKAGE.items()
+}
+
+
 def _compile_content_patterns(package: str) -> tuple[Pattern[str], Pattern[str]]:
-    """Compile boundary-aware dotted and Dalvik/slash package patterns."""
     dotted = re.compile(
         rf"(?<![A-Za-z0-9_$]){re.escape(package)}(?![A-Za-z0-9_$])",
         re.IGNORECASE,
     )
-    slash_package = package.replace(".", "/")
     slash = re.compile(
-        rf"(?<![A-Za-z0-9_$])L?{re.escape(slash_package)}(?![A-Za-z0-9_$])",
+        rf"(?<![A-Za-z0-9_$])L?{re.escape(package.replace('.', '/'))}"
+        rf"(?![A-Za-z0-9_$])",
         re.IGNORECASE,
     )
     return dotted, slash
 
 
-_CONTENT_PATTERNS: Dict[str, tuple[Pattern[str], Pattern[str]]] = {
+_CONTENT_PATTERNS = {
     package: _compile_content_patterns(package) for package in KNOWN_SDKS
 }
 
+_LITERAL_LOOKUP: dict[bytes, tuple[str, str, str]] = {}
+for _package, _knowledge in SDK_BY_PACKAGE.items():
+    _LITERAL_LOOKUP[_package.casefold().encode()] = (
+        _package, "file_content", "package_literal"
+    )
+    _LITERAL_LOOKUP[_package.replace(".", "/").casefold().encode()] = (
+        _package, "file_content", "package_literal"
+    )
+    _LITERAL_LOOKUP[("L" + _package.replace(".", "/")).casefold().encode()] = (
+        _package, "file_content", "package_literal"
+    )
+    for _domain in _knowledge.get("domain_patterns", []):
+        _LITERAL_LOOKUP[_domain.casefold().encode()] = (
+            _package, "domain", "domain_literal"
+        )
+_COMBINED_LITERAL_PATTERN = re.compile(
+    rb"(?<![A-Za-z0-9_$])(?:"
+    + b"|".join(
+        re.escape(token)
+        for token in sorted(_LITERAL_LOOKUP, key=len, reverse=True)
+    )
+    + rb")(?![A-Za-z0-9_$])",
+    re.IGNORECASE,
+)
 
-def _iter_smali_roots(unpack_dir: str) -> List[Path]:
-    """Return only direct ``smali``/``smali_classesN`` children."""
+
+def _iter_smali_roots(unpack_dir: str) -> list[Path]:
     base = Path(unpack_dir)
-    children = list(base.iterdir())
-
+    if not base.is_dir():
+        return []
     return sorted(
         (
             child
-            for child in children
+            for child in base.iterdir()
             if child.is_dir() and SMALI_ROOT_PATTERN.fullmatch(child.name)
         ),
         key=lambda path: path.name.casefold(),
@@ -67,13 +125,20 @@ def _make_hit(
     relative_path: str,
     detector: str,
     description: str,
-) -> Dict[str, Any]:
-    meta = KNOWN_SDKS[package]
+) -> dict[str, Any]:
+    knowledge = SDK_BY_PACKAGE[package]
     return {
-        "sdk_name": meta["name"],
+        "id": knowledge["id"],
+        "sdk_name": knowledge["name"],
         "package": package,
+        "vendor": knowledge["vendor"],
+        "category": knowledge["category"],
+        "risk_level": knowledge["risk_level"],
         "confidence": confidence,
         "version": None,
+        "capabilities": list(knowledge["capabilities"]),
+        "static_only": True,
+        "dynamic_correlated": False,
         "evidence": [
             {
                 "source_type": source_type,
@@ -85,32 +150,23 @@ def _make_hit(
     }
 
 
-def _scan_paths(unpack_dir: str) -> List[Dict[str, Any]]:
-    """Match complete package-directory segments below decoded smali roots."""
+def _scan_paths(unpack_dir: str) -> list[dict[str, Any]]:
     unpack_root = Path(unpack_dir)
-    hits: List[Dict[str, Any]] = []
-
+    hits: list[dict[str, Any]] = []
     for smali_root in _iter_smali_roots(unpack_dir):
-        for package, meta in KNOWN_SDKS.items():
+        for package in KNOWN_SDKS:
             package_dir = smali_root.joinpath(*package.split("."))
-            if not package_dir.is_dir():
-                continue
-
-            relative_package = package_dir.relative_to(smali_root).as_posix()
-            hits.append(
-                _make_hit(
-                    package,
-                    confidence=meta["confidence"],
-                    source_type="path",
-                    relative_path=_relative_path(package_dir, unpack_root),
-                    detector="package_directory",
-                    description=(
-                        f"Matched complete package directory {relative_package} "
-                        f"under {smali_root.name}"
-                    ),
+            if package_dir.is_dir():
+                hits.append(
+                    _make_hit(
+                        package,
+                        confidence=0.95,
+                        source_type="path",
+                        relative_path=_relative_path(package_dir, unpack_root),
+                        detector="package_directory",
+                        description="命中完整 SDK 包目录",
+                    )
                 )
-            )
-
     return hits
 
 
@@ -121,89 +177,99 @@ def _matches_package_literal(
     return any(pattern.search(text) is not None for pattern in patterns)
 
 
-def _scan_file_contents(unpack_dir: str) -> List[Dict[str, Any]]:
-    """Match boundary-aware package literals inside decoded smali roots only."""
+def _scan_file_contents(unpack_dir: str) -> list[dict[str, Any]]:
     unpack_root = Path(unpack_dir)
-    hits: List[Dict[str, Any]] = []
-
+    hits: list[dict[str, Any]] = []
     for smali_root in _iter_smali_roots(unpack_dir):
         for root, dirs, files in os.walk(smali_root):
             dirs.sort(key=str.casefold)
             files.sort(key=str.casefold)
-
             for file_name in files:
                 if Path(file_name).suffix.lower() not in TEXT_FILE_EXTS:
                     continue
-
+                suffix = Path(file_name).suffix.lower()
+                if (
+                    suffix == ".smali"
+                    and not any(
+                        hint in file_name.casefold() for hint in SMALI_CONTENT_HINTS
+                    )
+                ):
+                    # Package directories cover bundled classes.  Content
+                    # scanning focuses on configuration-like smali files to
+                    # avoid repeatedly reading every decoded method body.
+                    continue
                 file_path = Path(root) / file_name
-                matched_packages: set[str] = set()
                 try:
-                    with file_path.open(
-                        "r",
-                        encoding="utf-8",
-                        errors="ignore",
-                    ) as file_obj:
-                        for line in file_obj:
-                            for package, patterns in _CONTENT_PATTERNS.items():
-                                if package in matched_packages:
-                                    continue
-                                if _matches_package_literal(line, patterns):
-                                    matched_packages.add(package)
+                    data = file_path.read_bytes()
                 except OSError:
                     continue
-
-                relative_file = _relative_path(file_path, unpack_root)
-                for package in matched_packages:
-                    meta = KNOWN_SDKS[package]
+                relative = _relative_path(file_path, unpack_root)
+                matched: set[tuple[str, str, str]] = set()
+                for match in _COMBINED_LITERAL_PATTERN.finditer(data):
+                    token = match.group(0).lower()
+                    info = _LITERAL_LOOKUP.get(token)
+                    if info is not None:
+                        matched.add(info)
+                for package, source_type, detector in matched:
                     hits.append(
                         _make_hit(
                             package,
-                            confidence=min(0.99, meta["confidence"] + 0.02),
-                            source_type="file_content",
-                            relative_path=relative_file,
-                            detector="package_literal",
+                            confidence=0.97 if detector == "package_literal" else 0.82,
+                            source_type=source_type,
+                            relative_path=relative,
+                            detector=detector,
                             description=(
-                                "Matched a boundary-delimited dotted or "
-                                "Dalvik package literal"
+                                "命中边界完整的包名或 Dalvik 类路径"
+                                if detector == "package_literal"
+                                else "命中 SDK 域名模式"
                             ),
                         )
                     )
-
     return hits
 
 
-def _merge_hits(raw_hits: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    merged: Dict[tuple[str, str], Dict[str, Any]] = {}
-    evidence_keys: Dict[tuple[str, str], set[tuple[str, str, str]]] = {}
+def _scan_native_libraries(unpack_dir: str) -> list[dict[str, Any]]:
+    unpack_root = Path(unpack_dir)
+    hits: list[dict[str, Any]] = []
+    for file_path in sorted(unpack_root.glob("lib/**/*.so")):
+        name = file_path.name.casefold()
+        for package, knowledge in SDK_BY_PACKAGE.items():
+            if any(
+                pattern.casefold() in name
+                for pattern in knowledge.get("native_library_patterns", [])
+            ):
+                hits.append(
+                    _make_hit(
+                        package,
+                        confidence=0.88,
+                        source_type="native_library",
+                        relative_path=_relative_path(file_path, unpack_root),
+                        detector="native_library_name",
+                        description=f"命中原生库 {file_path.name}",
+                    )
+                )
+    return hits
 
+
+def _merge_hits(raw_hits: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    evidence_keys: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
     for hit in raw_hits:
         key = (hit["sdk_name"], hit["package"])
-        current = merged.get(key)
-        if current is None:
-            current = {
-                "sdk_name": hit["sdk_name"],
-                "package": hit["package"],
-                "confidence": hit["confidence"],
-                "version": hit.get("version"),
-                "evidence": [],
-            }
-            merged[key] = current
+        if key not in merged:
+            merged[key] = {**hit, "evidence": []}
             evidence_keys[key] = set()
-        elif hit["confidence"] > current["confidence"]:
-            current["confidence"] = hit["confidence"]
-            current["version"] = hit.get("version")
-
+        current = merged[key]
+        current["confidence"] = max(current["confidence"], hit["confidence"])
         for evidence in hit.get("evidence", []):
             evidence_key = (
                 evidence["source_type"],
                 evidence["relative_path"],
                 evidence["detector"],
             )
-            if evidence_key in evidence_keys[key]:
-                continue
-            evidence_keys[key].add(evidence_key)
-            current["evidence"].append(evidence)
-
+            if evidence_key not in evidence_keys[key]:
+                evidence_keys[key].add(evidence_key)
+                current["evidence"].append(evidence)
     for hit in merged.values():
         hit["evidence"].sort(
             key=lambda item: (
@@ -212,7 +278,6 @@ def _merge_hits(raw_hits: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 item["detector"],
             )
         )
-
     return sorted(
         merged.values(),
         key=lambda hit: (
@@ -223,7 +288,11 @@ def _merge_hits(raw_hits: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     )
 
 
-def scan_for_sdks(unpack_dir: str) -> List[Dict[str, Any]]:
-    path_hits = _scan_paths(unpack_dir)
-    content_hits = _scan_file_contents(unpack_dir)
-    return _merge_hits([*path_hits, *content_hits])
+def scan_for_sdks(unpack_dir: str) -> list[dict[str, Any]]:
+    return _merge_hits(
+        [
+            *_scan_paths(unpack_dir),
+            *_scan_file_contents(unpack_dir),
+            *_scan_native_libraries(unpack_dir),
+        ]
+    )

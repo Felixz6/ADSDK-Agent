@@ -13,6 +13,7 @@ import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { RiskBadge } from '@/components/common/RiskBadge'
 import { EmptyState } from '@/components/common/States'
 import { useServiceHealth } from '@/hooks/useApi'
 import { listLocalTasks } from '@/api/tasks'
@@ -47,6 +48,15 @@ export default function Dashboard() {
   ]
 
   const recent = tasks.slice(0, 6)
+  const riskCounts = { low: 0, medium: 0, high: 0, critical: 0 }
+  for (const task of tasks) {
+    if (task.risk_level) riskCounts[task.risk_level] += 1
+  }
+  const latestRiskTask =
+    tasks.find(
+      (task) => task.risk_level && typeof task.risk_score === 'number',
+    ) ?? null
+  const latestRisk = latestRiskTask?.risk_level ?? null
 
   return (
     <div className="flex flex-col gap-5">
@@ -62,6 +72,35 @@ export default function Dashboard() {
         <StatCard label="静态分析" value={tasks.filter((t) => t.kind === 'static').length} tone="accent" icon={<FileSearch size={18} />} />
         <StatCard label="动态分析" value={tasks.filter((t) => t.kind === 'dynamic').length} tone="accent" icon={<Activity size={18} />} />
       </div>
+
+      <GlassCard padding="md">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-[11px] text-[var(--text-tertiary)]">最近综合风险</p>
+            {latestRiskTask && latestRisk ? (
+              <div className="mt-1 flex items-center gap-2">
+                <strong className="text-2xl text-[var(--text-primary)]">
+                  {latestRiskTask.risk_score}
+                </strong>
+                <span className="text-xs text-[var(--text-tertiary)]">/ 100</span>
+                <RiskBadge
+                  level={latestRisk === 'critical' ? 'high' : latestRisk}
+                  label={latestRisk}
+                />
+              </div>
+            ) : (
+              <span className="text-sm text-[var(--text-tertiary)]">暂无数据</span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-[var(--text-secondary)] flex-wrap">
+            <span>严重 <b className="text-[var(--danger)]">{riskCounts.critical}</b></span>
+            <span>高 <b className="text-[var(--danger)]">{riskCounts.high}</b></span>
+            <span>中 <b className="text-[var(--warning)]">{riskCounts.medium}</b></span>
+            <span>低 <b className="text-[var(--success)]">{riskCounts.low}</b></span>
+          </div>
+          <span className="text-xs text-[var(--text-secondary)]">高风险任务：{riskCounts.high + riskCounts.critical}</span>
+        </div>
+      </GlassCard>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <GlassCard padding="md" highlight className="lg:col-span-2">
@@ -130,6 +169,7 @@ export default function Dashboard() {
                     />
                   </span>
                   <span className="text-sm text-[var(--text-primary)] font-mono truncate flex-1">{t.package_name || t.apk_path}</span>
+                  {t.risk_level && <RiskBadge level={t.risk_level === 'critical' ? 'high' : t.risk_level} label={t.risk_level} />}
                   <span className="text-[11px] text-[var(--text-tertiary)] shrink-0">{formatDateTime(t.created_at)}</span>
                 </button>
               </li>

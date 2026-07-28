@@ -5,7 +5,9 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { PipelineTimeline } from '@/components/report/PipelineTimeline'
 import { STEP_STATUS_LABEL } from '@/components/common/StatusBadge'
-import { KNOWN_SDK_NAMES, type SdkHit } from '@/types/api'
+import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
+import { SdkIntelligencePanel } from '@/components/analysis/SdkIntelligencePanel'
+import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryPanel'
 import { useActiveResult, NoActiveResult } from '@/pages/shared/NoActiveResult'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -43,6 +45,9 @@ export default function StaticAnalysis() {
         <StatCard label="整体状态" value={STEP_STATUS_LABEL[resp.status] ?? resp.status} tone={resp.status === 'success' ? 'success' : 'warning'} icon={<CheckCircle2 size={18} />} />
       </div>
 
+      <RiskSummaryCard summary={resp.risk_summary} />
+      <PermissionSummaryPanel appInfo={info} />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <GlassCard padding="md" highlight className="lg:col-span-1 flex flex-col gap-2">
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">APK 快照</h3>
@@ -52,19 +57,9 @@ export default function StaticAnalysis() {
           <KV k="SHA-256" v={resp.apk_sha256 ?? '—'} mono />
         </GlassCard>
 
-        <GlassCard padding="md" highlight className="lg:col-span-2 flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">SDK 识别结果</h3>
-          {resp.sdks.length === 0 ? (
-            <p className="text-sm text-[var(--text-tertiary)] py-4">未识别到已收录 SDK。</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {resp.sdks.map((sdk, i) => (
-                <SdkRow key={`${sdk.package}-${i}`} sdk={sdk} />
-              ))}
-            </ul>
-          )}
-          <KnownSdks />
-        </GlassCard>
+        <div className="lg:col-span-2">
+          <SdkIntelligencePanel sdks={resp.sdks} />
+        </div>
       </div>
 
       <GlassCard padding="md" highlight>
@@ -86,47 +81,6 @@ export default function StaticAnalysis() {
   function renderShell(content: ReactNode) {
     return <div className="flex flex-col gap-5">{content}</div>
   }
-}
-
-function SdkRow({ sdk }: { sdk: SdkHit }) {
-  const isKnown = (KNOWN_SDK_NAMES as readonly string[]).includes(sdk.sdk_name)
-  return (
-    <li className="rounded-[10px] border border-[var(--border-soft)] px-3 py-2 flex items-start gap-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--text-primary)] truncate">{sdk.sdk_name}</span>
-          {isKnown && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[rgba(120,216,255,0.12)] text-[var(--accent-blue)] border border-[var(--border-soft)]">
-              已收录
-            </span>
-          )}
-          <span className="text-[11px] text-[var(--text-tertiary)]">{sdk.package}</span>
-        </div>
-        {sdk.version && <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5">version: {sdk.version}</p>}
-        {sdk.evidence.length > 0 && (
-          <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 truncate">
-            证据:{sdk.evidence[0].detector} · {sdk.evidence[0].description}
-          </p>
-        )}
-      </div>
-      <span className="text-xs text-[var(--text-secondary)] shrink-0">{Math.round(sdk.confidence * 100)}%</span>
-    </li>
-  )
-}
-
-function KnownSdks() {
-  return (
-    <div className="mt-2">
-      <p className="text-[11px] text-[var(--text-tertiary)] mb-1">已收录 SDK 池</p>
-      <div className="flex flex-wrap gap-1.5">
-        {KNOWN_SDK_NAMES.map((name) => (
-          <span key={name} className="text-[10px] px-1.5 py-0.5 rounded-md border border-[var(--border-soft)] text-[var(--text-tertiary)]">
-            {name}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 function KV({ k, v, mono, copy, onCopy }: { k: string; v: string; mono?: boolean; copy?: string | null; onCopy?: () => void }) {

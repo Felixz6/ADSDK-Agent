@@ -795,7 +795,7 @@ def test_external_tools_only_receive_run_snapshot(
     assert expected_snapshot.read_bytes() == dynamic_api.source_apk.read_bytes()
 
 
-def test_mitm_failure_does_not_start_frida(
+def test_mitm_failure_degrades_to_frida_hook_collection(
     dynamic_api: _ApiHarness,
 ) -> None:
     dynamic_api.scenario.mitm_failure = "start"
@@ -805,9 +805,10 @@ def test_mitm_failure_does_not_start_frida(
 
     assert dynamic_api.scenario.mitm_instances
     assert "mitm.start" in dynamic_api.scenario.calls
-    assert "frida.start" not in dynamic_api.scenario.calls
+    assert "frida.start" in dynamic_api.scenario.calls
     assert "legacy.frida.spawn" not in dynamic_api.scenario.calls
     assert _step(body, "mitm_start")["status"] == "failed"
+    assert _step(body, "frida_spawn")["status"] == "success"
 
 
 def test_frida_failure_cleans_the_started_mitm_session(
