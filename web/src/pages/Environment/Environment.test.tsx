@@ -115,3 +115,62 @@ describe('Environment 页 — 检测项四态展示', () => {
     expect(calls).toBeGreaterThanOrEqual(2)
   })
 })
+
+describe('Environment 页 — 流量自检按需触发', () => {
+  it('未点击前流量自检展示「尚未检测」,且不发起 /traffic/check', async () => {
+    let trafficCalls = 0
+    server.use(
+      http.get('http://127.0.0.1:8000/traffic/check', () => {
+        trafficCalls += 1
+        return HttpResponse.json({
+          ok: false,
+          device_id: '<redacted>',
+          captured_success: false,
+          captured_request_count: 0,
+          flow_file_size: null,
+          possible_reasons: [],
+          mitm_status: { has_last_session: false, running: false, owned_by_session: false, pid: null, port: 8080, port_listening: false, traffic_dir: null },
+          sample_requests: [],
+        } as TrafficCheckResponse)
+      }),
+    )
+    renderWithProviders(<Environment />)
+    await screen.findByText('在线设备 1 台。')
+    const trafficRow = screen.getByText('流量捕获自检').closest('div.flex') as HTMLElement
+    expect(trafficRow).toHaveTextContent('尚未检测')
+    expect(trafficRow).not.toHaveTextContent('未提供')
+    expect(trafficCalls).toBe(0)
+  })
+
+  it('点击「流量自检」后发起 /traffic/check 并展示结果', async () => {
+    let trafficCalls = 0
+    server.use(
+      http.get('http://127.0.0.1:8000/traffic/check', () => {
+        trafficCalls += 1
+        return HttpResponse.json({
+          ok: true,
+          device_id: '<redacted>',
+          captured_success: true,
+          captured_request_count: 3,
+          flow_file_size: 512,
+          possible_reasons: [],
+          mitm_status: { has_last_session: true, running: true, owned_by_session: true, pid: 1, port: 8080, port_listening: true, traffic_dir: '/out' },
+          sample_requests: [],
+        } as TrafficCheckResponse)
+      }),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<Environment />)
+    await screen.findByText('在线设备 1 台。')
+    // 「流量自检」按钮在 deviceId 为空时禁用;Environment 页面用 DeviceSelector,
+    // 这里先输入一个设备序列号占位串(后端脱敏回显)再点击。
+    const input = screen.getByPlaceholderText(/手动输入设备序列号|手动输入设备序列号·/)
+    await user.type(input, 'emulator-5554')
+    const button = screen.getByRole('button', { name: /流量自检/ })
+    await user.click(button)
+    expect(await screen.findByText('流量自检结果')).toBeInTheDocument()
+    expect(trafficCalls).toBeGreaterThanOrEqual(1)
+    const trafficRow = screen.getByText('流量捕获自检').closest('div.flex') as HTMLElement
+    expect(trafficRow).toHaveTextContent('正常')
+  })
+})

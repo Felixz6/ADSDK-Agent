@@ -55,6 +55,12 @@ from app.tools.dynamic_collection import (
     run_dynamic_collection,
 )
 from app.tools.dynamic_compat import LegacyFridaAdapter, LegacyMitmAdapter
+from app.tools.env_checks import (
+    check_apk_allowed_roots,
+    check_apktool,
+    check_frida_python_package,
+    check_redaction_hmac_key,
+)
 from app.tools.hook_parser import parse_hook_to_events_json
 from app.tools.log_writer import append_log
 from app.tools.manifest_parser import parse_manifest_info
@@ -656,13 +662,34 @@ def env_check(device_id: str | None = None):
     output_info = _check_output_writable()
     serials = _device_serials(device_info, device_id)
 
+    apktool_info = check_apktool()
+    frida_python_info = check_frida_python_package()
+    redaction_info = check_redaction_hmac_key()
+    allowed_roots_info = check_apk_allowed_roots()
+
     checks = {
         "adb_available": adb_info.get("ok", False),
         "device_online": device_info.get("ok", False),
         "frida_connectable": frida_info.get("ok", False),
+        "frida_python_available": frida_python_info.get(
+            "frida_python_available", False
+        ),
+        "apktool_available": apktool_info.get("apktool_available", False),
         "mitm_8080_listening": mitm_8080_listening,
         "output_writable": output_info.get("ok", False),
+        "redaction_hmac_key_secure": redaction_info.get(
+            "redaction_hmac_key_security_status"
+        ) == "secure",
+        "apk_allowed_roots_configured": allowed_roots_info.get(
+            "apk_allowed_roots_configured", False
+        ),
     }
+
+    # apktool_info / frida_python_info may carry private helper keys (_cmd,
+    # _python_executable) that are not part of the public contract; strip them
+    # before exposing to the client / logs.
+    def _public(obj: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in obj.items() if not k.startswith("_")}
 
     return {
         "ok": all(checks.values()),
@@ -677,6 +704,10 @@ def env_check(device_id: str | None = None):
             "frida": _redact_known_device_serials(frida_info, serials),
             "mitm": {"port": mitm_listen_port, "listening": mitm_8080_listening},
             "output": output_info,
+            "apktool": _public(apktool_info),
+            "frida_python": _public(frida_python_info),
+            "redaction_hmac_key": redaction_info,
+            "apk_allowed_roots": allowed_roots_info["apk_allowed_roots"],
         },
     }
 
