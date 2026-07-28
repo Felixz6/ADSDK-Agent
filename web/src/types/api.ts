@@ -92,12 +92,42 @@ export interface EnvCheckOutput {
   error: string | null
 }
 
+/** apktool 自检详情(GET /env/check). 后端未提供任何字段时整个对象可能缺失。 */
+export interface EnvCheckApktool {
+  apktool_available: boolean
+  apktool_version: string | null
+  apktool_path: string | null // 仅命令名 / 文件名,不含用户名等绝对路径隐私
+  apktool_error: string | null // 命令执行失败时的诊断信息(可能为 null)
+}
+
+/** Frida Python 包自检详情 — 仅「解释器内可导入的 frida 包」,与 frida-server 连通性分离。 */
+export interface EnvCheckFridaPython {
+  frida_python_available: boolean
+  frida_python_version: string | null
+  frida_python_error: string | null
+  frida_python_error_detail: string | null
+}
+
+/** REDACTION_HMAC_KEY 配置状态 — 绝不返回密钥原值。 */
+export type RedactionHmacKeySecurityStatus = 'secure' | 'placeholder' | 'missing'
+
+export interface EnvCheckRedactionHmacKey {
+  redaction_hmac_key_configured: boolean
+  redaction_hmac_key_uses_placeholder: boolean
+  redaction_hmac_key_security_status: RedactionHmacKeySecurityStatus
+}
+
 export interface EnvCheckSummary {
   adb_available: boolean
   device_online: boolean
   frida_connectable: boolean
+  /** 后端较新版本新增;旧后端不返回 ⇒ undefined ⇒ 前端展示「未提供」。 */
+  frida_python_available?: boolean
+  apktool_available?: boolean
   mitm_8080_listening: boolean
   output_writable: boolean
+  redaction_hmac_key_secure?: boolean
+  apk_allowed_roots_configured?: boolean
 }
 
 export interface EnvCheckDetails {
@@ -106,6 +136,14 @@ export interface EnvCheckDetails {
   frida: EnvCheckFrida
   mitm: EnvCheckMitm
   output: EnvCheckOutput
+  /**
+   * 以下四项为后端较新版本新增的检测字段;旧后端不返回它们。
+   * 前端据此判定为「未提供」而非臆造成「正常」,因此全部为可选。
+   */
+  apktool?: EnvCheckApktool
+  frida_python?: EnvCheckFridaPython
+  redaction_hmac_key?: EnvCheckRedactionHmacKey
+  apk_allowed_roots?: string[]
 }
 
 export interface EnvCheckResponse {

@@ -87,7 +87,11 @@ export default function Environment() {
 
       {env.data && (
         <>
-          <EnvironmentStatusCard env={env.data} traffic={trafficEnabled && traffic.data ? traffic.data : null} />
+          <EnvironmentStatusCard
+            env={env.data}
+            traffic={trafficEnabled && traffic.data ? traffic.data : null}
+            trafficTriggered={trafficEnabled}
+          />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DetailCard title="ADB 详情" data={env.data.details.adb} />

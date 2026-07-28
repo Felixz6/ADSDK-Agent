@@ -11,21 +11,31 @@ import {
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { cn, formatBytes } from '@/utils'
-import type { EnvCheckResponse, TrafficCheckResponse } from '@/types/api'
+import type {
+  EnvCheckResponse,
+  EnvCheckApktool,
+  EnvCheckFridaPython,
+  EnvCheckRedactionHmacKey,
+  TrafficCheckResponse,
+} from '@/types/api'
 
 interface EnvironmentStatusCardProps {
   env: EnvCheckResponse | null
+  /** 仅在用户明确点击「流量自检」后才传入真实结果;未发起时为 null。 */
   traffic?: TrafficCheckResponse | null
+  /** 是否已发起过流量自检(区分「尚未检测」与「无法检测」)。 */
+  trafficTriggered?: boolean
 }
 
 /**
- * 检测项状态枚举:
- * - ok:        后端探测到该项「正常」(true)。
- * - bad:       后端探测到该项「异常」(false)。
- * - provided:  后端「未提供」该检测项(响应里没有该字段) —— 绝不展示为「正常」。
- * - unknown:   后端不可达 / 接口报错,无法检测 —— 绝不展示为「正常」。
+ * 检测项状态枚举(五态):
+ * - ok:        后端探测到该项「正常」(检测通过)。
+ * - bad:       后端探测到该项「异常」(检测失败)。
+ * - missing:   配置缺失(已检测,但值为未配置)。
+ * - provided:  后端旧版本「未提供」该检测项字段 —— 绝不展示为「正常」。
+ * - unknown:   检测命令执行失败 / 后端不可达,无法检测 —— 绝不展示为「正常」。
  */
-type CheckStatus = 'ok' | 'bad' | 'provided' | 'unknown'
+type CheckStatus = 'ok' | 'bad' | 'missing' | 'provided' | 'unknown'
 
 interface Row {
   key: string
@@ -35,12 +45,22 @@ interface Row {
   /** provided/unknown 时显示的固定说明 */
   note?: string
   detail?: string
+  /** 流量自检使用独立文案「尚未检测」,覆盖五态标签。 */
+  customLabel?: string
+}
+
+const STATUS_LABEL: Record<CheckStatus, string> = {
+  ok: '正常',
+  bad: '异常',
+  missing: '未配置',
+  provided: '未提供',
+  unknown: '无法检测',
 }
 
 /**
- * 把后端可空布尔值归一为检测状态。
+ * 把后端可空布尔值归一为检测状态(基础四态)。
  * - 有数据(true/false):映射 ok / bad。
- * - 无数据但接口成功(env 不为 null):provided(后端未返回该字段)。
+ * - 无数据但接口成功(env 不为 null):provided(后端旧版本未返回该字段)。
  * - 接口失败(env 为 null):unknown(无法检测)。
  */
 function boolToStatus(value: boolean | null | undefined, env: EnvCheckResponse | null): CheckStatus {
@@ -50,14 +70,136 @@ function boolToStatus(value: boolean | null | undefined, env: EnvCheckResponse |
   return 'unknown'
 }
 
-const STATUS_LABEL: Record<CheckStatus, string> = {
-  ok: '正常',
-  bad: '异常',
-  provided: '未提供',
-  unknown: '无法检测',
-}
+export function EnvironmentStatusCard({ env, traffic, trafficTriggered }: EnvironmentStatusCardProps) {
+  const apktool: EnvCheckApktool | undefined = env?.details.apktool
+  const fridaPython: EnvCheckFridaPython | undefined = env?.details.frida_python
+  const redaction: EnvCheckRedactionHmacKey | undefined = env?.details.redaction_hmac_key
+  const allowedRoots: string[] | undefined = env?.details.apk_allowed_roots
 
-export function EnvironmentStatusCard({ env, traffic }: EnvironmentStatusCardProps) {
+  // —— apktool ——
+  let apktoolStatus: CheckStatus
+  let apktoolDetail: string | undefined
+  let apktoolNote: string | undefined
+  if (!env) {
+    apktoolStatus = 'unknown'
+    apktoolNote = '后端不可达,无法检测。'
+  } else if (!apktool) {
+    apktoolStatus = 'provided'
+    apktoolNote = '后端 /env/check 未返回该项,无法在本页确认;请于后端环境手工校验。'
+  } else if (!apktool.apktool_available) {
+    // 未在 PATH 找到 ⇒ 配置/环境缺失,而非「异常」
+    apktoolStatus = 'missing'
+    apktoolDetail = apktool.apktool_error ?? '未安装或不在 PATH 中'
+    apktoolNote = apktool.apktool_error ?? undefined
+  } else if (apktool.apktool_error) {
+    // 找到了但 --version 执行失败(超时 / 子进程错误) ⇒ 无法检测
+    apktoolStatus = 'unknown'
+    apktoolDetail = apktool.apktool_error
+  } else {
+    apktoolStatus = 'ok'
+    apktoolDetail = [apktool.apktool_version, apktool.apktool_path]
+      .filter(Boolean).join(' · ') || apktool.apktool_path || undefined
+  }
+
+  // —— Frida Python 包(与 frida-server 连通性分离) ——
+  let fridaPyStatus: CheckStatus
+  let fridaPyDetail: string | undefined
+  let fridaPyNote: string | undefined
+  if (!env) {
+    fridaPyStatus = 'unknown'
+    fridaPyNote = '后端不可达,无法检测。'
+  } else if (!fridaPython) {
+    fridaPyStatus = 'provided'
+    fridaPyNote = '后端 /env/check 未返回该项(仅探测 frida-server 连接性)。'
+  } else if (!fridaPython.frida_python_available) {
+    fridaPyStatus = 'bad'
+    fridaPyDetail = fridaPython.frida_python_error ?? '未安装'
+    fridaPyNote = fridaPython.frida_python_error_detail || fridaPython.frida_python_error || undefined
+  } else {
+    fridaPyStatus = 'ok'
+    fridaPyDetail = `已安装${fridaPython.frida_python_version ? ` · ${fridaPython.frida_python_version}` : ''}`
+  }
+  // frida-server 连通状态独立展示(来自旧字段 frida_connectable)。保留原始
+  // 文案「可连接」/「连接失败」,与既有契约一致(避免对已有测试与文案的无谓更改)。
+  const fridaConnectDetail = env
+    ? (env.details.frida.ok ? '可连接' : '连接失败')
+    : undefined
+
+  // —— REDACTION_HMAC_KEY(绝不展示原值) ——
+  let redactionStatus: CheckStatus
+  let redactionDetail: string | undefined
+  let redactionNote: string | undefined
+  if (!env) {
+    redactionStatus = 'unknown'
+    redactionNote = '后端不可达,无法检测。'
+  } else if (!redaction) {
+    redactionStatus = 'provided'
+    redactionNote = '后端未在自检接口暴露密钥状态(安全设计);部署前须确认已替换默认占位值。'
+  } else {
+    switch (redaction.redaction_hmac_key_security_status) {
+      case 'secure':
+        redactionStatus = 'ok'
+        redactionDetail = '已安全配置(长度达标且非占位值)'
+        break
+      case 'placeholder':
+        redactionStatus = 'bad'
+        redactionDetail = redaction.redaction_hmac_key_configured
+          ? '使用开发占位值或长度不足,请替换为私有随机值'
+          : '未配置(回退至开发占位值)'
+        redactionNote = '密钥原值不会在此展示;请在 .env 中设置足够长度的私有随机值。'
+        break
+      case 'missing':
+      default:
+        redactionStatus = 'missing'
+        redactionDetail = '未配置'
+        break
+    }
+  }
+
+  // —— APK_ALLOWED_ROOTS ——
+  let rootsStatus: CheckStatus
+  let rootsDetail: string | undefined
+  let rootsNote: string | undefined
+  if (!env) {
+    rootsStatus = 'unknown'
+    rootsNote = '后端不可达,无法检测。'
+  } else if (allowedRoots === undefined) {
+    rootsStatus = 'provided'
+    rootsNote = '后端未返回允许根目录;请确认 APK 位于允许根内再提交。'
+  } else if (allowedRoots.length === 0) {
+    rootsStatus = 'missing'
+    rootsDetail = '未配置'
+  } else {
+    rootsStatus = 'ok'
+    rootsDetail = allowedRoots.length === 1
+      ? allowedRoots[0]
+      : `${allowedRoots.length} 个允许根目录`
+    rootsNote = allowedRoots.join('\n')
+  }
+
+  // —— 流量捕获自检 ——
+  // 独立操作:未发起 ⇒ 「尚未检测」(以 note 区分,不进入 provided/unknown 五态)。
+  let trafficLabel: string
+  let trafficStatus: CheckStatus
+  let trafficDetail: string | undefined
+  let trafficNote: string | undefined
+  if (!trafficTriggered) {
+    trafficLabel = '尚未检测'
+    trafficStatus = 'unknown'
+    trafficDetail = '尚未发起自检'
+    trafficNote = '点击「流量自检」后展示;此处为 /traffic/check 探测,非真实采集任务结果。'
+  } else if (!env) {
+    trafficLabel = '无法检测'
+    trafficStatus = 'unknown'
+    trafficNote = '后端不可达。'
+  } else {
+    trafficStatus = traffic ? (traffic.captured_success ? 'ok' : 'bad') : 'unknown'
+    trafficLabel = STATUS_LABEL[trafficStatus]
+    trafficDetail = traffic
+      ? `捕获 ${traffic.captured_request_count} 条${traffic.flow_file_size ? ` · ${formatBytes(traffic.flow_file_size)}` : ''}`
+      : '未返回自检数据'
+  }
+
   const rows: Row[] = [
     {
       key: 'adb',
@@ -74,11 +216,19 @@ export function EnvironmentStatusCard({ env, traffic }: EnvironmentStatusCardPro
       detail: env ? `在线 ${env.details.device.online_count} 台` : undefined,
     },
     {
-      key: 'frida',
+      key: 'frida-connect',
       label: 'Frida 连接(含 frida-server)',
       icon: Activity,
       status: boolToStatus(env?.checks.frida_connectable, env ?? null),
-      detail: env ? (env.details.frida.ok ? '可连接' : '连接失败') : undefined,
+      detail: fridaConnectDetail,
+    },
+    {
+      key: 'frida-python',
+      label: 'Frida Python 包',
+      icon: Activity,
+      status: fridaPyStatus,
+      detail: fridaPyDetail,
+      note: fridaPyNote,
     },
     {
       key: 'mitm',
@@ -88,6 +238,14 @@ export function EnvironmentStatusCard({ env, traffic }: EnvironmentStatusCardPro
       detail: env ? `端口 ${env.details.mitm.port} ${env.details.mitm.listening ? '监听中' : '未监听'}` : undefined,
     },
     {
+      key: 'apktool',
+      label: 'apktool',
+      icon: Activity,
+      status: apktoolStatus,
+      detail: apktoolDetail,
+      note: apktoolNote,
+    },
+    {
       key: 'output',
       label: '输出目录可写',
       icon: HardDrive,
@@ -95,44 +253,30 @@ export function EnvironmentStatusCard({ env, traffic }: EnvironmentStatusCardPro
       detail: env?.details.output.path ?? undefined,
     },
     {
-      key: 'traffic',
-      label: '流量捕获自检',
-      icon: Network,
-      status: traffic ? (traffic.captured_success ? 'ok' : 'bad') : 'unknown',
-      detail: traffic
-        ? `捕获 ${traffic.captured_request_count} 条${traffic.flow_file_size ? ` · ${formatBytes(traffic.flow_file_size)}` : ''}`
-        : '未发起自检',
-      note: traffic ? undefined : '点击「流量自检」后展示;此处为 /traffic/check 探测,非真实采集任务结果。',
-    },
-    // —— 以下为后端当前「未在 /env/check 中返回」的依赖项,显式标注「未提供」,
-    //    绝不因后端没有该字段就展示为「正常」,避免误导用户以为已就绪。
-    {
-      key: 'apktool',
-      label: 'apktool',
-      icon: Activity,
-      status: 'provided',
-      note: '后端 /env/check 未返回该项,无法在本页确认;请于后端环境手工校验。',
-    },
-    {
-      key: 'frida-python',
-      label: 'Frida Python 包',
-      icon: Activity,
-      status: 'provided',
-      note: '后端 /env/check 未返回该项(仅探测 frida-server 连接性)。',
-    },
-    {
       key: 'redaction-key',
       label: 'REDACTION_HMAC_KEY',
       icon: Shield,
-      status: 'provided',
-      note: '后端未在自检接口暴露密钥状态(安全设计);部署前须确认已替换默认占位值。',
+      status: redactionStatus,
+      detail: redactionDetail,
+      note: redactionNote,
     },
     {
       key: 'allowed-roots',
       label: 'APK_ALLOWED_ROOTS',
       icon: HardDrive,
-      status: 'provided',
-      note: '后端未返回允许根目录;请确认 APK 位于允许根内再提交。',
+      status: rootsStatus,
+      detail: rootsDetail,
+      note: rootsNote,
+    },
+    {
+      key: 'traffic',
+      label: '流量捕获自检',
+      icon: Network,
+      status: trafficStatus,
+      detail: trafficDetail,
+      note: trafficNote,
+      /** 流量自检使用独立文案「尚未检测」,覆盖五态标签。 */
+      customLabel: trafficLabel,
     },
   ]
 
@@ -162,6 +306,7 @@ function Row({ row }: { row: Row }) {
       : status === 'bad'
         ? 'text-[var(--danger)] bg-[rgba(242,139,155,0.10)]'
         : 'text-[var(--text-tertiary)] bg-[rgba(127,147,186,0.08)]'
+  const label = row.customLabel ?? STATUS_LABEL[status]
   return (
     <div
       title={row.note}
@@ -184,13 +329,13 @@ function Row({ row }: { row: Row }) {
               status === 'bad' ? 'text-[var(--danger)]' : 'text-[var(--text-tertiary)]',
           )}
         >
-          {STATUS_LABEL[status]}
+          {label}
         </p>
       </div>
-      {status === 'ok' && <CheckCircle2 size={16} className="text-[var(--success)] shrink-0" aria-label={STATUS_LABEL[status]} />}
-      {status === 'bad' && <XCircle size={16} className="text-[var(--danger)] shrink-0" aria-label={STATUS_LABEL[status]} />}
-      {(status === 'provided' || status === 'unknown') && (
-        <MinusCircle size={16} className="text-[var(--text-tertiary)] shrink-0" aria-label={STATUS_LABEL[status]} />
+      {status === 'ok' && <CheckCircle2 size={16} className="text-[var(--success)] shrink-0" aria-label={label} />}
+      {status === 'bad' && <XCircle size={16} className="text-[var(--danger)] shrink-0" aria-label={label} />}
+      {(status === 'provided' || status === 'unknown' || status === 'missing') && (
+        <MinusCircle size={16} className="text-[var(--text-tertiary)] shrink-0" aria-label={label} />
       )}
     </div>
   )
