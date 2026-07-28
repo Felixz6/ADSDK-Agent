@@ -6,3 +6,8 @@ python-dotenv==1.1.1
 # --- 开发/测试依赖(可选,运行时不需要) ---
 pytest==8.4.1
 httpx==0.28.1
+
+# Dynamic analysis
+frida==17.16.4
+frida-tools==14.10.4
+mitmproxy==12.2.1

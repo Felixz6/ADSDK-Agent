@@ -8,7 +8,8 @@ $RunDir = Join-Path $Root ".run"
 $BackendPidFile = Join-Path $RunDir "backend-shell.pid"
 $FrontendPidFile = Join-Path $RunDir "frontend-shell.pid"
 
-$VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
+$VenvScripts = Join-Path $Root ".venv\Scripts"
+$VenvPython = Join-Path $VenvScripts "python.exe"
 $WebDir = Join-Path $Root "web"
 $PackageJson = Join-Path $WebDir "package.json"
 
@@ -24,6 +25,7 @@ function Test-TcpPort {
         if (-not $async.AsyncWaitHandle.WaitOne(300)) {
             return $false
         }
+
         $client.EndConnect($async)
         return $true
     }
@@ -90,11 +92,25 @@ $Command
 }
 
 if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
-    throw "未找到虚拟环境：$VenvPython`n请先在项目根目录执行：py -3.11 -m venv .venv"
+    throw "未找到虚拟环境：$VenvPython`n请先执行：py -3.14 -m venv .venv"
 }
 
 if (-not (Test-Path -LiteralPath $PackageJson -PathType Leaf)) {
     throw "未找到前端项目：$PackageJson"
+}
+
+$RequiredVenvCommands = @(
+    "frida.exe",
+    "frida-ps.exe",
+    "mitmdump.exe"
+)
+
+foreach ($commandName in $RequiredVenvCommands) {
+    $commandPath = Join-Path $VenvScripts $commandName
+
+    if (-not (Test-Path -LiteralPath $commandPath -PathType Leaf)) {
+        throw "虚拟环境缺少 $commandName。请先激活 .venv 并执行：python -m pip install -r requirements.txt"
+    }
 }
 
 $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
@@ -110,6 +126,7 @@ New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
 Write-Host ""
 Write-Host "AdSDK Agent 一键启动" -ForegroundColor Cyan
 Write-Host "项目目录：$Root"
+Write-Host "Python 环境：$VenvPython"
 Write-Host ""
 
 if (Test-TcpPort -Port 8000) {
@@ -117,10 +134,14 @@ if (Test-TcpPort -Port 8000) {
 }
 else {
     $escapedPython = $VenvPython.Replace("'", "''")
+    $escapedVenvScripts = $VenvScripts.Replace("'", "''")
+
     $backendCommand = @"
 `$env:PYTHONUTF8 = '1'
+`$env:PATH = '$escapedVenvScripts;' + `$env:PATH
 & '$escapedPython' -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 "@
+
     $backendProcess = Start-ServiceWindow `
         -Title "AdSDK Agent Backend :8000" `
         -WorkingDirectory $Root `
@@ -137,6 +158,7 @@ else {
     $frontendCommand = @"
 & npm.cmd run dev -- --host 127.0.0.1
 "@
+
     $frontendProcess = Start-ServiceWindow `
         -Title "AdSDK Agent Frontend :5173" `
         -WorkingDirectory $WebDir `
@@ -156,6 +178,7 @@ for ($i = 0; $i -lt 60; $i++) {
     if (-not $backendReady) {
         $backendReady = Test-TcpPort -Port 8000
     }
+
     if (-not $frontendReady) {
         $frontendReady = Test-TcpPort -Port 5173
     }
@@ -168,6 +191,7 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 
 Write-Host ""
+
 if ($backendReady) {
     Write-Host "后端已就绪：http://127.0.0.1:8000" -ForegroundColor Green
 }
