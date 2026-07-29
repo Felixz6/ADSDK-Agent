@@ -10,6 +10,7 @@ import {
   Sparkles,
   ListChecks,
   GitCompareArrows,
+  FileText,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { useServiceHealth } from '@/hooks/useApi'
@@ -17,7 +18,15 @@ import { useTasks } from '@/hooks/useTasks'
 import { listLocalTasks } from '@/api/tasks'
 import { StatCard } from '@/components/common/StatCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { RiskBadge } from '@/components/common/RiskBadge'
 import { formatDateTime } from '@/utils'
+import {
+  riskBadgeLevel,
+  riskLevelLabel,
+  taskSubtitle,
+  taskTitle,
+  taskTypeLongLabel,
+} from '@/utils/taskPresentation'
 
 const FEATURES = [
   { icon: Cpu, title: '静态分析', desc: '解包识别 AndroidManifest 与广告 SDK 指纹', to: '/static' },
@@ -32,6 +41,7 @@ export default function Home() {
   const runningQuery = useTasks({ status: 'running', page: 1, page_size: 1 })
   const staticQuery = useTasks({ task_type: 'static', page: 1, page_size: 1 })
   const dynamicQuery = useTasks({ task_type: 'dynamic', page: 1, page_size: 1 })
+  const comparisonQuery = useTasks({ task_type: 'comparison', page: 1, page_size: 1 })
   const recent = taskQuery.data?.items ?? []
   const legacyRecent = listLocalTasks().slice(0, 3)
   const reachable = Boolean(health.data?.ok)
@@ -84,10 +94,10 @@ export default function Home() {
       </GlassCard>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="全部任务" value={taskQuery.data?.total ?? '—'} tone="default" icon={<ListChecks size={18} />} />
+        <StatCard label="静态分析" value={staticQuery.data?.total ?? '—'} tone="success" icon={<Cpu size={18} />} />
+        <StatCard label="动态分析" value={dynamicQuery.data?.total ?? '—'} tone="warning" icon={<Network size={18} />} />
+        <StatCard label="版本对比" value={comparisonQuery.data?.total ?? '—'} tone="default" icon={<GitCompareArrows size={18} />} />
         <StatCard label="运行中任务" value={runningQuery.data?.total ?? '—'} tone="accent" icon={<Activity size={18} />} />
-        <StatCard label="静态任务" value={staticQuery.data?.total ?? '—'} tone="success" icon={<Cpu size={18} />} />
-        <StatCard label="动态任务" value={dynamicQuery.data?.total ?? '—'} tone="warning" icon={<Network size={18} />} />
       </div>
 
       {/* Backend status banner */}
@@ -161,19 +171,44 @@ export default function Home() {
         {recent.length === 0 && legacyRecent.length === 0 ? (
           <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">尚无持久化任务。点击「新建分析」开始。</p>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col divide-y divide-[rgba(157,192,255,0.07)]">
             {recent.map((t) => (
-              <li key={t.id}>
+              <li key={t.id} className="flex min-w-0 items-center gap-2 rounded-[10px] px-2 py-3 transition-colors hover:bg-[rgba(157,192,255,0.045)]">
                 <button
                   type="button"
                   onClick={() => navigate(`/tasks/${t.id}`)}
-                  className="w-full text-left flex items-center gap-3 rounded-[10px] px-3 py-2 hover:bg-[rgba(157,192,255,0.08)] transition-colors"
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  title={`任务 ID：${t.id}`}
                 >
-                  <StatusBadge tone={t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'} label={t.status === 'completed' ? '已完成' : t.status === 'failed' ? '失败' : t.status === 'running' ? '分析中' : t.status === 'cancelled' ? '已取消' : '排队中'} />
-                  <span className="text-sm text-[var(--text-primary)] truncate flex-1">{t.app_name || t.package_name || t.apk_path}</span>
-                  {t.risk_level && <span className="text-[11px] text-[var(--warning)]">{t.risk_level}</span>}
-                  <span className="text-[11px] text-[var(--text-tertiary)] shrink-0">{formatDateTime(t.created_at)}</span>
+                  <StatusBadge
+                    className="hidden min-w-[68px] justify-center sm:inline-flex"
+                    tone={t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : t.status === 'cancelled' ? 'neutral' : 'warning'}
+                    label={t.status === 'completed' ? '已完成' : t.status === 'failed' ? '失败' : t.status === 'running' ? '分析中' : t.status === 'cancelled' ? '已取消' : '排队中'}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-[var(--text-primary)]">{taskTitle(t)}</span>
+                    <span className="mt-1 block truncate text-[11px] text-[var(--text-tertiary)]">{taskSubtitle(t)}</span>
+                  </span>
                 </button>
+                <div className="hidden shrink-0 items-center gap-2 md:flex">
+                  <StatusBadge tone="info" label={taskTypeLongLabel(t.task_type)} dot={false} />
+                  <RiskBadge level={riskBadgeLevel(t.risk_level)} label={riskLevelLabel(t.risk_level)} />
+                </div>
+                <div className="hidden shrink-0 text-right text-[11px] text-[var(--text-tertiary)] lg:block">
+                  <p>{t.completed_at ? '完成于' : '提交于'}</p>
+                  <p className="mt-0.5">{formatDateTime(t.completed_at || t.created_at)}</p>
+                </div>
+                {t.report_json_path && (
+                  <button
+                    type="button"
+                    aria-label="查看报告"
+                    title="查看报告"
+                    onClick={() => navigate(`/reports?task_id=${t.id}`)}
+                    className="control-icon shrink-0"
+                  >
+                    <FileText size={14} />
+                  </button>
+                )}
               </li>
             ))}
             {recent.length === 0 && legacyRecent.map((t) => (

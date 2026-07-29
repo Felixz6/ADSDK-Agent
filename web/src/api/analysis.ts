@@ -7,6 +7,7 @@ import type {
   DynamicAnalyzeRequest,
   AnalyzeResponse,
 } from '@/types/api'
+import { safeApplicationName } from '@/utils/taskPresentation'
 
 /**
  * POST /analyze  提交静态分析(长耗时同步,超时 720 秒)
@@ -46,6 +47,11 @@ export function normalizeAnalyzeResponse(data: AnalyzeResponse): AnalyzeResponse
     app_info: appInfo
       ? {
           ...appInfo,
+          application_label: safeApplicationName({
+            appName: appInfo.application_label,
+            apkPath: data.normalized_apk_name || data.apk_path,
+            packageName: appInfo.package_name,
+          }),
           permissions: Array.isArray(appInfo.permissions) ? appInfo.permissions : declaredPermissions,
           declared_permissions: declaredPermissions,
           custom_permissions: Array.isArray(appInfo.custom_permissions) ? appInfo.custom_permissions : [],

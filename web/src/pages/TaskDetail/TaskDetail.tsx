@@ -24,7 +24,14 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { useCancelTask, useDeleteTask, useLiveTask, useRetryTask } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
 import { cn, formatDateTime } from '@/utils'
-import type { TaskRecord, TaskStatus, TaskStepStatus } from '@/types/tasks'
+import {
+  apkFilename,
+  safeApplicationName,
+  taskSubtitle,
+  taskTitle,
+  taskTypeLongLabel,
+} from '@/utils/taskPresentation'
+import type { TaskStatus, TaskStepStatus } from '@/types/tasks'
 
 type PendingAction = 'cancel' | 'delete' | null
 
@@ -99,9 +106,9 @@ export default function TaskDetail() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="任务详情"
-        description="后端持久化状态、真实步骤时间线与诊断信息。页面离开后任务仍继续运行。"
-        eyebrow={`任务 ${task.id}`}
+        title={taskTitle(task)}
+        description={taskSubtitle(task)}
+        eyebrow={`任务详情 · ${taskTypeLongLabel(task.task_type)}`}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <button type="button" onClick={() => navigate('/tasks')} className="control-button"><ArrowLeft size={14} /> 列表</button>
@@ -119,7 +126,7 @@ export default function TaskDetail() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="分析类型" value={taskTypeLabel(task)} tone="accent" icon={<Package size={18} />} />
+        <StatCard label="分析类型" value={taskTypeLongLabel(task.task_type)} tone="accent" icon={<Package size={18} />} />
         <StatCard label="任务状态" value={STATUS_LABEL[task.status]} tone={statusCardTone(task.status)} icon={statusIcon(task.status)} />
         <StatCard label="当前进度" value={`${task.progress_percent}%`} tone={active ? 'default' : 'success'} icon={<Clock size={18} />} />
         <StatCard label="实时通道" value={active ? taskQuery.socketConnected ? 'WebSocket' : 'HTTP 轮询' : '已停止'} tone={taskQuery.socketConnected ? 'success' : 'neutral'} icon={taskQuery.socketConnected ? <Wifi size={18} /> : <WifiOff size={18} />} />
@@ -129,7 +136,11 @@ export default function TaskDetail() {
         <div className="flex items-center justify-between gap-3 mb-2">
           <div>
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">总体进度</h3>
-            <p className="text-xs text-[var(--text-tertiary)] mt-1">{stageLabel(task.current_stage)}</p>
+            <p className="text-xs text-[var(--text-tertiary)] mt-1">
+              {task.status === 'cancelled'
+                ? `取消于：${stageLabel(task.cancelled_at_stage || task.current_stage)}`
+                : stageLabel(task.current_stage)}
+            </p>
           </div>
           <StatusBadge tone={statusTone(task.status)} label={STATUS_LABEL[task.status]} />
         </div>
@@ -143,12 +154,12 @@ export default function TaskDetail() {
           <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">任务信息</h3>
           <dl className="flex flex-col gap-1">
             <KV k="任务 ID" v={task.id} mono />
-            <KV k="应用名称" v={task.app_name ?? '—'} />
-            <KV k="包名" v={task.package_name ?? '—'} mono />
-            <KV k="APK 文件" v={task.apk_path?.split(/[\\/]/).pop() ?? '—'} />
-            <KV k="SHA-256" v={task.apk_sha256 ?? '—'} mono />
-            <KV k="版本" v={`${task.version_name ?? '—'} (${task.version_code ?? '—'})`} />
-            <KV k="设备标识（脱敏）" v={task.device_id ?? '—'} mono />
+            <KV k="应用名称" v={safeApplicationName({ appName: task.app_name, apkPath: task.apk_path, packageName: task.package_name })} />
+            <KV k="包名" v={task.package_name ?? '待解析'} mono />
+            <KV k="APK 文件" v={apkFilename(task.apk_path) || '待确认'} />
+            <KV k="SHA-256" v={task.apk_sha256 ?? '待生成'} mono />
+            <KV k="版本" v={`${task.version_name ?? '未知'} (${task.version_code ?? '未知'})`} />
+            <KV k="设备标识（脱敏）" v={task.device_id ?? '未绑定'} mono />
           </dl>
         </GlassCard>
         <GlassCard padding="md">
@@ -159,8 +170,8 @@ export default function TaskDetail() {
             <KV k="创建时间" v={formatDateTime(task.created_at)} />
             <KV k="开始时间" v={formatDateTime(task.started_at)} />
             <KV k="完成时间" v={formatDateTime(task.completed_at)} />
-            <KV k="报告 JSON" v={task.report_json_path ? '已生成' : '—'} />
-            <KV k="报告 HTML" v={task.report_html_path ? '已生成，可打印' : '—'} />
+            <KV k="报告 JSON" v={task.report_json_path ? '已生成' : '未生成'} />
+            <KV k="报告 HTML" v={task.report_html_path ? '已生成，可打印' : '未生成'} />
           </dl>
         </GlassCard>
       </div>
@@ -192,9 +203,14 @@ export default function TaskDetail() {
 
       {(task.error_code || task.error_message) && (
         <GlassCard padding="md" className="border-[rgba(242,139,155,0.35)]">
-          <h3 className="text-sm font-semibold text-[var(--danger)] flex items-center gap-2"><ShieldAlert size={16} /> 错误详情</h3>
-          <p className="text-xs text-[var(--text-tertiary)] mt-2">{task.error_code ?? 'task_error'}</p>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">{task.error_message ?? '任务执行失败'}</p>
+          <h3 className="text-sm font-semibold text-[var(--danger)] flex items-center gap-2"><ShieldAlert size={16} /> 诊断信息</h3>
+          <p className="text-sm text-[var(--text-secondary)] mt-2">{task.error_message ?? '任务执行未完成，请查看步骤时间线。'}</p>
+          {task.error_code && (
+            <details className="mt-3 rounded-[10px] border border-[rgba(157,192,255,0.08)] px-3 py-2">
+              <summary className="cursor-pointer text-xs text-[var(--text-tertiary)]">技术详情</summary>
+              <p className="mt-2 break-all font-mono text-xs text-[var(--text-secondary)]">{task.error_code}</p>
+            </details>
+          )}
         </GlassCard>
       )}
 
@@ -220,10 +236,6 @@ function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
       <dd className={cn('text-sm text-[var(--text-primary)] text-right break-all', mono && 'font-mono text-[12px]')}>{v}</dd>
     </div>
   )
-}
-
-function taskTypeLabel(task: TaskRecord): string {
-  return task.task_type === 'static' ? '静态分析' : task.task_type === 'dynamic' ? '动态分析' : '版本对比'
 }
 
 function statusTone(status: TaskStatus): 'success' | 'warning' | 'danger' | 'neutral' | 'info' {
