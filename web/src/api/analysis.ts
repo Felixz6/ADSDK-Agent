@@ -68,6 +68,8 @@ export function normalizeAnalyzeResponse(data: AnalyzeResponse): AnalyzeResponse
     timeline: data.timeline ?? null,
     compliance_insight: data.compliance_insight ?? null,
     dynamic_execution: data.dynamic_execution ?? null,
+    environment_capabilities: data.environment_capabilities ?? null,
+    dynamic_task_result: data.dynamic_task_result ?? null,
     dynamic_evidence_quality: data.dynamic_evidence_quality ?? null,
     frida_diagnostics: data.frida_diagnostics ?? null,
     process_diagnostics: data.process_diagnostics ?? null,

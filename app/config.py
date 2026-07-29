@@ -76,6 +76,10 @@ FRIDA_READY_TIMEOUT_SECONDS = _env_positive_float(
     "FRIDA_READY_TIMEOUT_SECONDS",
     15.0,
 )
+FRIDA_SPAWN_STABILITY_SECONDS = _env_positive_float(
+    "FRIDA_SPAWN_STABILITY_SECONDS",
+    3.0,
+)
 FRIDA_STOP_TIMEOUT_SECONDS = _env_positive_float(
     "FRIDA_STOP_TIMEOUT_SECONDS",
     5.0,

@@ -18,6 +18,7 @@ from app.config import (
     APK_MAX_SIZE_BYTES,
     DEFAULT_MITM_PORT,
     FRIDA_READY_TIMEOUT_SECONDS,
+    FRIDA_SPAWN_STABILITY_SECONDS,
     FRIDA_STOP_TIMEOUT_SECONDS,
     FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS,
     FRIDA_SERVER_LOCAL_PATH,
@@ -1592,7 +1593,23 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
 
     install_ok = False
     started = _utc_now()
-    if device_context is not None:
+    if (
+        device_context is not None
+        and req.dynamic_mode_policy == DynamicModePolicy.ATTACH_ONLY.value
+    ):
+        install_ok = True
+        steps.append(
+            _step_result(
+                "apk_install",
+                StepStatus.SKIPPED,
+                started,
+                required=False,
+                warnings=[
+                    "attach_only 保留当前目标进程，本次任务跳过 APK 重新安装"
+                ],
+            )
+        )
+    elif device_context is not None:
         try:
             install_result = install_apk(
                 str(context.apk_path),
@@ -1735,7 +1752,8 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                         ),
                     )
 
-                def launch_target_for_attach() -> None:
+                def launch_target_for_attach() -> dict[str, Any]:
+                    launch_requested = _utc_now()
                     launch_result = launch_app(
                         package_name,
                         device_context=device_context,
@@ -1757,7 +1775,16 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                             pid_result.get("returncode") == 0
                             and str(pid_result.get("stdout") or "").strip()
                         ):
-                            return
+                            pid_observed = _utc_now()
+                            return {
+                                "launch_requested_at": launch_requested.isoformat(
+                                    timespec="milliseconds"
+                                ).replace("+00:00", "Z"),
+                                "pid_observed_at": pid_observed.isoformat(
+                                    timespec="milliseconds"
+                                ).replace("+00:00", "Z"),
+                                "_launch_requested_datetime": launch_requested,
+                            }
                         time.sleep(0.25)
                     raise FridaSessionError(
                         "package_process_not_found",
@@ -1812,6 +1839,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 post_consent_seconds=req.post_consent_seconds,
                 collection_timeout_seconds=req.collection_timeout_seconds,
                 frida_ready_timeout_seconds=FRIDA_READY_TIMEOUT_SECONDS,
+                frida_spawn_stability_seconds=FRIDA_SPAWN_STABILITY_SECONDS,
                 frida_stop_timeout_seconds=FRIDA_STOP_TIMEOUT_SECONDS,
                 mitm_ready_timeout_seconds=MITM_READY_TIMEOUT_SECONDS,
                 mitm_stop_timeout_seconds=MITM_STOP_TIMEOUT_SECONDS,
@@ -2124,40 +2152,66 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         and FridaSession is _ORIGINAL_FRIDA_SESSION_CLASS
         and frida_session is not None
     ):
+        runtime_failure_sessions = list(
+            getattr(frida_session, "runtime_failure_sessions", [])
+        )
+        diagnostic_session = (
+            runtime_failure_sessions[-1]
+            if runtime_failure_sessions
+            else frida_session
+        )
         logcat = LogcatCollector(
             device=device_context,
             package_name=package_name,
             output_dir=dynamic_diagnostics_dir,
-        ).collect(pid=getattr(frida_session, "pid", None))
+        ).collect(pid=getattr(diagnostic_session, "pid", None))
         pid_result = run_cmd(
             device_context.adb_command("shell", "pidof", package_name),
             timeout=10,
         )
         pid_text = str(pid_result.get("stdout") or "").strip()
-        observed_pid = getattr(frida_session, "pid", None)
+        observed_pid = getattr(diagnostic_session, "pid", None)
         if observed_pid is None and pid_text:
             first_pid = pid_text.split()[0]
             observed_pid = int(first_pid) if first_pid.isdigit() else None
         timeline_for_process = collection_result.timeline.to_dict()
         start_ms = timeline_for_process.get("app_resumed_monotonic_ms")
         end_ms = timeline_for_process.get("collection_ended_monotonic_ms")
-        duration_ms = (
-            max(0, int(float(end_ms) - float(start_ms)))
-            if start_ms is not None and end_ms is not None
-            else None
+        duration_ms = getattr(
+            diagnostic_session,
+            "post_resume_survival_ms",
+            None,
         )
+        if duration_ms is None:
+            duration_ms = (
+                max(0, int(float(end_ms) - float(start_ms)))
+                if start_ms is not None and end_ms is not None
+                else None
+            )
         process_diagnostics = classify_process_exit(
             pid=observed_pid,
             duration_ms=duration_ms,
             hook_ready=hook_evidence_available,
             hook_event_count=len(dynamic_events),
-            detached_reason=getattr(frida_session, "error_code", None),
+            detached_reason=getattr(
+                diagnostic_session,
+                "detached_reason",
+                getattr(diagnostic_session, "error_code", None),
+            ),
             logcat_lines=list(logcat["lines"]),
             process_still_running=(
-                pid_result.get("returncode") == 0 and bool(pid_text)
+                not runtime_failure_sessions
+                and pid_result.get("returncode") == 0
+                and bool(pid_text)
             ),
+            crash=getattr(diagnostic_session, "crash", None),
         )
         process_diagnostics_payload = process_diagnostics.model_dump(mode="json")
+        process_diagnostics_payload["final_process_result"] = (
+            "running"
+            if pid_result.get("returncode") == 0 and bool(pid_text)
+            else process_diagnostics.status
+        )
         atomic_write_json(
             dynamic_diagnostics_dir / "process-diagnostics.json",
             process_diagnostics_payload,
@@ -2207,6 +2261,20 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
     if isinstance(selected_mode, str):
         selected_mode = ExecutionMode(selected_mode)
     execution_attempts = list(getattr(frida_session, "attempts", []))
+    if process_diagnostics_payload is not None:
+        for attempt in execution_attempts:
+            if getattr(attempt, "process_result", None) == "process_crashed":
+                attempt.crash = dict(process_diagnostics_payload)
+                break
+    environment_capabilities = dict(
+        getattr(frida_session, "environment_capabilities", {})
+    )
+    diagnostic_capabilities = (
+        (frida_diagnostic_payload or {}).get("capabilities") or {}
+    )
+    for key, value in diagnostic_capabilities.items():
+        if environment_capabilities.get(key) is None:
+            environment_capabilities[key] = value
     execution_decision = {
         "policy": req.dynamic_mode_policy,
         "selected_mode": selected_mode.value,
@@ -2217,6 +2285,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             for item in execution_attempts
         ],
         "fallback_path": list(getattr(frida_session, "fallback_path", [])),
+        "launch_timing": dict(getattr(frida_session, "launch_timing", {})),
     }
     evidence_quality = build_evidence_quality(
         selected_mode,
@@ -2227,6 +2296,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         consent_boundary_trusted=hook_evidence_available
         and (req.consent_after_seconds is None or consent_time is not None),
         network_evidence=network_evidence_available,
+        early_lifecycle_verified=False,
         reason_codes=[
             code
             for code in (
@@ -2240,6 +2310,61 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         ],
     )
     dynamic_validation_level = evidence_quality.level
+    crashed_attempt = next(
+        (
+            attempt
+            for attempt in execution_attempts
+            if getattr(attempt, "process_result", None) == "process_crashed"
+        ),
+        None,
+    )
+    task_result = {
+        "execution_mode": selected_mode.value,
+        "spawn": (
+            "success"
+            if any(
+                item.mode is ExecutionMode.SPAWN_SUSPENDED
+                and item.phase in {"resumed", "post_resume_stability", "collecting"}
+                for item in execution_attempts
+            )
+            else "not_observed"
+        ),
+        "attach": (
+            "success"
+            if any(
+                item.phase
+                in {"hook_loaded", "hook_ready", "resumed", "collecting", "post_resume_stability"}
+                for item in execution_attempts
+            )
+            else "not_observed"
+        ),
+        "hook_load": (
+            "success"
+            if any(
+                item.phase
+                in {"hook_loaded", "hook_ready", "resumed", "collecting", "post_resume_stability"}
+                for item in execution_attempts
+            )
+            else "not_observed"
+        ),
+        "resume": (
+            "success"
+            if any(
+                item.phase in {"resumed", "post_resume_stability", "collecting"}
+                for item in execution_attempts
+            )
+            else "not_observed"
+        ),
+        "process_result": (
+            "process_crashed"
+            if crashed_attempt is not None
+            else (process_diagnostics_payload or {}).get("status")
+        ),
+        "crash_type": (process_diagnostics_payload or {}).get("crash_type"),
+        "crash_signal": (process_diagnostics_payload or {}).get("signal"),
+        "crash_code": (process_diagnostics_payload or {}).get("signal_code"),
+        "crash_summary": (process_diagnostics_payload or {}).get("summary"),
+    }
     for attempt in execution_attempts:
         step_name = (
             "spawn_suspended_attempt"
@@ -2251,7 +2376,11 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         steps.append(
             _step_result(
                 step_name,
-                StepStatus(attempt.status),
+                {
+                    "success": StepStatus.SUCCESS,
+                    "failed": StepStatus.FAILED,
+                    "skipped": StepStatus.SKIPPED,
+                }.get(attempt.status, StepStatus.PARTIAL),
                 _utc_now(),
                 required=(
                     req.dynamic_mode_policy == "strict"
@@ -2332,6 +2461,8 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         "collection_status": collection_result.status,
         "cleanup_errors": list(collection_result.cleanup_errors),
         "execution": execution_decision,
+        "environment_capabilities": environment_capabilities,
+        "task_result": task_result,
         "evidence_quality": evidence_quality.model_dump(mode="json"),
     }
     atomic_write_json(context.sessions_path, sessions_payload)
@@ -2375,6 +2506,8 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             "collection_status": collection_result.status,
             "dynamic_validation_level": dynamic_validation_level,
             "dynamic_execution": execution_decision,
+            "environment_capabilities": environment_capabilities,
+            "dynamic_task_result": task_result,
             "dynamic_evidence_quality": evidence_quality.model_dump(mode="json"),
             "frida_diagnostics": frida_diagnostic_payload,
             "process_diagnostics": process_diagnostics_payload,

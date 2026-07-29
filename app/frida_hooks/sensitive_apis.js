@@ -28,7 +28,7 @@
 
     function pid() {
         if (ProcessClass === null) {
-            return 0;
+            return Number(Process.id);
         }
         return Number(ProcessClass.myPid());
     }
@@ -114,27 +114,27 @@
     }
 
     function emitConsent(source) {
-        Java.perform(function () {
-            emitControl("consent_granted", {
-                source: String(source || "configured_delay"),
-                metadata: {
-                    monotonic_source:
-                        "android.os.SystemClock.elapsedRealtime"
-                }
-            });
+        emitControl("consent_granted", {
+            source: String(source || "configured_delay"),
+            metadata: {
+                monotonic_source:
+                    SystemClock === null
+                        ? "frida_script_clock_pending"
+                        : "android.os.SystemClock.elapsedRealtime"
+            }
         });
         return true;
     }
 
     function emitCollectionStarted(source) {
-        Java.perform(function () {
-            emitControl("collection_started", {
-                source: String(source || "frida_session"),
-                metadata: {
-                    monotonic_source:
-                        "android.os.SystemClock.elapsedRealtime"
-                }
-            });
+        emitControl("collection_started", {
+            source: String(source || "frida_session"),
+            metadata: {
+                monotonic_source:
+                    SystemClock === null
+                        ? "frida_script_clock_pending"
+                        : "android.os.SystemClock.elapsedRealtime"
+            }
         });
         return true;
     }
@@ -144,7 +144,18 @@
         emit_collection_started: emitCollectionStarted
     };
 
-    Java.perform(function () {
+    var javaHooksInstalled = false;
+
+    function installJavaHooks() {
+        if (
+            javaHooksInstalled ||
+            typeof Java === "undefined" ||
+            !Java.available
+        ) {
+            return false;
+        }
+        javaHooksInstalled = true;
+        Java.perform(function () {
         var installedHooks = [];
         var failedHooks = [];
 
@@ -220,7 +231,7 @@
             failedHooks.push("clipboard");
         }
 
-        emitControl("hook_ready", {
+        emitControl("hook_status", {
             installed_hooks: installedHooks,
             failed_hooks: failedHooks,
             metadata: {
@@ -228,5 +239,23 @@
                     "android.os.SystemClock.elapsedRealtime"
             }
         });
+        });
+        return true;
+    }
+
+    function waitForJavaRuntime() {
+        if (!installJavaHooks()) {
+            setTimeout(waitForJavaRuntime, 50);
+        }
+    }
+
+    emitControl("hook_ready", {
+        installed_hooks: [],
+        failed_hooks: ["java_runtime_pending"],
+        metadata: {
+            lifecycle_phase: "script_loaded",
+            monotonic_source: "frida_script_clock_pending"
+        }
     });
+    waitForJavaRuntime();
 }());

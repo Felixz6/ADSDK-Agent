@@ -97,10 +97,12 @@ export default function Reports() {
       <RiskSummaryCard summary={resp.risk_summary} />
 
       {isDynamic && (
-        <DynamicReliabilityCard
-          diagnostics={resp.frida_diagnostics}
-          execution={resp.dynamic_execution}
-          evidence={resp.dynamic_evidence_quality}
+            <DynamicReliabilityCard
+              diagnostics={resp.frida_diagnostics}
+              capabilities={resp.environment_capabilities}
+              execution={resp.dynamic_execution}
+              taskResult={resp.dynamic_task_result}
+              evidence={resp.dynamic_evidence_quality}
           process={resp.process_diagnostics}
           traffic={resp.traffic_diagnostics}
         />

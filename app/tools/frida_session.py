@@ -141,6 +141,11 @@ class FridaSession:
     failed_hooks: list[str] = field(default_factory=list, init=False)
     exit_code: int | None = field(default=None, init=False)
     stderr: str | None = field(default=None, init=False)
+    detached_reason: str | None = field(default=None, init=False)
+    crash: dict[str, Any] | None = field(default=None, init=False)
+    attach_started_at: datetime | None = field(default=None, init=False)
+    attach_completed_at: datetime | None = field(default=None, init=False)
+    post_resume_survival_ms: int | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.run_id = self.run_id.strip()
@@ -184,7 +189,9 @@ class FridaSession:
         self._device_ready_monotonic_ms: float | None = None
         self._host_ready_monotonic_ms: float | None = None
         self._resumed = False
+        self._resume_monotonic: float | None = None
         self._ready_signal = threading.Event()
+        self._detached_signal = threading.Event()
         self._collection_signal = threading.Event()
         self._consent_signal = threading.Event()
         self._stop_complete = threading.Event()
@@ -365,7 +372,7 @@ class FridaSession:
                 if process is None:
                     self._raise_failure(
                         "package_process_not_found",
-                        "Target package process is not running",
+                        "Target package process is not running; launch the app normally before attach_only",
                     )
                 pid = getattr(process, "pid", None)
             else:
@@ -412,6 +419,7 @@ class FridaSession:
             )
 
         source = self._script_source()
+        self.attach_started_at = self.clock.utc_now()
         try:
             attached = self._device_handle.attach(self.pid)
         except Exception as exc:
@@ -429,6 +437,7 @@ class FridaSession:
             self._attached_session = attached
             self._script = script
             script.load()
+            self.attach_completed_at = self.clock.utc_now()
         except FridaSessionError:
             raise
         except Exception as exc:
@@ -465,12 +474,53 @@ class FridaSession:
             self.stop(timeout_seconds=self.stop_timeout_seconds)
             raise
 
-    def _on_detached(self, *_args: Any, **_kwargs: Any) -> None:
+    @staticmethod
+    def _normalize_crash(crash: Any) -> dict[str, Any] | None:
+        if crash is None:
+            return None
+        if isinstance(crash, dict):
+            return dict(crash)
+        for method_name in ("model_dump", "to_dict"):
+            method = getattr(crash, method_name, None)
+            if callable(method):
+                try:
+                    value = method()
+                except Exception:
+                    continue
+                if isinstance(value, dict):
+                    return dict(value)
+        value: dict[str, Any] = {}
+        for name in ("summary", "report", "description", "message", "parameters"):
+            item = getattr(crash, name, None)
+            if item is not None:
+                value[name] = item
+        return value or {"summary": str(crash)}
+
+    def _on_detached(
+        self,
+        reason: Any = None,
+        crash: Any = None,
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> None:
         with self._lock:
+            self.detached_reason = str(reason) if reason is not None else None
+            self.crash = self._normalize_crash(crash)
+            if self._resume_monotonic is not None:
+                self.post_resume_survival_ms = max(
+                    0,
+                    int(
+                        (float(self.clock.monotonic()) - self._resume_monotonic)
+                        * 1000
+                    ),
+                )
+            self._detached_signal.set()
             if self.state in {
                 FridaSessionState.STOPPING,
                 FridaSessionState.STOPPED,
             }:
+                return
+            if self.detached_reason == "application-requested" and self.crash is None:
                 return
             self.exit_code = getattr(
                 self._attached_session,
@@ -480,12 +530,16 @@ class FridaSession:
             self.stderr = None
             self._set_failure(
                 (
-                    "app_exited_after_resume"
+                    "process_crashed"
+                    if self.crash is not None
+                    else "process_exited"
                     if self._resumed
                     else "frida_process_exited"
                 ),
                 (
-                    "Target app exited after resume"
+                    "Target app crashed after resume"
+                    if self.crash is not None
+                    else "Target app exited after resume"
                     if self._resumed
                     else "Frida session detached before collection completed"
                 ),
@@ -550,6 +604,12 @@ class FridaSession:
                 self.failed_hooks = list(model.failed_hooks)
                 self.state = FridaSessionState.READY
                 self._ready_signal.set()
+            return
+
+        if model.event == "hook_status":
+            self._writer.append(model)
+            self.installed_hooks = list(model.installed_hooks)
+            self.failed_hooks = list(model.failed_hooks)
             return
 
         if model.event == "consent_granted":
@@ -649,6 +709,10 @@ class FridaSession:
         # hook_ready -> collection_started -> resume.
         collection_start = self.emit_collection_started()
 
+        with self._lock:
+            self._resumed = True
+            self._resume_monotonic = float(self.clock.monotonic())
+
         if self.execution_mode == "spawn_suspended":
             try:
                 self._device_handle.resume(self.pid)
@@ -663,11 +727,32 @@ class FridaSession:
                 ) from exc
 
         with self._lock:
-            self._resumed = True
             self.timeline.mark_app_resumed()
             self.state = FridaSessionState.COLLECTING
         assert self.timeline.collection_started_at is not None
         return self.timeline.collection_started_at
+
+    def wait_stable(self, timeout_seconds: float) -> bool:
+        """Wait for the post-resume stability gate without hiding detach evidence."""
+
+        if timeout_seconds < 0:
+            raise ValueError("timeout_seconds must be non-negative")
+        if self.execution_mode != "spawn_suspended":
+            return True
+        detached = self._detached_signal.wait(timeout_seconds)
+        if not detached:
+            self.post_resume_survival_ms = max(
+                0,
+                int(timeout_seconds * 1000),
+            )
+            return True
+        if self.detached_reason == "application-requested" and self.crash is None:
+            return True
+        code = self.error_code or "process_exited"
+        raise FridaSessionError(
+            code,
+            self.error_message or "Target process ended inside the stability window",
+        )
 
     def _estimated_device_monotonic_ms(self) -> float:
         if (
@@ -850,6 +935,19 @@ class FridaSession:
             "pid": self.pid,
             "error_code": self.error_code,
             "error": self.error_message,
+            "detached_reason": self.detached_reason,
+            "crash": self.crash,
+            "post_resume_survival_ms": self.post_resume_survival_ms,
+            "attach_started_at": (
+                self.attach_started_at.astimezone(timezone.utc).isoformat()
+                if self.attach_started_at is not None
+                else None
+            ),
+            "attach_completed_at": (
+                self.attach_completed_at.astimezone(timezone.utc).isoformat()
+                if self.attach_completed_at is not None
+                else None
+            ),
             "event_log_path": self.event_log_path.name,
             "valid_event_count": len(self._writer.valid_events),
             "protocol_error_count": len(self._writer.protocol_errors),

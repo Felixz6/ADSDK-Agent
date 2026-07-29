@@ -217,6 +217,8 @@ class AnalyzeResponse(BaseModel):
     collection_status: Optional[str] = None
     dynamic_validation_level: Optional[str] = None
     dynamic_execution: Optional[Dict[str, Any]] = None
+    environment_capabilities: Optional[Dict[str, Any]] = None
+    dynamic_task_result: Optional[Dict[str, Any]] = None
     dynamic_evidence_quality: Optional[Dict[str, Any]] = None
     frida_diagnostics: Optional[Dict[str, Any]] = None
     process_diagnostics: Optional[Dict[str, Any]] = None

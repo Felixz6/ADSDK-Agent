@@ -31,6 +31,8 @@ def write_markdown_report(report: dict, report_path: str):
     evidence_quality = report.get("dynamic_evidence_quality", {}) or {}
     process_diagnostics = report.get("process_diagnostics", {}) or {}
     traffic_diagnostics = report.get("traffic_diagnostics", {}) or {}
+    environment_capabilities = report.get("environment_capabilities", {}) or {}
+    task_result = report.get("dynamic_task_result", {}) or {}
 
     lines = []
     lines.append("# Android 广告 SDK 分析报告")
@@ -97,11 +99,27 @@ def write_markdown_report(report: dict, report_path: str):
 
     if execution or evidence_quality:
         lines.append("")
-        lines.append("## 动态证据质量")
+        lines.append("## 动态可靠性")
+        lines.append("")
+        lines.append("### 环境能力")
+        lines.append("")
+        for key in (
+            "transport_available",
+            "process_enumeration_available",
+            "attach_available",
+            "spawn_creation_available",
+            "spawn_resume_stable",
+        ):
+            lines.append(
+                f"- {key}: `{_md_cell(environment_capabilities.get(key))}`"
+            )
+        lines.append("")
+        lines.append("### 本次采集结果")
         lines.append("")
         lines.append(f"- 最终执行模式: `{_md_cell(execution.get('selected_mode') or evidence_quality.get('mode') or '旧版报告未记录')}`")
         lines.append(f"- 执行策略: `{_md_cell(execution.get('policy') or '旧版报告未记录')}`")
         lines.append(f"- 证据等级: `{_md_cell(evidence_quality.get('level') or '无法判断')}`")
+        lines.append(f"- 进程结果: `{_md_cell(task_result.get('process_result') or process_diagnostics.get('status'))}`")
         for item in evidence_quality.get("coverage") or []:
             lines.append(f"- 覆盖: {_md_cell(item)}")
         for item in evidence_quality.get("limitations") or []:
@@ -109,12 +127,31 @@ def write_markdown_report(report: dict, report_path: str):
         attempts = execution.get("attempts") or []
         if attempts:
             lines.append("")
-            lines.append("| 执行尝试 | 状态 | 原因码 |")
-            lines.append("|---|---|---|")
+            lines.append("| 执行尝试 | 状态 | 阶段 | 进程结果 | 恢复后存活(ms) | 原因码 |")
+            lines.append("|---|---|---|---|---:|---|")
             for item in attempts:
                 lines.append(
                     f"| {_md_cell(item.get('mode'))} | {_md_cell(item.get('status'))} | "
-                    f"{_md_cell(item.get('reason_code'))} |"
+                    f"{_md_cell(item.get('phase'))} | {_md_cell(item.get('process_result'))} | "
+                    f"{_md_cell(item.get('post_resume_survival_ms'))} | {_md_cell(item.get('reason_code'))} |"
+                )
+        if process_diagnostics.get("status") == "process_crashed":
+            lines.append("")
+            lines.append("### Native 崩溃摘要")
+            lines.append("")
+            lines.append(f"- signal: `{_md_cell(process_diagnostics.get('signal'))}`")
+            lines.append(f"- signal_code: `{_md_cell(process_diagnostics.get('signal_code'))}`")
+            lines.append(f"- summary: {_md_cell(process_diagnostics.get('summary'))}")
+            lines.append(
+                "- suspected_components: "
+                + _md_cell(", ".join(process_diagnostics.get("suspected_components") or []))
+            )
+            lines.append(
+                f"- reason_code: `{_md_cell(process_diagnostics.get('reason_code'))}`"
+            )
+            if process_diagnostics.get("native_frames"):
+                lines.append(
+                    "- 完整 backtrace: `dynamic/process-diagnostics.json`（报告正文仅展示摘要）"
                 )
         lines.append("")
         lines.append("### 证据边界")
@@ -122,7 +159,7 @@ def write_markdown_report(report: dict, report_path: str):
         lines.append("- `not_evaluated` 代表证据不足，不代表安全。")
         lines.append("- 零请求不代表应用没有网络行为。")
         lines.append("- attach 模式不能证明启动阶段没有行为。")
-        lines.append("- 疑似反调试不等于确定存在反调试。")
+        lines.append("- 兼容性诊断提示不等同于单一根因证明。")
         if process_diagnostics:
             lines.append(
                 f"- 进程退出摘要: {_md_cell(process_diagnostics.get('most_likely_cause') or process_diagnostics.get('status'))}"
