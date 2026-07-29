@@ -42,6 +42,14 @@ class DiagnosticSection(BaseModel):
     checks: dict[str, DiagnosticCheck] = Field(default_factory=dict)
 
 
+class FridaEnvironmentCapabilities(BaseModel):
+    transport_available: bool | None = None
+    process_enumeration_available: bool | None = None
+    attach_available: bool | None = None
+    spawn_creation_available: bool | None = None
+    spawn_resume_stable: bool | None = None
+
+
 class FridaDiagnosticsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -74,6 +82,9 @@ class FridaDiagnosticsResponse(BaseModel):
     duration_ms: int = Field(ge=0)
     device_ref: str | None = None
     management_enabled: bool = False
+    capabilities: FridaEnvironmentCapabilities = Field(
+        default_factory=FridaEnvironmentCapabilities
+    )
 
 
 class FridaServerActionRequest(BaseModel):

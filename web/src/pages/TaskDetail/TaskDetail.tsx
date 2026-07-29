@@ -78,15 +78,19 @@ export default function TaskDetail() {
   const taskId = task.id
   const active = task.status === 'queued' || task.status === 'running'
   const reliabilityAttempts = task.steps
-    .filter((item) => item.step_key === 'spawn_suspended_attempt' || item.step_key === 'attach_attempt')
+    .filter((item) => item.step_key.endsWith('_attempt'))
     .filter((item) => item.status === 'success' || item.status === 'failed')
     .map((item) => ({
-      mode: item.step_key === 'attach_attempt' ? 'attach_existing' as const : 'spawn_suspended' as const,
+      mode: (
+        item.step_key === 'attach_attempt'
+          ? 'attach_existing'
+          : item.step_key.replace(/_attempt$/, '')
+      ) as DynamicExecutionSummary['attempts'][number]['mode'],
       status: item.status as 'success' | 'failed',
       reason_code: item.status === 'failed' ? task.error_code : null,
       message: item.message ?? (item.status === 'success' ? '执行成功' : '执行失败'),
     }))
-  const successfulAttempt = reliabilityAttempts.find((item) => item.status === 'success')
+  const successfulAttempt = [...reliabilityAttempts].reverse().find((item) => item.status === 'success')
   const dynamicExecution: DynamicExecutionSummary | null = task.task_type === 'dynamic' ? {
     policy: (task.request_payload.dynamic_mode_policy as DynamicModePolicy | undefined) ?? 'balanced',
     selected_mode: successfulAttempt?.mode ?? 'none',

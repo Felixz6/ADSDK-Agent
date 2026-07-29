@@ -18,6 +18,7 @@ from .execution_session import PolicyFridaSession
 from .models import (
     FridaDiagnosticsRequest,
     FridaDiagnosticsResponse,
+    FridaEnvironmentCapabilities,
     FridaServerActionRequest,
     FridaServerActionResponse,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "FridaDiagnosticsRequest",
     "FridaDiagnosticsResponse",
     "FridaDiagnosticsService",
+    "FridaEnvironmentCapabilities",
     "FridaServerActionRequest",
     "FridaServerActionResponse",
     "FridaServerManager",

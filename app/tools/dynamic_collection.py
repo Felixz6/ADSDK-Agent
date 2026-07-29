@@ -60,6 +60,7 @@ class DynamicCollectionConfig:
     post_consent_seconds: float = 10
     collection_timeout_seconds: float = 300
     frida_ready_timeout_seconds: float = 15
+    frida_spawn_stability_seconds: float = 3
     frida_stop_timeout_seconds: float = 5
     mitm_ready_timeout_seconds: float = 10
     mitm_stop_timeout_seconds: float = 5
@@ -79,6 +80,7 @@ class DynamicCollectionConfig:
         positive = {
             "collection_timeout_seconds": self.collection_timeout_seconds,
             "frida_ready_timeout_seconds": self.frida_ready_timeout_seconds,
+            "frida_spawn_stability_seconds": self.frida_spawn_stability_seconds,
             "frida_stop_timeout_seconds": self.frida_stop_timeout_seconds,
             "mitm_ready_timeout_seconds": self.mitm_ready_timeout_seconds,
             "mitm_stop_timeout_seconds": self.mitm_stop_timeout_seconds,
@@ -429,6 +431,28 @@ def run_dynamic_collection(
             return result
         timeline.app_resumed_at = active_clock.utc_now()
         timeline.app_resumed_monotonic_ms = active_clock.monotonic() * 1000.0
+
+        stable_waiter = getattr(frida_session, "wait_stable", None)
+        if callable(stable_waiter):
+            try:
+                stable = _call_timeout_method(
+                    frida_session,
+                    "wait_stable",
+                    config.frida_spawn_stability_seconds,
+                )
+                if stable is False:
+                    raise _session_error(
+                        frida_session,
+                        "spawn_runtime_failed",
+                        "Target process ended inside the spawn stability window",
+                    )
+                result.outcomes["post_resume_stability"] = "success"
+            except BaseException as exc:
+                result.outcomes["post_resume_stability"] = "failed"
+                fail(exc, "process_exited")
+                return result
+        else:
+            result.outcomes["post_resume_stability"] = "not_observed"
 
         if config.enable_ui_stimulation and stimulate_ui is not None:
             try:

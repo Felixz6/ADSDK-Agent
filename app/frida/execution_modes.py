@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -24,9 +24,14 @@ class ExecutionMode(str, Enum):
 
 class ExecutionAttempt(BaseModel):
     mode: ExecutionMode
-    status: Literal["success", "failed", "skipped"]
+    status: Literal["running", "success", "failed", "skipped"]
     reason_code: str | None = None
     message: str
+    phase: str | None = None
+    process_result: str | None = None
+    post_resume_survival_ms: int | None = Field(default=None, ge=0)
+    timestamps: dict[str, Any] = Field(default_factory=dict)
+    crash: dict[str, Any] | None = None
 
 
 class ExecutionModeDecision(BaseModel):
@@ -139,6 +144,7 @@ def build_evidence_quality(
     consent_boundary_trusted: bool,
     network_evidence: bool,
     reason_codes: list[str] | None = None,
+    early_lifecycle_verified: bool = False,
 ) -> DynamicEvidenceQuality:
     reasons = list(dict.fromkeys(reason_codes or []))
     if (
@@ -149,11 +155,23 @@ def build_evidence_quality(
         and consent_boundary_trusted
     ):
         level: Literal["A", "B", "C", "D"] = "A"
-    elif mode in {ExecutionMode.SPAWN, ExecutionMode.LAUNCH_THEN_ATTACH} and (
-        hook_ready_trusted and event_protocol_trusted
+    elif (
+        mode is ExecutionMode.SPAWN
+        and hook_ready_trusted
+        and event_protocol_trusted
     ):
         level = "B"
-    elif mode is ExecutionMode.ATTACH_EXISTING and event_protocol_trusted:
+    elif (
+        mode is ExecutionMode.LAUNCH_THEN_ATTACH
+        and early_lifecycle_verified
+        and hook_ready_trusted
+        and event_protocol_trusted
+    ):
+        level = "B"
+    elif (
+        mode in {ExecutionMode.ATTACH_EXISTING, ExecutionMode.LAUNCH_THEN_ATTACH}
+        and event_protocol_trusted
+    ):
         level = "C"
     else:
         level = "D"
@@ -177,6 +195,15 @@ def build_evidence_quality(
     if mode is not ExecutionMode.SPAWN_SUSPENDED:
         limitations.append("无法证明应用启动阶段行为完整")
         untrusted.append("启动前与早期启动阶段")
+    if mode is ExecutionMode.ATTACH_EXISTING:
+        limitations.extend(
+            [
+                "只能分析附加后的行为",
+                "无法证明 Consent 前最早阶段完整",
+            ]
+        )
+    if mode is ExecutionMode.LAUNCH_THEN_ATTACH and not early_lifecycle_verified:
+        limitations.append("正常启动到 Attach 完成之间存在启动覆盖间隙")
     if not consent_boundary_trusted:
         limitations.append("Consent 前后时间边界不完整")
         untrusted.append("完整 Consent 前覆盖")

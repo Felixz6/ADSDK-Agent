@@ -19,6 +19,7 @@ from .models import (
     DiagnosticCheck,
     DiagnosticIssue,
     DiagnosticSection,
+    FridaEnvironmentCapabilities,
     FridaDiagnosticsRequest,
     FridaDiagnosticsResponse,
 )
@@ -512,7 +513,11 @@ class FridaDiagnosticsService:
         handshake_ok = transport.checks["handshake"].status == "pass"
         host_ok = host.status == "pass"
         device_ok = device_section.checks["adb_state"].status == "pass"
-        server_running = server.checks["process"].status == "pass"
+        server_running = (
+            server.checks["process"].status == "pass"
+            or server.checks["listen_port"].status == "pass"
+            or handshake_ok
+        )
         target_installed = target.checks.get("package_installed")
         target_process = target.checks.get("process")
         if handshake_ok and host_ok and device_ok and server_running:
@@ -554,4 +559,13 @@ class FridaDiagnosticsService:
             duration_ms=max(0, int((self.monotonic() - started) * 1000)),
             device_ref=device.public_serial,
             management_enabled=self.management_enabled,
+            capabilities=FridaEnvironmentCapabilities(
+                transport_available=handshake_ok,
+                process_enumeration_available=handshake_ok,
+                attach_available=(
+                    handshake_ok
+                    and target_process is not None
+                    and target_process.status == "pass"
+                ),
+            ),
         )
