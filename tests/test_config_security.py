@@ -28,6 +28,31 @@ def test_apk_input_defaults_are_bounded():
     assert isinstance(config.ALLOW_UNC_APK_PATHS, bool)
 
 
+def test_task_database_path_defaults_under_output_and_honors_env():
+    original = os.environ.pop("TASK_DATABASE_PATH", None)
+    try:
+        cfg_default = importlib.reload(config)
+        assert Path(cfg_default.TASK_DATABASE_PATH) == (
+            Path(cfg_default.OUTPUT_DIR) / "state" / "adsdk-agent.db"
+        )
+
+        os.environ["TASK_DATABASE_PATH"] = "   "
+        cfg_blank = importlib.reload(config)
+        assert Path(cfg_blank.TASK_DATABASE_PATH) == (
+            Path(cfg_blank.OUTPUT_DIR) / "state" / "adsdk-agent.db"
+        )
+
+        custom = Path(cfg_default.OUTPUT_DIR) / "state" / "custom-tasks.db"
+        os.environ["TASK_DATABASE_PATH"] = str(custom)
+        cfg_override = importlib.reload(config)
+        assert Path(cfg_override.TASK_DATABASE_PATH) == custom
+    finally:
+        os.environ.pop("TASK_DATABASE_PATH", None)
+        if original is not None:
+            os.environ["TASK_DATABASE_PATH"] = original
+        importlib.reload(config)
+
+
 def test_boolean_config_parser(monkeypatch):
     monkeypatch.setenv("P0_BOOL_SETTING", "yes")
     assert config._env_bool("P0_BOOL_SETTING") is True
