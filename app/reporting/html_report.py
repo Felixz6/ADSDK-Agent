@@ -11,6 +11,15 @@ def _text(value: Any) -> str:
     return "—" if value is None or value == "" else escape(str(value), quote=True)
 
 
+def _risk_label(value: Any) -> str:
+    return {
+        "low": "低风险",
+        "medium": "中风险",
+        "high": "高风险",
+        "critical": "严重风险",
+    }.get(str(value or "").lower(), "未评估")
+
+
 def _items(values: Iterable[Any], empty: str) -> str:
     rows = list(values)
     if not rows:
@@ -95,7 +104,7 @@ def render_html_report(report: dict[str, Any]) -> str:
                 [
                     ("分析状态", report.get("status")),
                     ("风险评分", risk.get("score")),
-                    ("风险等级", risk.get("level")),
+                    ("风险等级", _risk_label(risk.get("level"))),
                     ("证据置信度", risk.get("confidence")),
                     ("识别 SDK", report.get("sdk_count")),
                     ("网络请求", traffic.get("total_requests")),
@@ -145,7 +154,7 @@ def render_html_report(report: dict[str, Any]) -> str:
                         item.get("sdk_name"),
                         item.get("vendor"),
                         item.get("category"),
-                        item.get("risk_level"),
+                        _risk_label(item.get("risk_level")),
                     )
                     for item in sdks
                 ),

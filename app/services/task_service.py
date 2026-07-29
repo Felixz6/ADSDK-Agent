@@ -187,10 +187,17 @@ class TaskService:
             )
         except TaskCancelled:
             release_device()
+            current = self.repository.get_task(task_id, include_steps=False)
+            cancelled_at_stage = (
+                current.current_stage
+                if current and current.current_stage not in {None, "cancelled"}
+                else None
+            )
             self.repository.update_task(
                 task_id,
                 status="cancelled",
                 current_stage="cancelled",
+                cancelled_at_stage=cancelled_at_stage,
                 completed_at=utc_now(),
                 error_code="task_cancelled",
                 error_message="任务已按请求取消，已执行资源清理",
@@ -276,6 +283,7 @@ class TaskService:
                 task_id,
                 status="cancelled",
                 current_stage="cancelled",
+                cancelled_at_stage="queued",
                 completed_at=utc_now(),
                 error_code="task_cancelled",
                 error_message="任务在排队阶段取消",

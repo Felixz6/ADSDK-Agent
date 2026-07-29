@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
+from app.core.application_names import stable_application_name
 from app.comparisons.models import (
     ComparisonCreateRequest,
     ComparisonResult,
@@ -87,6 +88,7 @@ class ComparisonService:
         )
         comparison_id = str(uuid4())
         task_id = str(uuid4())
+        created_at = utc_now()
         permissions = _diff(
             base_app.get("permissions") or [],
             target_app.get("permissions") or [],
@@ -122,6 +124,7 @@ class ComparisonService:
             task_id=task_id,
             base_task_id=base_task.id,
             target_task_id=target_task.id,
+            created_at=created_at,
             base_summary=self._summary(base_report),
             target_summary=self._summary(target_report),
             risk_score_delta=delta,
@@ -156,9 +159,14 @@ class ComparisonService:
                 "task_type": "comparison",
                 "status": "completed",
                 "apk_path": None,
+                "app_name": (
+                    f"{stable_application_name(base_app.get('application_label'), package_name=base_package)}"
+                    " · 版本对比"
+                ),
+                "package_name": base_package,
                 "progress_percent": 100,
                 "request_payload": request.model_dump(mode="json"),
-                "created_at": utc_now(),
+                "created_at": created_at,
             }
         )
         self.repository.update_task(
@@ -173,12 +181,19 @@ class ComparisonService:
             base_task_id=base_task.id,
             target_task_id=target_task.id,
             result=result.model_dump(mode="json"),
+            created_at=created_at,
         )
         return result
 
     def get(self, comparison_id: str) -> ComparisonResult | None:
         payload = self.repository.get_comparison(comparison_id)
         return ComparisonResult.model_validate(payload) if payload else None
+
+    def list(self, *, limit: int = 20) -> list[ComparisonResult]:
+        return [
+            ComparisonResult.model_validate(payload)
+            for payload in self.repository.list_comparisons(limit=limit)
+        ]
 
     @staticmethod
     def _read_report(path_text: str) -> dict[str, Any]:
@@ -193,7 +208,11 @@ class ComparisonService:
         risk = report.get("risk_summary") or {}
         snapshot = report.get("apk_snapshot") or {}
         return {
-            "app_name": app.get("application_label"),
+            "app_name": stable_application_name(
+                app.get("application_label"),
+                apk_filename=report.get("normalized_apk_name"),
+                package_name=app.get("package_name"),
+            ),
             "package_name": app.get("package_name"),
             "version_name": app.get("version_name"),
             "version_code": app.get("version_code"),

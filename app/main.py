@@ -26,6 +26,7 @@ from app.config import (
     OUTPUT_DIR,
     REDACTION_HMAC_KEY,
     SCHEMA_VERSION,
+    STATIC_UNPACK_CACHE_DIR,
     TASK_DATABASE_PATH,
 )
 from app.core.artifacts import atomic_write_json, atomic_write_text
@@ -57,6 +58,9 @@ from app.comparisons import (
 from app.reporting import write_html_report
 from app.repositories import TaskRepository
 from app.services import TaskService
+from app.services.application_name_service import (
+    repair_historical_application_names,
+)
 from app.tasks.models import (
     TaskActionResponse,
     TaskCreateRequest,
@@ -963,7 +967,10 @@ def analyze(req: AnalyzeRequest):
     if steps[-1].status is StepStatus.SUCCESS:
         manifest_started = _utc_now()
         try:
-            app_info = parse_manifest_info(str(analysis_dir))
+            app_info = parse_manifest_info(
+                str(analysis_dir),
+                apk_filename=context.source_apk_display,
+            )
             steps.append(
                 _step_result(
                     "manifest_parse",
@@ -1385,7 +1392,10 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
     if unpack_ok:
         started = _utc_now()
         try:
-            app_info = parse_manifest_info(str(analysis_dir))
+            app_info = parse_manifest_info(
+                str(analysis_dir),
+                apk_filename=context.source_apk_display,
+            )
             steps.append(
                 _step_result(
                     "manifest_parse",
@@ -1975,6 +1985,10 @@ def dynamic_analyze(req: DynamicAnalyzeRequest):
 
 task_repository = TaskRepository(TASK_DATABASE_PATH)
 task_service = TaskService(task_repository)
+repair_historical_application_names(
+    task_repository,
+    static_unpack_cache_dir=STATIC_UNPACK_CACHE_DIR,
+)
 comparison_service = ComparisonService(task_repository)
 task_service.recover()
 
@@ -2172,6 +2186,11 @@ def create_comparison(request: ComparisonCreateRequest):
             status_code=422,
             detail={"code": "invalid_comparison", "message": str(exc)},
         )
+
+
+@app.get("/comparisons", response_model=list[ComparisonResult])
+def list_comparisons(limit: int = 20):
+    return comparison_service.list(limit=max(1, min(limit, 100)))
 
 
 @app.get("/comparisons/{comparison_id}", response_model=ComparisonResult)

@@ -54,6 +54,7 @@ class TaskRecord(BaseModel):
     enable_ui_stimulation: bool = False
     progress_percent: int = Field(ge=0, le=100)
     current_stage: str | None = None
+    cancelled_at_stage: str | None = None
     error_code: str | None = None
     error_message: str | None = None
     report_json_path: str | None = None
@@ -97,4 +98,3 @@ class TaskSystemStatus(BaseModel):
     running_tasks: int
     queued_tasks: int
     occupied_devices: list[str] = Field(default_factory=list)
-
