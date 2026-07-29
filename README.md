@@ -386,6 +386,7 @@ Web 提交分析请求
 | `APK_MAX_SIZE_MB`             |      `1024` | APK 校验和快照的大小上限                          |
 | `REDACTION_HMAC_KEY`          |  开发占位值 | 稳定 HMAC 脱敏密钥，部署时必须替换                |
 | `FRIDA_READY_TIMEOUT_SECONDS` |        `15` | Hook-ready 等待超时                               |
+| `FRIDA_SPAWN_STABILITY_SECONDS` | `3` | resume 后进程稳定观察窗口；窗口内结束按任务结果记录 |
 | `FRIDA_STOP_TIMEOUT_SECONDS`  |         `5` | Frida 停止和清理超时                              |
 | `MITM_PORT_START`             |      `8080` | mitmproxy 端口池起点                              |
 | `MITM_PORT_END`               |      `8090` | mitmproxy 端口池终点                              |
@@ -786,7 +787,7 @@ Remove-Item -LiteralPath .\output\cache\static-unpack -Recurse
 所有动态命令必须显式绑定设备：
 
 ```powershell
-$device = '127.0.0.1:16416'
+$device = 'TARGET_DEVICE'
 $apk = 'D:\adsdk-agent\samples\hongguo.apk'
 
 adb devices -l
@@ -802,7 +803,7 @@ adb -s $device shell settings get global http_proxy
 {
   "task_type": "dynamic",
   "apk_path": "D:\\adsdk-agent\\samples\\hongguo.apk",
-  "device_id": "127.0.0.1:16416",
+  "device_id": "TARGET_DEVICE",
   "enable_traffic": true,
   "enable_ui_stimulation": false,
   "pre_consent_seconds": 5,
@@ -820,3 +821,43 @@ adb -s $device shell settings get global http_proxy
 - 浏览器 PDF 结果依赖用户本机打印设置，后端不生成原生 PDF；
 - 动态分析质量仍取决于应用可运行性、Frida 兼容性、证书信任和 SSL Pinning；
 - 删除任务默认保留完整分析目录，磁盘回收由操作者在停止服务后按目录执行。
+
+## M4 动态分析可靠性
+
+- `strict` 只接受 `spawn_suspended`，失败后不降级；
+- `balanced` 优先启动前 Hook，失败后只选择具有真实语义的已有进程 attach，并记录每次尝试；
+- `attach_only` 不覆盖启动阶段，报告会明确降低证据等级；
+- `dynamic-evidence-quality-v1` 使用 A/B/C/D 及覆盖、限制、可信/不可信能力解释结果；
+- `frida-diagnostics-v1` 分别检查 host、device、server、transport、target；
+- 诊断保持只读，打开页面不会触发部署、启动或停止；
+- 平台不联网下载 frida-server，不覆盖未知远端文件，不停止用户已有进程；
+- 零请求不等于无网络行为，快速退出也不会直接解释为反调试。
+
+新增配置：
+
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| `FRIDA_SERVER_MANAGEMENT_ENABLED` | `false` | 是否允许用户显式执行本地 server 管理 |
+| `FRIDA_SERVER_LOCAL_PATH` | 空 | 用户配置的本地可信文件；平台不联网下载 |
+| `FRIDA_SERVER_REMOTE_PATH` | `/data/local/tmp/frida-server` | 设备端受控路径 |
+| `FRIDA_SERVER_START_TIMEOUT_SECONDS` | `10` | 受控启动超时 |
+| `FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS` | `10` | transport 握手超时 |
+| `FRIDA_SERVER_STOP_ON_TASK_END` | `false` | 是否停止任务启动且拥有的 server |
+
+新增 API：`POST /frida/diagnostics`、`GET /frida/status`、
+`POST /frida/server/deploy`、`POST /frida/server/start` 和
+`POST /frida/server/stop`。动态请求新增 `dynamic_mode_policy`，默认 `balanced`。
+
+完整流程见 [动态可靠性](docs/DYNAMIC_RELIABILITY.md)、[Frida 诊断](docs/FRIDA_DIAGNOSTICS.md)
+与 [MuMu 验收](docs/MUMU_DYNAMIC_ACCEPTANCE.md)。
+
+
+### M4.2 MuMu suspended-spawn 可靠性边界
+
+- 环境能力与单次任务结果分别建模。目标进程崩溃时，已验证的 transport、进程枚举、Attach 与 spawn 创建能力仍按真实结果保留。
+- `strict` 只运行 `spawn_suspended`。resume 成功后还需通过 `FRIDA_SPAWN_STABILITY_SECONDS` 稳定窗口；窗口内 Native crash 记录为 `process_crashed`，不触发降级。
+- `balanced` 在 suspended-spawn 的稳定窗口内发生运行时崩溃时，保留首次尝试的 Hook、resume、存活时间和崩溃证据，清理该会话后使用正常 Android 启动，再执行 `launch_then_attach`。
+- `attach_only` 保留正在运行的目标，不重新安装 APK，也不 force-stop；目标进程缺席时返回 `package_process_not_found`，默认证据等级 C。
+- `launch_then_attach` 记录 `launch_requested_at`、`pid_observed_at`、`attach_started_at`、`attach_completed_at` 和 `startup_gap_ms`，默认证据等级 C。只有显式验证早期生命周期覆盖时才评为 B，且不自动评为 A。
+- 主动 `application-requested` detach 且 `crash=None` 属于正常清理。完整 Native backtrace 保存在 `dynamic/process-diagnostics.json`，页面和正文默认仅展示摘要。
+- 外部启动的 `frida-server` 不属于任务所有权；任务结束只清理由平台显式启动并记录 ownership 的 server。

@@ -66,6 +66,7 @@ def test_boolean_config_parser(monkeypatch):
 
 def test_dynamic_session_timeouts_and_port_pool_are_bounded():
     assert config.FRIDA_READY_TIMEOUT_SECONDS > 0
+    assert config.FRIDA_SPAWN_STABILITY_SECONDS == 3
     assert config.FRIDA_STOP_TIMEOUT_SECONDS > 0
     assert config.MITM_READY_TIMEOUT_SECONDS > 0
     assert config.MITM_STOP_TIMEOUT_SECONDS > 0

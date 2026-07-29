@@ -16,9 +16,13 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { ApkPathInput } from '@/components/analysis/ApkPathInput'
 import { AnalysisModeSelector, type AnalysisMode } from '@/components/analysis/AnalysisModeSelector'
 import { DeviceSelector } from '@/components/analysis/DeviceSelector'
+import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
 import { useCreateTask } from '@/hooks/useTasks'
+import { useFridaDiagnostics } from '@/hooks/useApi'
 import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/utils'
+import { MODE_COPY } from '@/utils/dynamicReliability'
+import type { DynamicModePolicy } from '@/types/api'
 
 const RECENT_APK_KEY = 'adsdk-agent:recent-apk-path'
 
@@ -48,8 +52,10 @@ export default function NewAnalysis() {
   const [enableTraffic, setEnableTraffic] = useState(true)
   const [enableUiStim, setEnableUiStim] = useState(false)
   const [timeoutSec, setTimeoutSec] = useState(300)
+  const [dynamicPolicy, setDynamicPolicy] = useState<DynamicModePolicy>('balanced')
 
   const createMut = useCreateTask()
+  const diagnostics = useFridaDiagnostics()
   const submitting = createMut.isPending
 
   const stepIndex = STEPS.findIndex((s) => s.key === step)
@@ -75,6 +81,10 @@ export default function NewAnalysis() {
       pushToast({ kind: 'warning', message: '动态任务必须显式选择在线设备。', duration: 4000 })
       return
     }
+    if (kind === 'dynamic' && diagnostics.data?.overall_status === 'blocked') {
+      pushToast({ kind: 'warning', message: 'Frida 预检存在阻塞项，请先进入环境检测查看修复建议。', duration: 5000 })
+      return
+    }
     try {
       const task = await createMut.mutateAsync(
         kind === 'static'
@@ -90,6 +100,7 @@ export default function NewAnalysis() {
           enable_traffic: enableTraffic,
           enable_ui_stimulation: enableUiStim,
           collection_timeout_seconds: timeoutSec,
+          dynamic_mode_policy: dynamicPolicy,
         },
       )
       if (import.meta.env.DEV) localStorage.setItem(RECENT_APK_KEY, apkPath.trim())
@@ -177,6 +188,41 @@ export default function NewAnalysis() {
               ) : (
                 <>
                   <DeviceSelector value={deviceId} onChange={setDeviceId} disabled={submitting} />
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {(Object.entries(MODE_COPY) as [DynamicModePolicy, { label: string; detail: string }][]).map(([value, copy]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setDynamicPolicy(value)}
+                        aria-pressed={dynamicPolicy === value}
+                        className={cn(
+                          'min-w-0 rounded-[12px] border p-3 text-left transition',
+                          dynamicPolicy === value
+                            ? 'border-[var(--border-active)] bg-[rgba(120,216,255,0.08)]'
+                            : 'border-[var(--border-soft)]',
+                        )}
+                      >
+                        <span className="text-sm font-medium text-[var(--text-primary)]">{copy.label}</span>
+                        <span className="mt-1 block text-[11px] leading-relaxed text-[var(--text-tertiary)]">{copy.detail}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!deviceId.trim() || diagnostics.isPending}
+                      onClick={() => diagnostics.mutate({ deviceId: deviceId.trim(), packageName: packageName.trim() || undefined })}
+                      className="control-button"
+                    >
+                      {diagnostics.isPending ? '正在预检…' : '运行 Frida 预检'}
+                    </button>
+                    <span className="text-[11px] text-[var(--text-tertiary)]">预检按需执行；不会部署或启动服务。</span>
+                  </div>
+                  <DynamicReliabilityCard
+                    diagnostics={diagnostics.data}
+                    loading={diagnostics.isPending}
+                    onRefresh={deviceId.trim() ? () => diagnostics.mutate({ deviceId: deviceId.trim(), packageName: packageName.trim() || undefined }) : undefined}
+                  />
                   <NumberField id="consentAfter" label="同意发生时长(秒)" hint="0-86400,用于划分同意前/后窗口" value={consentAfter} min={0} max={86400} onChange={setConsentAfter} disabled={submitting} />
                   <div className="grid grid-cols-2 gap-3">
                     <NumberField id="pre" label="同意前窗口(秒)" hint="0-3600" value={preSeconds} min={0} max={3600} onChange={setPreSeconds} disabled={submitting} />
@@ -204,6 +250,7 @@ export default function NewAnalysis() {
                     ? ([
                         ['目标设备', deviceId || '默认'],
                         ['包名', packageName || '—'],
+                        ['执行策略', MODE_COPY[dynamicPolicy].label],
                         ['同意发生时长', `${consentAfter} 秒`],
                         ['同意前/后窗口', `${preSeconds} / ${postSeconds} 秒`],
                         ['采集流量', enableTraffic ? '是' : '否'],

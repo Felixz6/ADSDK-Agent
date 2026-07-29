@@ -1,5 +1,6 @@
 import threading
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -102,6 +103,10 @@ class FakeDevice:
             raise self.spawn_error
         return 4242
 
+    def enumerate_processes(self):
+        self.calls.append(("device.enumerate_processes",))
+        return [SimpleNamespace(pid=4242, name="应用标签", identifier=None)]
+
     def attach(self, pid: int) -> FakeAttachedSession:
         self.calls.append(("device.attach", pid))
         if self.attach_error is not None:
@@ -133,6 +138,8 @@ def _make_session(
     spawn_error: Exception | None = None,
     attach_error: Exception | None = None,
     unload_gate: threading.Event | None = None,
+    execution_mode: str = "spawn_suspended",
+    command_runner=None,
 ):
     calls: list[tuple] = []
     script_path = tmp_path / "sensitive_apis.js"
@@ -150,6 +157,9 @@ def _make_session(
         attach_error=attach_error,
     )
     adapter = FakeAdapter(device, calls)
+    kwargs = {}
+    if command_runner is not None:
+        kwargs["command_runner"] = command_runner
     session = FridaSession(
         run_id="run-frida-1",
         device=DeviceContext(serial),
@@ -158,6 +168,8 @@ def _make_session(
         event_log_path=tmp_path / "events.raw.jsonl",
         adapter=adapter,
         clock=FakeClock(),
+        execution_mode=execution_mode,
+        **kwargs,
     )
     return session, script, calls
 
@@ -256,6 +268,33 @@ def test_partial_hook_install_is_ready_but_exposed(tmp_path):
 
     assert session.failed_hooks == ["clipboard"]
     assert session.state is FridaSessionState.READY
+
+
+def test_deferred_java_hook_status_replaces_bootstrap_pending_state(tmp_path):
+    session, script, _calls = _make_session(tmp_path)
+    session.start()
+    script.emit(
+        _hook_ready_payload(
+            session,
+            installed_hooks=[],
+            failed_hooks=["java_runtime_pending"],
+        )
+    )
+    session.wait_ready(timeout_seconds=0.05)
+
+    script.emit(
+        _hook_ready_payload(
+            session,
+            event="hook_status",
+            event_id="hook-status-event-1",
+            installed_hooks=["android_id", "clipboard"],
+            failed_hooks=[],
+        )
+    )
+
+    assert session.installed_hooks == ["android_id", "clipboard"]
+    assert session.failed_hooks == []
+    assert session.control_events[-1]["event"] == "hook_status"
 
 
 def test_collection_and_consent_controls_share_device_monotonic_stream(tmp_path):
@@ -369,6 +408,105 @@ def test_attach_failure_is_distinct_from_hook_load_failure(tmp_path):
     assert captured.value.code == "frida_attach_failed"
     assert session.error_code == "frida_attach_failed"
     assert session.state is FridaSessionState.FAILED
+
+
+def test_attach_existing_resolves_package_pid_when_frida_name_is_app_label(tmp_path):
+    session, _script, calls = _make_session(
+        tmp_path,
+        execution_mode="attach_existing",
+        command_runner=lambda command, timeout: {
+            "returncode": 0,
+            "stdout": "4242\n",
+            "stderr": "",
+            "cmd": command,
+            "timed_out": False,
+        },
+    )
+
+    session.start()
+
+    assert session.pid == 4242
+    assert ("device.enumerate_processes",) in calls
+    assert ("device.attach", 4242) in calls
+
+
+def test_spawn_stability_window_passes_without_detach(tmp_path):
+    session, script, _calls = _make_session(tmp_path)
+    session.start()
+    script.emit(_hook_ready_payload(session))
+    session.wait_ready(timeout_seconds=0.05)
+    session.resume()
+
+    assert session.wait_stable(0.001) is True
+    assert session.post_resume_survival_ms == 1
+
+
+def test_native_detach_inside_stability_window_is_process_crash(tmp_path):
+    session, script, _calls = _make_session(tmp_path)
+    session.start()
+    script.emit(_hook_ready_payload(session))
+    session.wait_ready(timeout_seconds=0.05)
+    session.resume()
+    session.clock.advance(1.0)
+    session._on_detached(
+        "process-terminated",
+        {
+            "summary": "trying to execute non-executable memory",
+            "report": "SIGSEGV SEGV_ACCERR libhoudini.so",
+        },
+    )
+
+    with pytest.raises(FridaSessionError) as captured:
+        session.wait_stable(3)
+    assert captured.value.code == "process_crashed"
+    assert session.detached_reason == "process-terminated"
+    assert session.crash is not None
+    assert session.post_resume_survival_ms == 1000
+
+
+def test_attach_only_cleanup_detaches_without_killing_running_target(tmp_path):
+    session, script, calls = _make_session(
+        tmp_path,
+        execution_mode="attach_existing",
+        command_runner=lambda command, timeout: {
+            "returncode": 0,
+            "stdout": "4242\n",
+            "stderr": "",
+            "cmd": command,
+            "timed_out": False,
+        },
+    )
+    session.start()
+    script.emit(_hook_ready_payload(session))
+    session.wait_ready(timeout_seconds=0.05)
+    session.resume()
+    assert session.wait_stable(0.001) is True
+    assert session.stop(timeout_seconds=0.1) is True
+    assert ("session.detach",) in calls
+    assert ("device.kill", 4242) not in calls
+
+
+def test_application_requested_detach_does_not_mark_session_failed(tmp_path):
+    session, script, _calls = _make_session(
+        tmp_path,
+        execution_mode="attach_existing",
+        command_runner=lambda command, timeout: {
+            "returncode": 0,
+            "stdout": "4242\n",
+            "stderr": "",
+            "cmd": command,
+            "timed_out": False,
+        },
+    )
+    session.start()
+    script.emit(_hook_ready_payload(session))
+    session.wait_ready(timeout_seconds=0.05)
+    session.resume()
+    session._on_detached("application-requested", None)
+
+    assert session.error_code is None
+    assert session.detached_reason == "application-requested"
+    assert session.crash is None
 
 
 def test_stop_timeout_is_bounded_and_attempts_owned_pid_termination(tmp_path):
