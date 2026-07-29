@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { Cpu, Loader2, RefreshCw, Network, ShieldAlert, Hand } from 'lucide-react'
+import { Activity, Cpu, Loader2, RefreshCw, Network, ShieldAlert, Hand } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { EnvironmentStatusCard } from '@/components/report/EnvironmentStatusCard'
 import { EmptyState, ErrorState } from '@/components/common/States'
 import { DeviceSelector } from '@/components/analysis/DeviceSelector'
-import { useEnvCheck, useTrafficCheck, useServiceHealth } from '@/hooks/useApi'
+import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { useEnvCheck, useTrafficCheck, useServiceHealth, useFridaDiagnostics, useFridaServerAction } from '@/hooks/useApi'
 import type { TrafficCheckResponse } from '@/types/api'
 import { formatBytes, cn } from '@/utils'
 
@@ -16,6 +18,14 @@ export default function Environment() {
   const env = useEnvCheck(deviceId || undefined)
   const [trafficEnabled, setTrafficEnabled] = useState(false)
   const traffic = useTrafficCheck(deviceId, trafficEnabled)
+  const diagnostics = useFridaDiagnostics()
+  const serverAction = useFridaServerAction()
+  const [pendingServerAction, setPendingServerAction] = useState<'deploy' | 'start' | 'stop' | null>(null)
+
+  function runDiagnostics() {
+    if (!deviceId.trim()) return
+    diagnostics.mutate({ deviceId: deviceId.trim() })
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -58,6 +68,14 @@ export default function Environment() {
           >
             <Network size={15} /> 流量自检
           </button>
+          <button
+            type="button"
+            disabled={!deviceId.trim() || diagnostics.isPending}
+            onClick={runDiagnostics}
+            className="control-button"
+          >
+            <Activity size={15} /> {diagnostics.isPending ? '诊断中…' : 'Frida 完整诊断'}
+          </button>
           {trafficEnabled && (
             <button
               type="button"
@@ -92,6 +110,26 @@ export default function Environment() {
             traffic={trafficEnabled && traffic.data ? traffic.data : null}
             trafficTriggered={trafficEnabled}
           />
+
+          <DynamicReliabilityCard
+            diagnostics={diagnostics.data}
+            loading={diagnostics.isPending}
+            onRefresh={deviceId.trim() ? runDiagnostics : undefined}
+          />
+          {diagnostics.data?.management_enabled && (
+            <GlassCard padding="md">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">frida-server 受控管理</h3>
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">仅使用已配置的本地文件；页面不会自动部署、启动或停止服务。</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(['deploy', 'start', 'stop'] as const).map((action) => (
+                  <button key={action} type="button" onClick={() => setPendingServerAction(action)} className="control-button">
+                    {action === 'deploy' ? '部署本地文件' : action === 'start' ? '启动服务' : '停止平台服务'}
+                  </button>
+                ))}
+              </div>
+              {serverAction.data && <p className="mt-2 text-xs text-[var(--text-secondary)]">{serverAction.data.message}</p>}
+            </GlassCard>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DetailCard title="ADB 详情" data={env.data.details.adb} />
@@ -140,6 +178,19 @@ export default function Environment() {
       {!env.isPending && !env.isError && !env.data && (
         <EmptyState icon={<Cpu size={28} />} title="无环境数据" description="点击「刷新」重新发起自检。" />
       )}
+      <ConfirmDialog
+        open={pendingServerAction !== null}
+        title={pendingServerAction === 'deploy' ? '部署已配置的本地服务文件？' : pendingServerAction === 'start' ? '启动 frida-server？' : '停止平台启动的服务？'}
+        description="操作仅作用于当前明确选择的设备；停止操作只处理平台登记所有权的进程。"
+        confirmLabel="确认执行"
+        onConfirm={() => {
+          if (pendingServerAction && deviceId.trim()) {
+            serverAction.mutate({ action: pendingServerAction, deviceId: deviceId.trim() })
+          }
+          setPendingServerAction(null)
+        }}
+        onCancel={() => setPendingServerAction(null)}
+      />
     </div>
   )
 }

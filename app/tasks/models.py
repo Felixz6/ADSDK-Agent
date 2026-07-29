@@ -23,6 +23,7 @@ class TaskCreateRequest(BaseModel):
     pre_consent_seconds: int = Field(default=10, ge=0, le=3600)
     post_consent_seconds: int = Field(default=10, ge=0, le=3600)
     collection_timeout_seconds: int = Field(default=300, ge=1, le=86400)
+    dynamic_mode_policy: Literal["strict", "balanced", "attach_only"] = "balanced"
 
 
 class TaskStepRecord(BaseModel):

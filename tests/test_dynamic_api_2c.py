@@ -963,6 +963,21 @@ def test_new_request_controls_are_forwarded_to_collection_lifecycle(
     )
 
 
+def test_attach_only_skips_apk_reinstall_and_preserves_running_target(
+    dynamic_api: _ApiHarness,
+):
+    response = dynamic_api.post(
+        dynamic_mode_policy="attach_only",
+        enable_traffic=False,
+    )
+    assert response.status_code == 200
+    assert "tool.adb_install" not in dynamic_api.scenario.calls
+    apk_install = next(
+        step for step in response.json()["steps"] if step["name"] == "apk_install"
+    )
+    assert apk_install["status"] == "skipped"
+
+
 @pytest.mark.parametrize("timeout", [0, 86_401])
 def test_collection_timeout_request_range_is_validated(
     dynamic_api: _ApiHarness,

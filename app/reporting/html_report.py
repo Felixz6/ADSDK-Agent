@@ -60,6 +60,12 @@ def render_html_report(report: dict[str, Any]) -> str:
     events = report.get("dynamic_events")
     steps = report.get("steps") or []
     limitations = [str(item) for item in report.get("limitations") or []]
+    execution = report.get("dynamic_execution") or {}
+    evidence_quality = report.get("dynamic_evidence_quality") or {}
+    process_diagnostics = report.get("process_diagnostics") or {}
+    traffic_diagnostics = report.get("traffic_diagnostics") or {}
+    environment_capabilities = report.get("environment_capabilities") or {}
+    task_result = report.get("dynamic_task_result") or {}
     dynamic_trusted = (
         events is not None
         and report.get("collection_status") == "success"
@@ -160,6 +166,63 @@ def render_html_report(report: dict[str, Any]) -> str:
                 ),
                 "未识别到 SDK。",
             ),
+        ),
+        _section(
+            "dynamic-quality",
+            "动态可靠性：环境能力与本次采集结果",
+            '<h3>环境能力</h3>'
+            + _kv(
+                [
+                    ("Frida 通信", environment_capabilities.get("transport_available")),
+                    ("进程枚举", environment_capabilities.get("process_enumeration_available")),
+                    ("Attach", environment_capabilities.get("attach_available")),
+                    ("Suspended spawn 创建", environment_capabilities.get("spawn_creation_available")),
+                    ("恢复稳定性", environment_capabilities.get("spawn_resume_stable")),
+                ]
+            )
+            + '<h3>本次采集结果</h3>'
+            + _kv(
+                [
+                    ("最终执行模式", execution.get("selected_mode") or evidence_quality.get("mode") or "旧版报告未记录"),
+                    ("执行策略", execution.get("policy") or "旧版报告未记录"),
+                    ("进程结果", task_result.get("process_result") or process_diagnostics.get("status")),
+                    ("证据等级", evidence_quality.get("level") or "待评定"),
+                    ("崩溃信号", process_diagnostics.get("signal")),
+                    ("崩溃码", process_diagnostics.get("signal_code")),
+                    ("崩溃摘要", process_diagnostics.get("summary")),
+                    ("关键组件", ", ".join(process_diagnostics.get("suspected_components") or [])),
+                    ("诊断提示", process_diagnostics.get("reason_code")),
+                    ("网络结局", traffic_diagnostics.get("outcome")),
+                ]
+            )
+            + _table(
+                ["执行尝试", "状态", "阶段", "进程结果", "恢复后存活(ms)"],
+                (
+                    (
+                        item.get("mode"),
+                        item.get("status"),
+                        item.get("phase"),
+                        item.get("process_result"),
+                        item.get("post_resume_survival_ms"),
+                    )
+                    for item in execution.get("attempts") or []
+                ),
+                "旧版报告未记录尝试链。",
+            )
+            + _items(
+                evidence_quality.get("limitations") or ["旧版报告未记录动态证据限制。"],
+                "旧版报告未记录动态证据限制。",
+            )
+            + (
+                '<details><summary>技术详情 · 完整 Native backtrace</summary><pre>'
+                + _text("\n".join(process_diagnostics.get("native_frames") or []))
+                + '</pre></details>'
+                if process_diagnostics.get("native_frames")
+                else ""
+            )
+            + '<div class="notice warning"><strong>证据边界</strong>'
+            '<p>环境能力与单次任务结果独立；零请求仅表示本次未观察到请求；'
+            'attach 与 launch_then_attach 存在启动覆盖边界；兼容性提示不等同于单一根因证明。</p></div>',
         ),
         _section(
             "dynamic",
@@ -280,6 +343,7 @@ def render_html_report(report: dict[str, Any]) -> str:
             ("permissions", "权限"),
             ("sdks", "SDK"),
             ("dynamic", "动态"),
+            ("dynamic-quality", "证据质量"),
             ("network", "网络"),
             ("rules", "规则"),
             ("actions", "整改"),
