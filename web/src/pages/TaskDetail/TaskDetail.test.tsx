@@ -72,7 +72,7 @@ function renderDetail(record: TaskRecord, routePath = '/tasks/:id') {
 describe('TaskDetail — 实时生命周期', () => {
   it('终态任务展示步骤、脱敏设备和报告入口', async () => {
     renderDetail(task())
-    expect(await screen.findByText('Detail App')).toBeInTheDocument()
+    expect((await screen.findAllByText('Detail App')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('APK 输入已校验').length).toBeGreaterThan(0)
     expect(screen.getByText('device_serial:abcd1234')).toBeInTheDocument()
     expect(screen.queryByText('127.0.0.1:16416')).not.toBeInTheDocument()

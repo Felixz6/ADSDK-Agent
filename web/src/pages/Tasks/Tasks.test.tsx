@@ -27,6 +27,7 @@ function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
     enable_ui_stimulation: false,
     progress_percent: 100,
     current_stage: 'completed',
+    cancelled_at_stage: null,
     error_code: null,
     error_message: null,
     report_json_path: 'D:/output/report.json',
@@ -95,10 +96,11 @@ describe('Tasks — 后端持久化任务中心', () => {
     const user = userEvent.setup()
     const { router } = renderWithProviders(<Tasks />)
 
-    expect(await screen.findByText('Example')).toBeInTheDocument()
-    expect(screen.getByText('com.example.app')).toBeInTheDocument()
+    expect((await screen.findAllByText('Example')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/com\.example\.app · app\.apk/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('低风险').length).toBeGreaterThan(0)
     expect(screen.getAllByText('已完成').length).toBeGreaterThan(0)
-    await user.click(screen.getByText('Example'))
+    await user.click(screen.getAllByText('Example')[0])
     expect(router.state.location.pathname).toBe('/tasks/task-1')
   })
 
@@ -127,8 +129,8 @@ describe('Tasks — 后端持久化任务中心', () => {
     const user = userEvent.setup()
     renderWithProviders(<Tasks />)
 
-    await screen.findByText('Example')
-    await user.click(screen.getByRole('button', { name: '取消任务' }))
+    await screen.findAllByText('Example')
+    await user.click(screen.getAllByRole('button', { name: '取消任务' })[0])
     expect(screen.getByText('取消该任务？')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '发送取消信号' }))
     await vi.waitFor(() => expect(cancelCalled).toBe(true))
@@ -147,8 +149,8 @@ describe('Tasks — 后端持久化任务中心', () => {
     const user = userEvent.setup()
     renderWithProviders(<Tasks />)
 
-    await screen.findByText('Example')
-    await user.click(screen.getByRole('button', { name: '删除任务' }))
+    await screen.findAllByText('Example')
+    await user.click(screen.getAllByRole('button', { name: '删除任务' })[0])
     expect(screen.getByText('删除该任务记录？')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '删除记录' }))
     await vi.waitFor(() => expect(deleted).toBe(true))
@@ -176,8 +178,8 @@ describe('Tasks — 后端持久化任务中心', () => {
     )
     const user = userEvent.setup()
     const { router } = renderWithProviders(<Tasks />)
-    await screen.findByText('Example')
-    await user.click(screen.getByRole('button', { name: '重试任务' }))
+    await screen.findAllByText('Example')
+    await user.click(screen.getAllByRole('button', { name: '重新分析' })[0])
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/tasks/task-retry'))
     expect(await screen.findByText('已创建重试任务。')).toBeInTheDocument()
   })
@@ -191,5 +193,53 @@ describe('Tasks — 后端持久化任务中心', () => {
     expect(screen.getByText(/1 条 · 只读兼容/)).toBeInTheDocument()
     await user.click(toggle)
     expect(screen.getByText('com.legacy')).toBeInTheDocument()
+  })
+
+  it('隐藏资源引用、缩短设备标识并保留完整 Tooltip', async () => {
+    server.use(listHandler([task({
+      app_name: '@string/app_name',
+      device_id: 'redacted:80a563aa99887766',
+      risk_level: null,
+    })]))
+    renderWithProviders(<Tasks />)
+
+    expect((await screen.findAllByText('app.apk')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('@string/app_name')).not.toBeInTheDocument()
+    expect(screen.getAllByText('设备 80a563aa').length).toBeGreaterThan(0)
+    expect(screen.getAllByTitle('redacted:80a563aa99887766').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('未评估').length).toBeGreaterThan(0)
+  })
+
+  it('对比任务使用友好标题，已取消任务显示停止步骤', async () => {
+    const comparison = task({
+      id: '11111111-2222-4333-8444-555555555555',
+      task_type: 'comparison',
+      app_name: 'Example · 版本对比',
+      apk_path: null,
+      package_name: 'com.example.app',
+      request_payload: { base_task_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', target_task_id: 'ffffffff-1111-4222-8333-444444444444' },
+      report_json_path: null,
+    })
+    const cancelled = task({
+      id: 'cancelled-1',
+      status: 'cancelled',
+      current_stage: 'cancelled',
+      cancelled_at_stage: 'apk_install',
+      report_json_path: null,
+    })
+    server.use(listHandler([comparison, cancelled]))
+    renderWithProviders(<Tasks />)
+
+    expect((await screen.findAllByText('Example · 版本对比')).length).toBeGreaterThan(0)
+    expect(screen.queryByText(comparison.id)).not.toBeInTheDocument()
+    expect(screen.getAllByText('取消于：安装 APK').length).toBeGreaterThan(0)
+  })
+
+  it('桌面表格与窄屏卡片均受响应式容器约束', async () => {
+    server.use(listHandler([task()]))
+    renderWithProviders(<Tasks />)
+    await screen.findAllByText('Example')
+    expect(screen.getByTestId('task-desktop-table')).toHaveClass('hidden', 'overflow-x-auto')
+    expect(screen.getByTestId('task-mobile-list')).toHaveClass('xl:hidden')
   })
 })
