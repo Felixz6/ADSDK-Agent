@@ -81,3 +81,4 @@ traffic/requests.jsonl
 
 # Local analysis tool binaries
 /tools/
+.run/

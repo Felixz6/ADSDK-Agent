@@ -1,5 +1,11 @@
 import os
 import xml.etree.ElementTree as ET
+from pathlib import Path
+
+from app.core.application_names import (
+    resolve_application_label,
+    stable_application_name,
+)
 
 
 ANDROID_NAME = "{http://schemas.android.com/apk/res/android}name"
@@ -54,7 +60,11 @@ def _normalized_names(values) -> list[str]:
     )
 
 
-def parse_manifest_info(unpack_dir: str) -> dict:
+def parse_manifest_info(
+    unpack_dir: str,
+    *,
+    apk_filename: str | None = None,
+) -> dict:
     manifest_path = os.path.join(unpack_dir, "AndroidManifest.xml")
     result = {
         "package_name": None,
@@ -120,13 +130,23 @@ def parse_manifest_info(unpack_dir: str) -> dict:
             set(declared_permissions) & HIGH_ATTENTION_PERMISSIONS
         )
 
+        raw_application_label = None
         for child in root:
             if child.tag.endswith("application"):
                 for k, v in child.attrib.items():
                     if k.endswith("label"):
-                        result["application_label"] = v
+                        raw_application_label = v
                         break
                 break
+        resolved_app_name = resolve_application_label(
+            unpack_dir,
+            raw_application_label,
+        )
+        result["application_label"] = stable_application_name(
+            resolved_app_name,
+            apk_filename=Path(apk_filename).name if apk_filename else None,
+            package_name=result["package_name"],
+        )
     except (ET.ParseError, OSError) as exc:
         raise ValueError(
             f"AndroidManifest.xml parse failed: {type(exc).__name__}"

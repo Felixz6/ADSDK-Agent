@@ -26,6 +26,7 @@ class ComparisonResult(BaseModel):
     task_id: str
     base_task_id: str
     target_task_id: str
+    created_at: str | None = None
     base_summary: dict[str, Any]
     target_summary: dict[str, Any]
     risk_score_delta: int | None = None
@@ -40,4 +41,3 @@ class ComparisonResult(BaseModel):
     evidence_complete: bool
     highlights: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-

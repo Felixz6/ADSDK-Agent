@@ -35,6 +35,7 @@ class TaskRepository:
         "version_code",
         "progress_percent",
         "current_stage",
+        "cancelled_at_stage",
         "error_code",
         "error_message",
         "report_json_path",
@@ -86,6 +87,7 @@ class TaskRepository:
                     enable_ui_stimulation INTEGER NOT NULL DEFAULT 0,
                     progress_percent INTEGER NOT NULL DEFAULT 0,
                     current_stage TEXT,
+                    cancelled_at_stage TEXT,
                     error_code TEXT,
                     error_message TEXT,
                     report_json_path TEXT,
@@ -128,6 +130,28 @@ class TaskRepository:
                 );
                 """
             )
+            task_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+            }
+            if "cancelled_at_stage" not in task_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN cancelled_at_stage TEXT"
+                )
+            connection.execute(
+                """
+                UPDATE tasks
+                SET cancelled_at_stage = (
+                    SELECT step_name
+                    FROM task_steps
+                    WHERE task_steps.task_id = tasks.id
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+                WHERE status = 'cancelled'
+                  AND cancelled_at_stage IS NULL
+                """
+            )
 
     def create_task(self, payload: dict[str, Any]) -> TaskRecord:
         now = utc_now()
@@ -137,6 +161,7 @@ class TaskRepository:
             "status": payload.get("status", "queued"),
             "apk_path": payload.get("apk_path"),
             "package_name": payload.get("package_name"),
+            "app_name": payload.get("app_name"),
             "device_id": payload.get("device_id"),
             "enable_traffic": int(bool(payload.get("enable_traffic"))),
             "enable_ui_stimulation": int(
@@ -335,6 +360,7 @@ class TaskRepository:
         base_task_id: str,
         target_task_id: str,
         result: dict[str, Any],
+        created_at: str | None = None,
     ) -> None:
         with self._connection() as connection:
             connection.execute(
@@ -349,7 +375,7 @@ class TaskRepository:
                     base_task_id,
                     target_task_id,
                     json.dumps(result, ensure_ascii=False, sort_keys=True),
-                    utc_now(),
+                    created_at or utc_now(),
                 ),
             )
 
@@ -360,6 +386,65 @@ class TaskRepository:
                 (comparison_id,),
             ).fetchone()
         return json.loads(row["result_json"]) if row is not None else None
+
+    def list_comparisons(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT result_json, created_at
+                FROM comparisons
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (max(1, min(limit, 100)),),
+            ).fetchall()
+        results = []
+        for row in rows:
+            payload = json.loads(row["result_json"])
+            payload["created_at"] = payload.get("created_at") or row["created_at"]
+            results.append(payload)
+        return results
+
+    def list_task_name_rows(self) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, task_type, apk_path, apk_sha256, package_name,
+                       app_name, report_json_path, report_markdown_path,
+                       report_html_path
+                FROM tasks
+                ORDER BY created_at
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_comparison_rows(self) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, task_id, base_task_id, target_task_id,
+                       result_json, created_at
+                FROM comparisons
+                ORDER BY created_at
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_comparison_result(
+        self,
+        comparison_id: str,
+        result: dict[str, Any],
+    ) -> None:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE comparisons SET result_json = ? WHERE id = ?",
+                (
+                    json.dumps(result, ensure_ascii=False, sort_keys=True),
+                    comparison_id,
+                ),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(comparison_id)
 
     @staticmethod
     def _to_step(row: sqlite3.Row) -> TaskStepRecord:
