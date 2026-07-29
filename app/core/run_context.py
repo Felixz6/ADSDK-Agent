@@ -73,6 +73,10 @@ class AnalysisRunContext:
     def report_html_path(self) -> Path:
         return self.run_dir / "report.html"
 
+    @property
+    def correlations_path(self) -> Path:
+        return self.run_dir / "correlations.json"
+
 
 def _normalize_run_id(value: str | UUID | None) -> str:
     if value is None:
