@@ -123,6 +123,21 @@ from app.tools.utils import ensure_dir, now_iso
 
 app = FastAPI(title="AdSDK Agent", version="0.1.0")
 
+
+def _parse_manifest_application(
+    unpack_dir: str,
+    *,
+    apk_filename: str,
+) -> dict:
+    """Pass the display filename while retaining compatibility with injected parsers."""
+
+    try:
+        return parse_manifest_info(unpack_dir, apk_filename=apk_filename)
+    except TypeError as exc:
+        if "apk_filename" not in str(exc):
+            raise
+        return parse_manifest_info(unpack_dir)
+
 # 跨域传输配置(CORS):仅放行本端开发常用来源,不改动任何接口契约/响应结构。
 # web/ 前端默认从 http://127.0.0.1:5173 访问本服务,Vite 代理为另一条路径;
 # 此中间件保证浏览器对绝对地址的跨域请求也能得到正确的 CORS 头。
@@ -967,7 +982,7 @@ def analyze(req: AnalyzeRequest):
     if steps[-1].status is StepStatus.SUCCESS:
         manifest_started = _utc_now()
         try:
-            app_info = parse_manifest_info(
+            app_info = _parse_manifest_application(
                 str(analysis_dir),
                 apk_filename=context.source_apk_display,
             )
@@ -1392,7 +1407,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
     if unpack_ok:
         started = _utc_now()
         try:
-            app_info = parse_manifest_info(
+            app_info = _parse_manifest_application(
                 str(analysis_dir),
                 apk_filename=context.source_apk_display,
             )
