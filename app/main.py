@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from collections import Counter
@@ -7,9 +8,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import (
     ALLOW_UNC_APK_PATHS,
@@ -25,6 +26,7 @@ from app.config import (
     OUTPUT_DIR,
     REDACTION_HMAC_KEY,
     SCHEMA_VERSION,
+    TASK_DATABASE_PATH,
 )
 from app.core.artifacts import atomic_write_json, atomic_write_text
 from app.core.device import DeviceContext
@@ -47,6 +49,27 @@ from app.analyzers.risk_scoring import calculate_risk_summary
 from app.analyzers.sdk_intelligence import correlate_sdk_evidence
 from app.analyzers.timeline_builder import build_timeline
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
+from app.comparisons import (
+    ComparisonCreateRequest,
+    ComparisonResult,
+    ComparisonService,
+)
+from app.reporting import write_html_report
+from app.repositories import TaskRepository
+from app.services import TaskService
+from app.tasks.models import (
+    TaskActionResponse,
+    TaskCreateRequest,
+    TaskListResponse,
+    TaskRecord,
+    TaskReportResponse,
+    TaskSystemStatus,
+)
+from app.tasks.runtime import (
+    current_task_id,
+    register_cleanup,
+    report_step,
+)
 from app.tools.adb_runner import (
     DeviceSelectionError,
     check_adb_available,
@@ -106,7 +129,7 @@ app.add_middleware(
         "http://localhost:5173",
     ],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Accept", "Content-Type"],
 )
 
@@ -232,7 +255,7 @@ def _step_result(
     details: dict[str, Any] | None = None,
 ) -> StepResult:
     ended_at = _utc_now()
-    return make_step_result(
+    result = make_step_result(
         name,
         status,
         required=(name in _CRITICAL_STEPS if required is None else required),
@@ -244,6 +267,12 @@ def _step_result(
         outputs=outputs or [],
         details=details or {},
     )
+    report_step(
+        name,
+        status.value,
+        error_message or (warnings[0] if warnings else None),
+    )
+    return result
 
 
 def _steps_payload(steps: list[StepResult]) -> list[dict[str, Any]]:
@@ -377,7 +406,7 @@ def _prepare_run(
     *,
     device_id: str | None,
 ) -> tuple[AnalysisRunContext | None, list[StepResult], JSONResponse | None]:
-    run_id = str(uuid4())
+    run_id = current_task_id() or str(uuid4())
     analysis_started_at = _utc_now()
     steps: list[StepResult] = []
 
@@ -566,6 +595,7 @@ def _artifact_entries(context: AnalysisRunContext) -> list[dict[str, Any]]:
         "sessions": context.sessions_path,
         "report_json": context.report_json_path,
         "report_markdown": context.report_markdown_path,
+        "report_html": context.report_html_path,
     }
     return [
         {
@@ -610,6 +640,7 @@ def _base_report(
         "output_dir": str(context.run_dir),
         "report_json": str(context.report_json_path),
         "report_md": str(context.report_markdown_path),
+        "report_html": str(context.report_html_path),
         "artifacts": _artifact_entries(context),
     }
 
@@ -667,8 +698,9 @@ def _finalize_report(
     }
 
     try:
-        # Publish Markdown first and JSON last so report.json is the final
+        # Publish human-readable artifacts first and JSON last so report.json is the final
         # machine-readable completion marker for a run.
+        write_html_report(report, context.report_html_path)
         write_markdown_report(report, str(context.report_markdown_path))
         report_write_duration_ms = max(
             0,
@@ -681,6 +713,7 @@ def _finalize_report(
             outputs=[
                 str(context.report_json_path),
                 str(context.report_markdown_path),
+                str(context.report_html_path),
             ],
         )
         candidate_steps = [*steps, successful_write]
@@ -1555,6 +1588,10 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                     stop_timeout=MITM_STOP_TIMEOUT_SECONDS,
                 )
 
+        register_cleanup(frida_session.stop)
+        if mitm_session is not None:
+            register_cleanup(mitm_session.stop)
+
         def stimulate_ui() -> None:
             result = launch_app(
                 package_name,
@@ -1920,7 +1957,6 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 "SSL pinning can reduce traffic visibility",
                 "the in-process mitm port pool is limited to one Uvicorn worker",
                 "dynamic events and network requests are not fully correlated",
-                "task persistence, recovery, cancellation, and leases are not implemented",
             ],
         }
     )
@@ -1935,3 +1971,215 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
 @app.post("/dynamic/analyze", response_model=AnalyzeResponse)
 def dynamic_analyze(req: DynamicAnalyzeRequest):
     return _dynamic_analyze_v2(req)
+
+
+task_repository = TaskRepository(TASK_DATABASE_PATH)
+task_service = TaskService(task_repository)
+comparison_service = ComparisonService(task_repository)
+task_service.recover()
+
+
+def _run_persisted_task(task: TaskRecord):
+    payload = dict(task.request_payload)
+    if task.task_type == "static":
+        return analyze(AnalyzeRequest(apk_path=str(payload["apk_path"])))
+    if task.task_type == "dynamic":
+        return dynamic_analyze(DynamicAnalyzeRequest.model_validate(payload))
+    raise ValueError(f"unsupported executable task type: {task.task_type}")
+
+
+task_service.set_runner(_run_persisted_task)
+
+
+def _task_not_found(task_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"code": "task_not_found", "message": f"任务 {task_id} 不存在"},
+    )
+
+
+@app.post("/tasks", response_model=TaskRecord, status_code=202)
+def create_task(request: TaskCreateRequest):
+    return task_service.create(request)
+
+
+@app.get("/tasks", response_model=TaskListResponse)
+def list_tasks(
+    status: str | None = Query(default=None),
+    task_type: str | None = Query(default=None),
+    keyword: str | None = Query(default=None, max_length=256),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    sort: str = Query(default="-created_at"),
+):
+    allowed_statuses = {"queued", "running", "completed", "failed", "cancelled"}
+    allowed_types = {"static", "dynamic", "comparison"}
+    if status and status not in allowed_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_status", "message": "任务状态筛选值无效"},
+        )
+    if task_type and task_type not in allowed_types:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_task_type", "message": "任务类型筛选值无效"},
+        )
+    return task_service.list(
+        status=status,
+        task_type=task_type,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+    )
+
+
+@app.get("/tasks/system/status", response_model=TaskSystemStatus)
+def task_system_status():
+    running = task_service.list(status="running", page=1, page_size=1).total
+    queued = task_service.list(status="queued", page=1, page_size=1).total
+    return TaskSystemStatus(
+        database_ok=True,
+        database_path=str(task_repository.database_path),
+        running_tasks=running,
+        queued_tasks=queued,
+        occupied_devices=task_service.occupied_devices(),
+    )
+
+
+@app.get("/tasks/{task_id}", response_model=TaskRecord)
+def get_task(task_id: str):
+    task = task_service.get(task_id)
+    if task is None:
+        raise _task_not_found(task_id)
+    return task
+
+
+@app.get("/tasks/{task_id}/report", response_model=TaskReportResponse)
+def get_task_report(task_id: str):
+    try:
+        return task_service.report(task_id)
+    except KeyError:
+        raise _task_not_found(task_id)
+
+
+@app.post("/tasks/{task_id}/cancel", response_model=TaskActionResponse)
+def cancel_task(task_id: str):
+    try:
+        return task_service.cancel(task_id)
+    except KeyError:
+        raise _task_not_found(task_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "task_not_cancellable", "message": str(exc)},
+        )
+
+
+@app.post("/tasks/{task_id}/retry", response_model=TaskActionResponse, status_code=202)
+def retry_task(task_id: str):
+    try:
+        return task_service.retry(task_id)
+    except KeyError:
+        raise _task_not_found(task_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "task_not_retryable", "message": str(exc)},
+        )
+
+
+@app.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: str):
+    try:
+        deleted = task_service.delete(task_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "active_task", "message": str(exc)},
+        )
+    if not deleted:
+        raise _task_not_found(task_id)
+    return None
+
+
+@app.get("/tasks/{task_id}/artifacts/{artifact_kind}")
+def download_task_artifact(task_id: str, artifact_kind: str):
+    task = task_service.get(task_id)
+    if task is None:
+        raise _task_not_found(task_id)
+    field_map = {
+        "json": (task.report_json_path, "application/json", "report.json"),
+        "markdown": (task.report_markdown_path, "text/markdown", "report.md"),
+        "html": (task.report_html_path, "text/html", "report.html"),
+    }
+    if artifact_kind not in field_map:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_artifact_kind", "message": "报告格式无效"},
+        )
+    path_text, media_type, filename = field_map[artifact_kind]
+    if not path_text:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "artifact_not_found", "message": "报告产物尚未生成"},
+        )
+    path = Path(path_text).resolve(strict=False)
+    allowed = (Path(OUTPUT_DIR).resolve(strict=False) / "runs").resolve(strict=False)
+    if not path.is_relative_to(allowed) or not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "artifact_not_found", "message": "报告产物不存在"},
+        )
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@app.websocket("/ws/tasks/{task_id}")
+async def task_progress_websocket(websocket: WebSocket, task_id: str):
+    await websocket.accept()
+    last_updated: str | None = None
+    try:
+        while True:
+            task = task_service.get(task_id)
+            if task is None:
+                await websocket.send_json(
+                    {"error": {"code": "task_not_found", "message": "任务不存在"}}
+                )
+                await websocket.close(code=4404)
+                return
+            if task.updated_at != last_updated:
+                await websocket.send_json(task.model_dump(mode="json"))
+                last_updated = task.updated_at
+            if task.status in {"completed", "failed", "cancelled"}:
+                await websocket.close(code=1000)
+                return
+            await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        return
+
+
+@app.post("/comparisons", response_model=ComparisonResult, status_code=201)
+def create_comparison(request: ComparisonCreateRequest):
+    try:
+        return comparison_service.create(request)
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "comparison_input_not_found", "message": "对比任务不存在"},
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_comparison", "message": str(exc)},
+        )
+
+
+@app.get("/comparisons/{comparison_id}", response_model=ComparisonResult)
+def get_comparison(comparison_id: str):
+    result = comparison_service.get(comparison_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "comparison_not_found", "message": "对比结果不存在"},
+        )
+    return result

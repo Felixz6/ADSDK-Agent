@@ -200,6 +200,7 @@ class AnalyzeResponse(BaseModel):
     sessions_json: Optional[str] = None
     report_json: Optional[str] = None
     report_md: Optional[str] = None
+    report_html: Optional[str] = None
     dynamic_events: Optional[List[Dict[str, Any]]] = None
     dynamic_findings: Optional[Dict[str, Any]] = None
     strict_dynamic_findings: Optional[Dict[str, Any]] = None

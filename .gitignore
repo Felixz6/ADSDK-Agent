@@ -16,6 +16,7 @@ venv/
 .pytest_tmp*/
 .test-tmp/
 .test-tmp*/
+.task-*-tmp*/
 pytest-cache-files-*/
 .coverage
 htmlcov/
