@@ -466,6 +466,39 @@ export interface BehaviorTimelineData {
   timeline_version: string
 }
 
+export type CorrelationConfidence = 'high' | 'medium' | 'low'
+export type CorrelationStatus = 'evaluated' | 'not_evaluated' | 'no_observations' | 'error'
+
+export interface EvidenceCorrelationItem {
+  correlation_id: string
+  dynamic_event_id: string
+  network_request_id: string
+  event_type: string
+  request_host: string
+  request_method: string
+  delta_ms: number
+  consent_state: ConsentState
+  confidence: CorrelationConfidence
+  reason_codes: string[]
+  summary: string
+}
+
+export interface EvidenceCorrelation {
+  schema_version: 'correlation-v1'
+  status: CorrelationStatus
+  window_ms: number
+  items: EvidenceCorrelationItem[]
+  summary: {
+    dynamic_event_count: number
+    network_request_count: number
+    correlated_pair_count: number
+    high_confidence_count: number
+    medium_confidence_count: number
+    low_confidence_count: number
+  }
+  limitations: string[]
+}
+
 export interface ComplianceFinding {
   title: string
   severity: RiskLevel
@@ -773,6 +806,7 @@ export interface AnalyzeResponse {
     collection_status?: CollectionStatus
     [key: string]: unknown
   } | null
+  evidence_correlation?: EvidenceCorrelation | null
   risk_summary?: RiskSummary | null
   timeline?: BehaviorTimelineData | null
   compliance_insight?: ComplianceInsightData | null

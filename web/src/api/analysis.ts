@@ -74,5 +74,6 @@ export function normalizeAnalyzeResponse(data: AnalyzeResponse): AnalyzeResponse
     frida_diagnostics: data.frida_diagnostics ?? null,
     process_diagnostics: data.process_diagnostics ?? null,
     traffic_diagnostics: data.traffic_diagnostics ?? null,
+    evidence_correlation: data.evidence_correlation ?? null,
   }
 }

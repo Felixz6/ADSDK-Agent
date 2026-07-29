@@ -17,6 +17,7 @@ from app.config import (
     APK_ALLOWED_ROOTS,
     APK_MAX_SIZE_BYTES,
     DEFAULT_MITM_PORT,
+    EVIDENCE_CORRELATION_WINDOW_MS,
     FRIDA_READY_TIMEOUT_SECONDS,
     FRIDA_SPAWN_STABILITY_SECONDS,
     FRIDA_STOP_TIMEOUT_SECONDS,
@@ -52,6 +53,11 @@ from app.core.status import (
     make_step_result,
 )
 from app.analyzers.compliance_insight import generate_compliance_insight
+from app.analyzers.evidence_correlation import (
+    EvidenceCorrelationConfig,
+    build_error_correlation,
+    build_evidence_correlations,
+)
 from app.analyzers.risk_scoring import calculate_risk_summary
 from app.analyzers.sdk_intelligence import correlate_sdk_evidence
 from app.analyzers.timeline_builder import build_timeline
@@ -643,6 +649,7 @@ def _artifact_entries(context: AnalysisRunContext) -> list[dict[str, Any]]:
         "mitm_stderr": context.mitm_stderr_path,
         "traffic_summary": context.traffic_summary_path,
         "sessions": context.sessions_path,
+        "correlations": context.correlations_path,
         "report_json": context.report_json_path,
         "report_markdown": context.report_markdown_path,
         "report_html": context.report_html_path,
@@ -804,6 +811,41 @@ def _finalize_report(
         return report, exc
 
     return report, None
+
+
+def _build_and_write_evidence_correlation(
+    *,
+    context: AnalysisRunContext,
+    dynamic_events: list[dict[str, Any]],
+    network_requests: list[dict[str, Any]],
+    consent_timestamp_utc: str | None,
+) -> dict[str, Any]:
+    """Keep correlation failures isolated from the primary report pipeline."""
+
+    try:
+        correlation = build_evidence_correlations(
+            dynamic_events,
+            network_requests,
+            config=EvidenceCorrelationConfig(
+                window_ms=EVIDENCE_CORRELATION_WINDOW_MS,
+            ),
+            consent_timestamp_utc=consent_timestamp_utc,
+        )
+    except Exception:
+        correlation = build_error_correlation(
+            window_ms=EVIDENCE_CORRELATION_WINDOW_MS,
+            dynamic_event_count=len(dynamic_events),
+            network_request_count=len(network_requests),
+        )
+    payload = correlation.model_dump(mode="json")
+    try:
+        atomic_write_json(context.correlations_path, payload)
+    except Exception:
+        payload["status"] = "error"
+        payload.setdefault("limitations", []).append(
+            "correlations.json 写入失败，主报告仍基于原始证据生成"
+        )
+    return payload
 
 
 @app.get("/env/check")
@@ -1658,6 +1700,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
     mitm_session: Any = None
     collection_result: DynamicCollectionResult | None = None
     dynamic_events: list[dict[str, Any]] = []
+    correlation_requests: list[dict[str, Any]] = []
     traffic_summary: dict[str, Any]
     legacy_mode = _legacy_fixture_mode()
     transport_path = (
@@ -2054,6 +2097,10 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         try:
             traffic_result = mitm_session.validate_traffic()
             traffic_summary = _traffic_summary_from_result(traffic_result)
+            correlation_requests = [
+                record.model_dump(mode="json")
+                for record in traffic_result.records
+            ]
             traffic_status = (
                 StepStatus.FAILED
                 if traffic_result.outcome
@@ -2102,6 +2149,12 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 )
             )
     write_traffic_summary(traffic_summary, str(context.traffic_summary_path))
+    if not correlation_requests:
+        correlation_requests = [
+            dict(item)
+            for item in traffic_summary.get("sample_requests") or []
+            if isinstance(item, dict)
+        ]
     mitm_public_status = (
         _session_status(mitm_session, device_context)
         if mitm_session is not None and device_context is not None
@@ -2522,9 +2575,22 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             "limitations": [
                 "SSL pinning can reduce traffic visibility",
                 "the in-process mitm port pool is limited to one Uvicorn worker",
-                "dynamic events and network requests are not fully correlated",
+                "event-request correlation expresses temporal proximity, not causality",
             ],
         }
+    )
+    consent_timestamp_utc = None
+    raw_consent = timeline_payload.get("consent_at")
+    if isinstance(raw_consent, dict):
+        value = raw_consent.get("timestamp_utc")
+        consent_timestamp_utc = str(value) if value else None
+    elif isinstance(raw_consent, str):
+        consent_timestamp_utc = raw_consent
+    report["evidence_correlation"] = _build_and_write_evidence_correlation(
+        context=context,
+        dynamic_events=dynamic_events,
+        network_requests=correlation_requests,
+        consent_timestamp_utc=consent_timestamp_utc,
     )
     report, report_error = _finalize_report(report, context, steps)
     if report_error is not None or report.get("status") == "failed":

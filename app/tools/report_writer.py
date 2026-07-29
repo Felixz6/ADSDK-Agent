@@ -33,6 +33,7 @@ def write_markdown_report(report: dict, report_path: str):
     traffic_diagnostics = report.get("traffic_diagnostics", {}) or {}
     environment_capabilities = report.get("environment_capabilities", {}) or {}
     task_result = report.get("dynamic_task_result", {}) or {}
+    correlation = report.get("evidence_correlation")
 
     lines = []
     lines.append("# Android 广告 SDK 分析报告")
@@ -267,6 +268,42 @@ def write_markdown_report(report: dict, report_path: str):
                 f"{_md_cell(event.get('title'))} | {_md_cell(event.get('consent_state'))} | "
                 f"{_md_cell(event.get('severity'))} |"
             )
+
+    if isinstance(correlation, dict):
+        correlation_summary = correlation.get("summary") or {}
+        lines.append("")
+        lines.append("## 动态事件与网络请求关联")
+        lines.append("")
+        lines.append(f"- 状态: `{_md_cell(correlation.get('status'))}`")
+        lines.append(f"- 动态事件数: `{_md_cell(correlation_summary.get('dynamic_event_count'))}`")
+        lines.append(f"- 网络请求数: `{_md_cell(correlation_summary.get('network_request_count'))}`")
+        lines.append(f"- 关联数: `{_md_cell(correlation_summary.get('correlated_pair_count'))}`")
+        lines.append(f"- 时间窗口: `{_md_cell(correlation.get('window_ms'))} ms`")
+        lines.append(
+            "- 高/中/低置信: "
+            f"`{_md_cell(correlation_summary.get('high_confidence_count'))}` / "
+            f"`{_md_cell(correlation_summary.get('medium_confidence_count'))}` / "
+            f"`{_md_cell(correlation_summary.get('low_confidence_count'))}`"
+        )
+        correlation_items = correlation.get("items") or []
+        if correlation_items:
+            lines.append("")
+            lines.append("| 事件 | 请求 | 时间差(ms) | Consent | 置信度 | 说明 |")
+            lines.append("|---|---|---:|---|---|---|")
+            for item in correlation_items[:20]:
+                lines.append(
+                    f"| {_md_cell(item.get('event_type'))} | "
+                    f"{_md_cell(item.get('request_method'))} {_md_cell(item.get('request_host'))} | "
+                    f"{_md_cell(item.get('delta_ms'))} | "
+                    f"{_md_cell(item.get('consent_state'))} | "
+                    f"{_md_cell(item.get('confidence'))} | "
+                    f"{_md_cell(item.get('summary'))} |"
+                )
+        else:
+            lines.append("")
+            lines.append("- 未观察到可关联证据；该结果不表示相关行为未发生。")
+        for limitation in correlation.get("limitations") or []:
+            lines.append(f"- 证据限制: {_md_cell(limitation)}")
 
     lines.append(f"- collection_status: `{_md_cell(traffic_summary.get('status'))}`")
     lines.append(f"- evaluation_status: `{_md_cell(traffic_summary.get('evaluation_status'))}`")

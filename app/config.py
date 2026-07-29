@@ -51,6 +51,14 @@ def _env_port(name: str, default: int) -> int:
     return value
 
 
+def _env_int_range(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw = os.getenv(name)
+    value = default if raw is None or not raw.strip() else int(raw)
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
 def _parse_allowed_roots(raw: str | None) -> tuple[Path, ...]:
     """Parse a semicolon-separated list without treating a drive colon as a separator."""
     if not raw or not raw.strip():
@@ -119,6 +127,12 @@ MITM_PORT_END = _env_port("MITM_PORT_END", MITM_PORT_START)
 if MITM_PORT_END < MITM_PORT_START:
     raise ValueError("MITM_PORT_END must be greater than or equal to MITM_PORT_START")
 DEFAULT_MITM_PORT = MITM_PORT_START
+EVIDENCE_CORRELATION_WINDOW_MS = _env_int_range(
+    "EVIDENCE_CORRELATION_WINDOW_MS",
+    2500,
+    100,
+    10_000,
+)
 
 # Host interface mitmdump binds to. Defaults to ``127.0.0.1`` (host loopback),
 # which is correct for analysis pipelines that share the host's loopback with the
