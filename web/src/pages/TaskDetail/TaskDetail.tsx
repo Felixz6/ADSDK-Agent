@@ -17,13 +17,14 @@ import {
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
+import { EvidenceCorrelationCard } from '@/components/analysis/EvidenceCorrelationCard'
 import type { DynamicExecutionSummary, DynamicModePolicy } from '@/types/api'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/States'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { useCancelTask, useDeleteTask, useLiveTask, useRetryTask } from '@/hooks/useTasks'
+import { useCancelTask, useDeleteTask, useLiveTask, useRetryTask, useTaskReport } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
 import { cn, formatDateTime } from '@/utils'
 import {
@@ -50,6 +51,13 @@ export default function TaskDetail() {
   const navigate = useNavigate()
   const pushToast = useUIStore((state) => state.pushToast)
   const taskQuery = useLiveTask(id)
+  const reportQuery = useTaskReport(id, {
+    enabled: Boolean(
+      id
+      && taskQuery.data?.task_type === 'dynamic'
+      && taskQuery.data?.report_json_path,
+    ),
+  })
   const cancelMutation = useCancelTask()
   const retryMutation = useRetryTask()
   const deleteMutation = useDeleteTask()
@@ -199,7 +207,14 @@ export default function TaskDetail() {
       </div>
 
       {task.task_type === 'dynamic' && (
-        <DynamicReliabilityCard execution={dynamicExecution} />
+        <>
+          <DynamicReliabilityCard execution={dynamicExecution} />
+          {task.report_json_path && (
+            <EvidenceCorrelationCard
+              correlation={reportQuery.data?.report?.evidence_correlation}
+            />
+          )}
+        </>
       )}
 
       <GlassCard padding="md" highlight>

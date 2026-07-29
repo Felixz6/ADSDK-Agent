@@ -66,6 +66,7 @@ def render_html_report(report: dict[str, Any]) -> str:
     traffic_diagnostics = report.get("traffic_diagnostics") or {}
     environment_capabilities = report.get("environment_capabilities") or {}
     task_result = report.get("dynamic_task_result") or {}
+    correlation = report.get("evidence_correlation")
     dynamic_trusted = (
         events is not None
         and report.get("collection_status") == "success"
@@ -258,6 +259,75 @@ def render_html_report(report: dict[str, Any]) -> str:
                 "没有可展示的访问域名。",
             ),
         ),
+        *(
+            [
+                _section(
+                    "correlation",
+                    "动态事件与网络请求关联",
+                    _kv(
+                        [
+                            ("状态", correlation.get("status")),
+                            (
+                                "动态事件",
+                                (correlation.get("summary") or {}).get(
+                                    "dynamic_event_count"
+                                ),
+                            ),
+                            (
+                                "网络请求",
+                                (correlation.get("summary") or {}).get(
+                                    "network_request_count"
+                                ),
+                            ),
+                            (
+                                "关联数量",
+                                (correlation.get("summary") or {}).get(
+                                    "correlated_pair_count"
+                                ),
+                            ),
+                            ("时间窗口(ms)", correlation.get("window_ms")),
+                            (
+                                "高/中/低置信",
+                                " / ".join(
+                                    str(
+                                        (correlation.get("summary") or {}).get(
+                                            key,
+                                            0,
+                                        )
+                                    )
+                                    for key in (
+                                        "high_confidence_count",
+                                        "medium_confidence_count",
+                                        "low_confidence_count",
+                                    )
+                                ),
+                            ),
+                        ]
+                    )
+                    + _table(
+                        ["事件", "请求", "时间差(ms)", "Consent", "置信度", "说明"],
+                        (
+                            (
+                                item.get("event_type"),
+                                f"{item.get('request_method')} {item.get('request_host')}",
+                                item.get("delta_ms"),
+                                item.get("consent_state"),
+                                item.get("confidence"),
+                                item.get("summary"),
+                            )
+                            for item in correlation.get("items") or []
+                        ),
+                        "未观察到可关联证据。",
+                    )
+                    + _items(
+                        correlation.get("limitations") or [],
+                        "未记录额外证据限制。",
+                    ),
+                )
+            ]
+            if isinstance(correlation, dict)
+            else []
+        ),
         _section(
             "rules",
             "规则评估结果",
@@ -345,6 +415,7 @@ def render_html_report(report: dict[str, Any]) -> str:
             ("dynamic", "动态"),
             ("dynamic-quality", "证据质量"),
             ("network", "网络"),
+            *(([("correlation", "关联")]) if isinstance(correlation, dict) else []),
             ("rules", "规则"),
             ("actions", "整改"),
             ("pipeline", "完整性"),

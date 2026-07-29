@@ -20,6 +20,7 @@ import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
 import { SdkIntelligencePanel } from '@/components/analysis/SdkIntelligencePanel'
 import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryPanel'
 import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
+import { EvidenceCorrelationCard } from '@/components/analysis/EvidenceCorrelationCard'
 import { ComplianceInsight } from '@/components/report/ComplianceInsight'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
@@ -97,15 +98,18 @@ export default function Reports() {
       <RiskSummaryCard summary={resp.risk_summary} />
 
       {isDynamic && (
-            <DynamicReliabilityCard
+        <>
+          <DynamicReliabilityCard
               diagnostics={resp.frida_diagnostics}
               capabilities={resp.environment_capabilities}
               execution={resp.dynamic_execution}
               taskResult={resp.dynamic_task_result}
               evidence={resp.dynamic_evidence_quality}
-          process={resp.process_diagnostics}
-          traffic={resp.traffic_diagnostics}
-        />
+              process={resp.process_diagnostics}
+              traffic={resp.traffic_diagnostics}
+          />
+          <EvidenceCorrelationCard correlation={resp.evidence_correlation} />
+        </>
       )}
 
       <ComplianceInsight insight={resp.compliance_insight} />
