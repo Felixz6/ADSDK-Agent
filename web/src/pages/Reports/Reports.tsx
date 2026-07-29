@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   FileText,
   Copy,
@@ -12,6 +13,7 @@ import {
   Megaphone,
   BadgeCheck,
   ShieldAlert,
+  Printer,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
@@ -20,27 +22,34 @@ import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryP
 import { ComplianceInsight } from '@/components/report/ComplianceInsight'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
-import { EmptyState } from '@/components/common/States'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/States'
 import { ReportRuleCard } from '@/components/report/ReportRuleCard'
 import { NoActiveResult } from '@/pages/shared/NoActiveResult'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useUIStore } from '@/stores/uiStore'
-import type { RuleEvaluationStatus } from '@/types/api'
+import { useTaskReport } from '@/hooks/useTasks'
+import { absoluteApiUrl } from '@/api/taskCenter'
+import type { AnalyzeResponse, RuleEvaluationStatus } from '@/types/api'
 import { cn, copyText } from '@/utils'
 
 export default function Reports() {
+  const [searchParams] = useSearchParams()
+  const taskId = searchParams.get('task_id') ?? undefined
+  const remote = useTaskReport(taskId)
   // 报告页以「内存中最近一次活跃结果」为准;不限模式,动态/静态皆可查看元信息。
   const staticResp = useActiveResult2('static')
   const dynamicResp = useActiveResult2('dynamic')
-  const resp = dynamicResp ?? staticResp
+  const resp = remote.data?.report ?? dynamicResp ?? staticResp
   const task = useAnalysisStore((s) => s.task)
   const pushToast = useUIStore((s) => s.pushToast)
   const [tab, setTab] = useState<'rules' | 'report' | 'traffic'>('rules')
 
+  if (taskId && remote.isLoading) return <GlassCard padding="none"><LoadingState title="正在加载持久化报告…" /></GlassCard>
+  if (taskId && remote.isError) return <GlassCard padding="none"><ErrorState icon={<ShieldAlert size={28} />} title="报告加载失败" description={remote.error.message} /></GlassCard>
   if (!resp) return <NoActiveResultWrapper />
 
   const kind = useAnalysisStore.getState().kind
-  const isDynamic = kind === 'dynamic'
+  const isDynamic = taskId ? resp.collection_status != null : kind === 'dynamic'
   const strict = resp.strict_dynamic_findings
   const mild = resp.dynamic_findings
   const counts = countStatuses([...(strict?.rules ?? []), ...(mild?.rules ?? [])])
@@ -54,7 +63,22 @@ export default function Reports() {
       <PageHeader
         title="报告"
         description="规则评估结论与可读报告/流量摘要。所有敏感标识已脱敏;未评估绝不等于无风险。"
-        eyebrow={`任务 ${task?.local_id ?? ''} · ${isDynamic ? '动态' : '静态'}`}
+        eyebrow={`任务 ${taskId ?? task?.local_id ?? ''} · ${isDynamic ? '动态' : '静态'}`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {remote.data?.html_url && (
+              <a href={absoluteApiUrl(remote.data.html_url) ?? '#'} target="_blank" rel="noreferrer" className="control-button">
+                <Printer size={14} /> 打印 / 导出 PDF
+              </a>
+            )}
+            {remote.data?.html_url && <DownloadLink href={remote.data.html_url} label="HTML" />}
+            {remote.data?.json_url && <DownloadLink href={remote.data.json_url} label="JSON" />}
+            {remote.data?.markdown_url && <DownloadLink href={remote.data.markdown_url} label="Markdown" />}
+            <button type="button" onClick={() => { copyText(reportSummary(resp)); pushToast({ kind: 'success', message: '已复制报告摘要。', duration: 2500 }) }} className="control-button">
+              <Copy size={14} /> 复制摘要
+            </button>
+          </div>
+        }
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -151,10 +175,11 @@ export default function Reports() {
           <dl className="flex flex-col gap-1 mb-3">
             <KV k="报告 Markdown 路径" v={resp.report_md ?? '—(未生成)'} mono />
             <KV k="报告 JSON 路径" v={resp.report_json ?? '—(未生成)'} mono />
+            <KV k="专业 HTML 路径" v={resp.report_html ?? '—(未生成)'} mono />
             <KV k="输出目录" v={resp.output_dir ?? '—'} mono />
           </dl>
           <p className="text-xs text-[var(--text-tertiary)] mb-2 inline-flex items-center gap-1.5">
-            <Download size={13} /> 后端产物文件请从后端服务器文件系统中按上述路径获取,前端不做远程下载。
+            <Download size={13} /> 持久化任务可通过页面顶部下载；打印视图使用专用 CSS，浏览器可另存为 PDF。
           </p>
           {resp.report_md ? (
             <div className="glass rounded-[10px] p-3 max-h-[420px] overflow-auto">
@@ -215,6 +240,28 @@ export default function Reports() {
 function NoActiveResultWrapper() {
   // 报告页允许静态或动态任一活跃结果存在
   return <NoActiveResult expected="dynamic" />
+}
+
+function DownloadLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a href={absoluteApiUrl(href) ?? '#'} download className="control-button">
+      <Download size={14} /> {label}
+    </a>
+  )
+}
+
+function reportSummary(resp: AnalyzeResponse): string {
+  const app = resp.app_info
+  const risk = resp.risk_summary
+  return [
+    `AdSDK Agent 报告摘要`,
+    `应用：${app?.application_label ?? '—'}`,
+    `包名：${app?.package_name ?? '—'}`,
+    `风险：${risk?.score ?? '—'} / ${risk?.level ?? '—'}`,
+    `SDK：${resp.sdk_count}`,
+    `状态：${resp.status ?? '—'}`,
+    `提示：not_evaluated 仅表示证据不足，不代表安全。`,
+  ].join('\n')
 }
 
 // 与 useActiveResult 等价的内联访问器(报告页兼容两种 kind)

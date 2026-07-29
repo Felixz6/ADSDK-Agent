@@ -601,6 +601,7 @@ export interface AnalyzeResponse {
   sessions_json: string | null
   report_json: string | null
   report_md: string | null
+  report_html?: string | null
   dynamic_events: DynamicEvent[]
   dynamic_findings: DynamicFindings | null
   strict_dynamic_findings: StrictDynamicFindings | null

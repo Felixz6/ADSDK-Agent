@@ -8,10 +8,15 @@ import {
   Network,
   ArrowRight,
   Sparkles,
+  ListChecks,
+  GitCompareArrows,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { useServiceHealth } from '@/hooks/useApi'
+import { useTasks } from '@/hooks/useTasks'
 import { listLocalTasks } from '@/api/tasks'
+import { StatCard } from '@/components/common/StatCard'
+import { StatusBadge } from '@/components/common/StatusBadge'
 import { formatDateTime } from '@/utils'
 
 const FEATURES = [
@@ -23,7 +28,12 @@ const FEATURES = [
 export default function Home() {
   const navigate = useNavigate()
   const health = useServiceHealth()
-  const recent = listLocalTasks().slice(0, 3)
+  const taskQuery = useTasks({ page: 1, page_size: 5 })
+  const runningQuery = useTasks({ status: 'running', page: 1, page_size: 1 })
+  const staticQuery = useTasks({ task_type: 'static', page: 1, page_size: 1 })
+  const dynamicQuery = useTasks({ task_type: 'dynamic', page: 1, page_size: 1 })
+  const recent = taskQuery.data?.items ?? []
+  const legacyRecent = listLocalTasks().slice(0, 3)
   const reachable = Boolean(health.data?.ok)
 
   return (
@@ -63,9 +73,22 @@ export default function Home() {
             >
               查看仪表盘 <ArrowRight size={16} />
             </button>
+            <button type="button" onClick={() => navigate('/tasks')} className="control-button">
+              <ListChecks size={16} /> 任务中心
+            </button>
+            <button type="button" onClick={() => navigate('/comparisons')} className="control-button">
+              <GitCompareArrows size={16} /> 版本对比
+            </button>
           </div>
         </motion.div>
       </GlassCard>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard label="全部任务" value={taskQuery.data?.total ?? '—'} tone="default" icon={<ListChecks size={18} />} />
+        <StatCard label="运行中任务" value={runningQuery.data?.total ?? '—'} tone="accent" icon={<Activity size={18} />} />
+        <StatCard label="静态任务" value={staticQuery.data?.total ?? '—'} tone="success" icon={<Cpu size={18} />} />
+        <StatCard label="动态任务" value={dynamicQuery.data?.total ?? '—'} tone="warning" icon={<Network size={18} />} />
+      </div>
 
       {/* Backend status banner */}
       <GlassCard padding="md" className="flex items-center gap-3">
@@ -135,23 +158,28 @@ export default function Home() {
             查看全部
           </button>
         </div>
-        {recent.length === 0 ? (
-          <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">尚无分析记录。点击「新建分析」开始。</p>
+        {recent.length === 0 && legacyRecent.length === 0 ? (
+          <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">尚无持久化任务。点击「新建分析」开始。</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {recent.map((t) => (
-              <li key={t.local_id}>
+              <li key={t.id}>
                 <button
                   type="button"
-                  onClick={() => navigate(`/tasks/${t.local_id}`)}
+                  onClick={() => navigate(`/tasks/${t.id}`)}
                   className="w-full text-left flex items-center gap-3 rounded-[10px] px-3 py-2 hover:bg-[rgba(157,192,255,0.08)] transition-colors"
                 >
-                  <span className="text-xs px-2 py-0.5 rounded-md border border-[var(--border-soft)] text-[var(--text-tertiary)]">
-                    {t.kind === 'dynamic' ? '动态' : '静态'}
-                  </span>
-                  <span className="text-sm text-[var(--text-primary)] truncate flex-1">{t.apk_path}</span>
+                  <StatusBadge tone={t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'} label={t.status === 'completed' ? '已完成' : t.status === 'failed' ? '失败' : t.status === 'running' ? '分析中' : t.status === 'cancelled' ? '已取消' : '排队中'} />
+                  <span className="text-sm text-[var(--text-primary)] truncate flex-1">{t.app_name || t.package_name || t.apk_path}</span>
+                  {t.risk_level && <span className="text-[11px] text-[var(--warning)]">{t.risk_level}</span>}
                   <span className="text-[11px] text-[var(--text-tertiary)] shrink-0">{formatDateTime(t.created_at)}</span>
                 </button>
+              </li>
+            ))}
+            {recent.length === 0 && legacyRecent.map((t) => (
+              <li key={t.local_id} className="rounded-[10px] px-3 py-2 border border-[var(--border-soft)]">
+                <p className="text-sm text-[var(--text-primary)] truncate">{t.apk_path}</p>
+                <p className="text-[11px] text-[var(--text-tertiary)]">浏览器旧记录 · {formatDateTime(t.created_at)}</p>
               </li>
             ))}
           </ul>

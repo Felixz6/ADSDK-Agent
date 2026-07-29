@@ -1,166 +1,213 @@
-import { useParams, useNavigate } from 'react-router-dom'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowLeft,
-  Trash2,
-  Package,
-  Clock,
-  ShieldAlert,
-  FileText,
-  CheckCircle2,
-  XCircle,
   AlertTriangle,
+  ArrowLeft,
+  Ban,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Package,
+  RefreshCw,
+  ShieldAlert,
+  Trash2,
+  Wifi,
+  WifiOff,
+  XCircle,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
-import { EmptyState } from '@/components/common/States'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/States'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { getLocalTask, deleteLocalTask } from '@/api/tasks'
-import { useAnalysisStore } from '@/stores/analysisStore'
+import { StatusBadge } from '@/components/common/StatusBadge'
+import { useCancelTask, useDeleteTask, useLiveTask, useRetryTask } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
-import { formatDateTime, cn } from '@/utils'
+import { cn, formatDateTime } from '@/utils'
+import type { TaskRecord, TaskStatus, TaskStepStatus } from '@/types/tasks'
+
+type PendingAction = 'cancel' | 'delete' | null
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  queued: '排队中',
+  running: '分析中',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+}
 
 export default function TaskDetail() {
-  const params = useParams<{ id: string }>()
+  const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const pushToast = useUIStore((s) => s.pushToast)
-  const task = getLocalTask(params.id ?? '')
-  const active = useAnalysisStore((s) => s.active)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const pushToast = useUIStore((state) => state.pushToast)
+  const taskQuery = useLiveTask(id)
+  const cancelMutation = useCancelTask()
+  const retryMutation = useRetryTask()
+  const deleteMutation = useDeleteTask()
+  const [pending, setPending] = useState<PendingAction>(null)
 
-  // 内存中若有该任务的活跃结果,提供「查看结果」入口
-  const hasActiveResult = active != null && task != null && active.run_id != null && task.run_id === active.run_id
-
-  if (!task) {
+  if (taskQuery.isLoading) {
+    return <GlassCard padding="none"><LoadingState title="正在加载任务详情…" /></GlassCard>
+  }
+  if (taskQuery.isError) {
     return (
-      <EmptyState
-        icon={<ShieldAlert size={28} />}
-        title="未找到任务"
-        description="该任务记录不存在或已被删除。"
-        action={
-          <button
-            type="button"
-            onClick={() => navigate('/tasks')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--text-secondary)] hover:bg-[rgba(157,192,255,0.08)]"
-          >
-            <ArrowLeft size={15} /> 返回任务列表
-          </button>
-        }
-      />
+      <GlassCard padding="none">
+        <ErrorState
+          icon={<ShieldAlert size={28} />}
+          title={taskQuery.error.status === 404 ? '未找到任务' : '任务详情加载失败'}
+          description={taskQuery.error.message}
+          action={<button type="button" onClick={() => navigate('/tasks')} className="control-button"><ArrowLeft size={14} /> 返回任务中心</button>}
+        />
+      </GlassCard>
     )
   }
-
-  function handleDelete() {
-    deleteLocalTask(task!.local_id)
-    setConfirmDelete(false)
-    pushToast({ kind: 'success', message: '已删除该任务记录。', duration: 2500 })
-    navigate('/tasks')
+  const task = taskQuery.data
+  if (!task) {
+    return <EmptyState icon={<ShieldAlert size={28} />} title="未找到任务" />
   }
 
-  const tone: 'success' | 'danger' | 'warning' | 'neutral' =
-    task.status === 'success' ? 'success' : task.status === 'failed' ? 'danger' : task.status === 'partial' ? 'warning' : 'neutral'
+  const taskId = task.id
+  const active = task.status === 'queued' || task.status === 'running'
+
+  async function confirmAction() {
+    if (!pending || !task) return
+    try {
+      if (pending === 'cancel') {
+        await cancelMutation.mutateAsync(task.id)
+        pushToast({ kind: 'success', message: '取消信号已发送，等待安全清理完成。', duration: 3500 })
+      } else {
+        await deleteMutation.mutateAsync(task.id)
+        pushToast({ kind: 'success', message: '任务记录已删除。', duration: 2500 })
+        navigate('/tasks')
+      }
+      setPending(null)
+    } catch (error) {
+      pushToast({ kind: 'error', message: (error as { message?: string }).message ?? '操作失败', duration: 5000 })
+    }
+  }
+
+  async function retry() {
+    try {
+      const response = await retryMutation.mutateAsync(taskId)
+      pushToast({ kind: 'success', message: '重试任务已创建。', duration: 2500 })
+      navigate(`/tasks/${response.task.id}`)
+    } catch (error) {
+      pushToast({ kind: 'error', message: (error as { message?: string }).message ?? '重试失败', duration: 5000 })
+    }
+  }
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="任务详情"
-        description="本地分析任务记录的元数据与规则评估摘要。原始敏感标识不入库,故此处仅展示统计。"
-        eyebrow={`任务 ${task.local_id}`}
+        description="后端持久化状态、真实步骤时间线与诊断信息。页面离开后任务仍继续运行。"
+        eyebrow={`任务 ${task.id}`}
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => navigate('/tasks')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs border border-[var(--border-soft)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            >
-              <ArrowLeft size={14} /> 列表
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs border border-[var(--border-soft)] text-[var(--danger)] hover:bg-[rgba(255,107,138,0.08)]"
-            >
-              <Trash2 size={14} /> 删除
-            </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button type="button" onClick={() => navigate('/tasks')} className="control-button"><ArrowLeft size={14} /> 列表</button>
+            {task.report_json_path && <button type="button" onClick={() => navigate(`/reports?task_id=${task.id}`)} className="control-button"><FileText size={14} /> 专业报告</button>}
+            {active ? (
+              <button type="button" onClick={() => setPending('cancel')} className="control-button text-[var(--warning)]"><Ban size={14} /> 取消</button>
+            ) : (
+              <>
+                {task.task_type !== 'comparison' && <button type="button" onClick={() => void retry()} className="control-button"><RefreshCw size={14} /> 重新分析</button>}
+                <button type="button" onClick={() => setPending('delete')} className="control-button text-[var(--danger)]"><Trash2 size={14} /> 删除</button>
+              </>
+            )}
           </div>
         }
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="分析类型" value={task.kind === 'static' ? '静态' : '动态'} tone="accent" icon={<Package size={18} />} />
-        <StatCard label="整体状态" value={statusLabel(task.status)} tone={tone} icon={task.status === 'success' ? <CheckCircle2 size={18} /> : task.status === 'failed' ? <XCircle size={18} /> : <AlertTriangle size={18} />} />
-        <StatCard label="创建时间" value={formatDateTime(task.created_at)} tone="default" icon={<Clock size={18} />} />
-        <StatCard label="识别 SDK 数" value={task.sdk_count ?? '—'} tone="success" />
+        <StatCard label="分析类型" value={taskTypeLabel(task)} tone="accent" icon={<Package size={18} />} />
+        <StatCard label="任务状态" value={STATUS_LABEL[task.status]} tone={statusCardTone(task.status)} icon={statusIcon(task.status)} />
+        <StatCard label="当前进度" value={`${task.progress_percent}%`} tone={active ? 'default' : 'success'} icon={<Clock size={18} />} />
+        <StatCard label="实时通道" value={active ? taskQuery.socketConnected ? 'WebSocket' : 'HTTP 轮询' : '已停止'} tone={taskQuery.socketConnected ? 'success' : 'neutral'} icon={taskQuery.socketConnected ? <Wifi size={18} /> : <WifiOff size={18} />} />
       </div>
 
       <GlassCard padding="md" highlight>
-        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">基本信息</h3>
-        <dl className="flex flex-col gap-1">
-          <KV k="本地任务 ID" v={task.local_id} mono />
-          <KV k="后端 run_id" v={task.run_id ?? '—(未返回)'} mono />
-          <KV k="APK 路径(展示)" v={task.apk_path || '—'} />
-          <KV k="包名" v={task.package_name ?? '—'} mono />
-          <KV k="报告产物" v={task.has_report ? '已生成' : '未生成'} />
-          <KV k="产物数量" v={`${task.artifacts_count}`} />
-        </dl>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">总体进度</h3>
+            <p className="text-xs text-[var(--text-tertiary)] mt-1">{stageLabel(task.current_stage)}</p>
+          </div>
+          <StatusBadge tone={statusTone(task.status)} label={STATUS_LABEL[task.status]} />
+        </div>
+        <div className="h-2.5 rounded-full bg-[rgba(127,147,186,0.2)] overflow-hidden">
+          <span className="block h-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] transition-[width] duration-300" style={{ width: `${task.progress_percent}%` }} />
+        </div>
       </GlassCard>
 
-      {task.summary ? (
-        <GlassCard padding="md" highlight>
-          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">规则评估摘要</h3>
-          <p className="text-[11px] text-[var(--text-tertiary)] mb-3">
-            「未评估」仅表示规则未运行或数据缺失,绝不代表「无风险」。
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <SummaryBox label="已命中" value={task.summary.matched} tone="danger" icon={<ShieldAlert size={15} />} />
-            <SummaryBox label="未命中" value={task.summary.not_matched} tone="success" icon={<CheckCircle2 size={15} />} />
-            <SummaryBox label="未评估" value={task.summary.not_evaluated} tone="neutral" icon={<AlertTriangle size={15} />} />
-            <SummaryBox label="异常" value={task.summary.errored} tone="warning" icon={<AlertTriangle size={15} />} />
-          </div>
-        </GlassCard>
-      ) : (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <GlassCard padding="md">
-          <EmptyState icon={<FileText size={26} />} title="无规则评估摘要" description="该任务未产生规则结果(可能为失败或仅静态分析)。" />
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">任务信息</h3>
+          <dl className="flex flex-col gap-1">
+            <KV k="任务 ID" v={task.id} mono />
+            <KV k="应用名称" v={task.app_name ?? '—'} />
+            <KV k="包名" v={task.package_name ?? '—'} mono />
+            <KV k="APK 文件" v={task.apk_path?.split(/[\\/]/).pop() ?? '—'} />
+            <KV k="SHA-256" v={task.apk_sha256 ?? '—'} mono />
+            <KV k="版本" v={`${task.version_name ?? '—'} (${task.version_code ?? '—'})`} />
+            <KV k="设备标识（脱敏）" v={task.device_id ?? '—'} mono />
+          </dl>
         </GlassCard>
-      )}
-
-      {task.error && (
         <GlassCard padding="md">
-          <h3 className="text-sm font-semibold text-[var(--danger)] mb-2 flex items-center gap-1.5">
-            <ShieldAlert size={15} /> 错误信息
-          </h3>
-          {task.error_code && <p className="text-xs text-[var(--text-tertiary)] mb-1">错误代码:{task.error_code}</p>}
-          <p className="text-sm text-[var(--text-secondary)] font-mono break-all">{task.error}</p>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">配置与产物</h3>
+          <dl className="flex flex-col gap-1">
+            <KV k="流量采集" v={task.enable_traffic ? '启用' : '未启用'} />
+            <KV k="UI 刺激" v={task.enable_ui_stimulation ? '启用' : '未启用'} />
+            <KV k="创建时间" v={formatDateTime(task.created_at)} />
+            <KV k="开始时间" v={formatDateTime(task.started_at)} />
+            <KV k="完成时间" v={formatDateTime(task.completed_at)} />
+            <KV k="报告 JSON" v={task.report_json_path ? '已生成' : '—'} />
+            <KV k="报告 HTML" v={task.report_html_path ? '已生成，可打印' : '—'} />
+          </dl>
         </GlassCard>
-      )}
+      </div>
 
-      {hasActiveResult && (
-        <GlassCard padding="md" highlight>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">本次结果仍驻留内存</h3>
-              <p className="text-xs text-[var(--text-tertiary)]">可在对应结果页继续查看完整分析细节。</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate(task.kind === 'dynamic' ? '/dynamic' : '/static')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-sm bg-[var(--accent-blue)] text-[var(--text-on-accent)] hover:brightness-110"
-            >
-              查看结果
-            </button>
-          </div>
+      <GlassCard padding="md" highlight>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">步骤时间线</h3>
+        {task.steps.length ? (
+          <ol className="relative ml-2 border-l border-[var(--border-soft)]">
+            {task.steps.map((step, index) => (
+              <li key={step.id} className="relative pl-6 pb-5 last:pb-0">
+                <span className={cn('absolute -left-[6px] top-1 w-3 h-3 rounded-full border-2 border-[var(--bg-deep)]', stepDot(step.status), step.status === 'running' && 'animate-pulse')} />
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-[var(--text-primary)]">{stageLabel(step.step_name)}</p>
+                    {step.message && <p className="text-xs text-[var(--text-secondary)] mt-1">{step.message}</p>}
+                    <p className="text-[11px] text-[var(--text-tertiary)] mt-1">
+                      {formatDateTime(step.started_at)}{step.completed_at ? ` → ${formatDateTime(step.completed_at)}` : ''}
+                    </p>
+                  </div>
+                  <span className="text-[11px] text-[var(--text-tertiary)] shrink-0">{index + 1} · {step.progress_percent}%</span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <EmptyState icon={<Clock size={26} />} title={task.status === 'queued' ? '等待开始' : '暂无步骤记录'} description="真实分析步骤完成后会写入此处。" />
+        )}
+      </GlassCard>
+
+      {(task.error_code || task.error_message) && (
+        <GlassCard padding="md" className="border-[rgba(242,139,155,0.35)]">
+          <h3 className="text-sm font-semibold text-[var(--danger)] flex items-center gap-2"><ShieldAlert size={16} /> 错误详情</h3>
+          <p className="text-xs text-[var(--text-tertiary)] mt-2">{task.error_code ?? 'task_error'}</p>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">{task.error_message ?? '任务执行失败'}</p>
         </GlassCard>
       )}
 
       <ConfirmDialog
-        open={confirmDelete}
-        title="删除该任务记录?"
-        description="此操作仅删除本地浏览器中的该任务记录,不会影响后端已产生的产物文件。"
-        confirmLabel="删除"
+        open={pending !== null}
+        title={pending === 'cancel' ? '取消该任务？' : '删除该任务记录？'}
+        description={pending === 'cancel'
+          ? '任务会在安全点停止；设备代理、Frida、mitmdump 与资源租约完成清理后才进入“已取消”。'
+          : '仅删除 SQLite 记录和报告索引，分析产物默认保留。'}
+        confirmLabel={pending === 'cancel' ? '发送取消信号' : '删除记录'}
         tone="danger"
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void confirmAction()}
+        onCancel={() => setPending(null)}
       />
     </div>
   )
@@ -168,34 +215,72 @@ export default function TaskDetail() {
 
 function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
-    <div className="flex items-start justify-between gap-3 py-1 border-b border-[var(--border-soft)]/40">
-      <dt className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wide shrink-0 pt-0.5">{k}</dt>
-      <dd className={cn('text-sm text-[var(--text-primary)] text-right break-all', mono && 'font-mono text-[13px]')}>{v}</dd>
+    <div className="flex items-start justify-between gap-3 py-1.5 border-b border-[var(--border-soft)]/40">
+      <dt className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wide shrink-0">{k}</dt>
+      <dd className={cn('text-sm text-[var(--text-primary)] text-right break-all', mono && 'font-mono text-[12px]')}>{v}</dd>
     </div>
   )
 }
 
-function SummaryBox({ label, value, tone, icon }: { label: string; value: number; tone: 'danger' | 'success' | 'neutral' | 'warning'; icon: ReactNode }) {
-  const color =
-    tone === 'danger' ? 'text-[var(--danger)]' :
-    tone === 'success' ? 'text-[var(--success)]' :
-    tone === 'warning' ? 'text-[var(--warning)]' :
-    'text-[var(--status-neutral)]'
-  return (
-    <div className="rounded-[12px] border border-[var(--border-soft)] px-3 py-2.5 flex flex-col gap-1">
-      <span className="text-[11px] text-[var(--text-tertiary)] inline-flex items-center gap-1">{icon}{label}</span>
-      <span className={cn('text-xl font-semibold', color)}>{value}</span>
-    </div>
-  )
+function taskTypeLabel(task: TaskRecord): string {
+  return task.task_type === 'static' ? '静态分析' : task.task_type === 'dynamic' ? '动态分析' : '版本对比'
 }
 
-function statusLabel(s: string | null): string {
-  if (!s) return '—'
-  switch (s) {
-    case 'success': return '成功'
-    case 'partial': return '部分成功'
-    case 'failed': return '失败'
-    case 'skipped': return '已跳过'
-    default: return s
+function statusTone(status: TaskStatus): 'success' | 'warning' | 'danger' | 'neutral' | 'info' {
+  if (status === 'completed') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'running') return 'info'
+  if (status === 'queued') return 'warning'
+  return 'neutral'
+}
+
+function statusCardTone(status: TaskStatus): 'success' | 'danger' | 'warning' | 'neutral' | 'default' {
+  if (status === 'completed') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'running') return 'default'
+  if (status === 'queued') return 'warning'
+  return 'neutral'
+}
+
+function statusIcon(status: TaskStatus) {
+  if (status === 'completed') return <CheckCircle2 size={18} />
+  if (status === 'failed') return <XCircle size={18} />
+  return <AlertTriangle size={18} />
+}
+
+function stepDot(status: TaskStepStatus): string {
+  if (status === 'success') return 'bg-[var(--success)]'
+  if (status === 'failed') return 'bg-[var(--danger)]'
+  if (status === 'partial') return 'bg-[var(--warning)]'
+  if (status === 'running') return 'bg-[var(--accent-blue)]'
+  return 'bg-[var(--status-neutral)]'
+}
+
+function stageLabel(stage: string | null): string {
+  const labels: Record<string, string> = {
+    input_validation: '输入校验',
+    apk_validation: 'APK 路径校验',
+    apk_hash: 'SHA-256 复核',
+    apk_snapshot: '原子 APK 快照',
+    apk_unpack: 'apktool 解包',
+    manifest_parse: 'Manifest 与权限解析',
+    sdk_scan: '第三方 SDK 识别',
+    device_selection: '设备校验与租约',
+    apk_install: '安装 APK',
+    frida_spawn: 'Frida suspended spawn',
+    frida_script_load: '加载 Hook',
+    frida_ready: '等待 Hook-ready',
+    mitm_start: '启动流量采集',
+    collection_start: 'Consent 前动态采集',
+    app_resume: '恢复应用',
+    consent_boundary: 'Consent 边界',
+    event_validation: '动态证据校验',
+    resource_cleanup: '资源清理',
+    rule_evaluation: '规则评估',
+    report_write: '生成报告',
+    completed: '任务完成',
+    failed: '任务失败',
+    cancelled: '任务已取消',
   }
+  return stage ? labels[stage] ?? stage : '等待开始'
 }

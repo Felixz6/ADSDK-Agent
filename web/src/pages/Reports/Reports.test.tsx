@@ -1,12 +1,46 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
+import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import Reports from './Reports'
 import { renderWithProviders } from '@/test/render'
+import { server } from '@/test/msw-server'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { AnalyzeResponse } from '@/types/api'
 
 beforeEach(() => {
   useAnalysisStore.getState().clear()
+})
+
+describe('Reports — 持久化报告导出', () => {
+  it('任务报告提供 HTML 打印、JSON、Markdown 下载与摘要复制', async () => {
+    const report = seedDynamic()
+    server.use(
+      http.get('http://127.0.0.1:8000/tasks/report-1/report', () =>
+        HttpResponse.json({
+          task_id: 'report-1',
+          status: 'completed',
+          report,
+          html_url: '/tasks/report-1/artifacts/html',
+          json_url: '/tasks/report-1/artifacts/json',
+          markdown_url: '/tasks/report-1/artifacts/markdown',
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<div />, {
+      initialEntries: ['/reports?task_id=report-1'],
+      extraRoutes: [{ path: '/reports', element: <Reports /> }],
+    })
+
+    const print = await screen.findByRole('link', { name: /打印.*导出 PDF/ })
+    expect(print).toHaveAttribute('href', 'http://127.0.0.1:8000/tasks/report-1/artifacts/html')
+    expect(screen.getByRole('link', { name: /HTML/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /JSON/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Markdown/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /复制摘要/ }))
+    expect(await screen.findByText('已复制报告摘要。')).toBeInTheDocument()
+  })
 })
 
 function seedDynamic(resp: Partial<AnalyzeResponse> = {}) {
@@ -92,7 +126,7 @@ function seedDynamic(resp: Partial<AnalyzeResponse> = {}) {
 describe('Reports — 规则四态计数与渲染', () => {
   it('matched/not_matched/not_evaluated/error 计数正确显示', () => {
     seedDynamic()
-    render(<Reports />)
+    renderWithProviders(<Reports />)
     // 命中数 = strict 1 + mild 1 = 2
     expect(screen.getAllByText('2').length).toBeGreaterThan(0)
     // 未命中数 = mild 1
@@ -102,7 +136,7 @@ describe('Reports — 规则四态计数与渲染', () => {
 
   it('未评估绝不展示为绿色/安全/通过:StatCard tone 为 neutral,文案为「绝不代表无风险」', () => {
     seedDynamic()
-    const { container } = render(<Reports />)
+    const { container } = renderWithProviders(<Reports />)
     // 报告页头部明示「未评估绝不等于无风险」
     expect(screen.getByText(/未评估绝不等于无风险/)).toBeInTheDocument()
     // 「未评估」标签对应 StatCard 不含 success 语义色类

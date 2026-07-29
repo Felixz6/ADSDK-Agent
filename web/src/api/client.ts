@@ -112,9 +112,16 @@ export function toApiError(error: unknown): ApiError {
     let message = ''
     if (payload && typeof payload === 'object') {
       const p = payload as Record<string, unknown>
-      code = (typeof p.error_code === 'string' && p.error_code) || null
+      const detail = p.detail && typeof p.detail === 'object'
+        ? p.detail as Record<string, unknown>
+        : null
+      code =
+        (typeof p.error_code === 'string' && p.error_code) ||
+        (typeof detail?.code === 'string' && detail.code) ||
+        null
       message =
         (typeof p.detail === 'string' && p.detail) ||
+        (typeof detail?.message === 'string' && detail.message) ||
         (typeof p.message === 'string' && p.message) ||
         (typeof p.error === 'string' && p.error) ||
         ''

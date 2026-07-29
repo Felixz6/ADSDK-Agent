@@ -12,4 +12,16 @@ export const server = setupServer(
   http.get('http://127.0.0.1:8000/', () =>
     HttpResponse.json({ ok: true, message: 'AdSDK Agent' }),
   ),
+  http.get('http://127.0.0.1:8000/tasks', () =>
+    HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20, pages: 0 }),
+  ),
+  http.get('http://127.0.0.1:8000/tasks/system/status', () =>
+    HttpResponse.json({
+      database_ok: true,
+      database_path: 'output/state/adsdk-agent.db',
+      running_tasks: 0,
+      queued_tasks: 0,
+      occupied_devices: [],
+    }),
+  ),
 )
