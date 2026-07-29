@@ -19,6 +19,11 @@ from app.config import (
     DEFAULT_MITM_PORT,
     FRIDA_READY_TIMEOUT_SECONDS,
     FRIDA_STOP_TIMEOUT_SECONDS,
+    FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS,
+    FRIDA_SERVER_LOCAL_PATH,
+    FRIDA_SERVER_MANAGEMENT_ENABLED,
+    FRIDA_SERVER_REMOTE_PATH,
+    FRIDA_SERVER_START_TIMEOUT_SECONDS,
     MITM_LISTEN_HOST,
     MITM_DEVICE_PROXY_HOST,
     MITM_READY_TIMEOUT_SECONDS,
@@ -50,6 +55,18 @@ from app.analyzers.risk_scoring import calculate_risk_summary
 from app.analyzers.sdk_intelligence import correlate_sdk_evidence
 from app.analyzers.timeline_builder import build_timeline
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
+from app.frida import (
+    DynamicModePolicy,
+    ExecutionMode,
+    FridaDiagnosticsRequest,
+    FridaDiagnosticsService,
+    FridaServerActionRequest,
+    FridaServerManager,
+    PolicyFridaSession,
+    build_evidence_quality,
+)
+from app.frida.process_monitor import classify_process_exit
+from app.frida.traffic_diagnostics import diagnose_traffic
 from app.comparisons import (
     ComparisonCreateRequest,
     ComparisonResult,
@@ -88,7 +105,7 @@ from app.tools.frida_runner import (
     check_frida_device_runtime,
     spawn_and_inject,
 )
-from app.tools.frida_session import FridaSession
+from app.tools.frida_session import FridaSession, FridaSessionError
 from app.tools.dynamic_collection import (
     DynamicCollectionConfig,
     DynamicCollectionResult,
@@ -106,6 +123,7 @@ from app.tools.log_writer import append_log
 from app.tools.manifest_parser import parse_manifest_info
 from app.tools.mitm_runner import check_port_listening, get_mitm_status, start_mitm, stop_mitm
 from app.tools.mitm_session import MitmSession
+from app.tools.logcat_collector import LogcatCollector
 from app.tools.report_writer import write_json_report, write_markdown_report
 from app.tools.sdk_fingerprint import scan_for_sdks
 from app.tools.timeline_rules import evaluate_timeline_rules
@@ -119,9 +137,21 @@ from app.tools.traffic_parser import (
     parse_traffic_to_summary_json,
     write_traffic_summary,
 )
-from app.tools.utils import ensure_dir, now_iso
+from app.tools.utils import ensure_dir, now_iso, run_cmd
 
 app = FastAPI(title="AdSDK Agent", version="0.1.0")
+frida_diagnostics_service = FridaDiagnosticsService(
+    project_root=Path(__file__).resolve().parent.parent,
+    server_remote_path=FRIDA_SERVER_REMOTE_PATH,
+    management_enabled=FRIDA_SERVER_MANAGEMENT_ENABLED,
+)
+frida_server_manager = FridaServerManager(
+    enabled=FRIDA_SERVER_MANAGEMENT_ENABLED,
+    local_path=FRIDA_SERVER_LOCAL_PATH,
+    remote_path=FRIDA_SERVER_REMOTE_PATH,
+    start_timeout_seconds=FRIDA_SERVER_START_TIMEOUT_SECONDS,
+    handshake_timeout_seconds=FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS,
+)
 
 
 def _parse_manifest_application(
@@ -777,14 +807,23 @@ def _finalize_report(
 
 @app.get("/env/check")
 def env_check(device_id: str | None = None):
+    resolved_device_id = device_id
+    if device_id:
+        try:
+            resolved_device_id = select_device_context(device_id).serial
+        except DeviceSelectionError:
+            # Preserve the existing diagnostic response shape for stale or
+            # invalid references instead of turning this compatibility route
+            # into an exception.
+            resolved_device_id = device_id
     adb_info = check_adb_available()
-    device_info = check_device_online(device_id=device_id)
-    frida_info = check_frida_connection(device_id=device_id)
-    frida_runtime_info = check_frida_device_runtime(device_id)
+    device_info = check_device_online(device_id=resolved_device_id)
+    frida_info = check_frida_connection(device_id=resolved_device_id)
+    frida_runtime_info = check_frida_device_runtime(resolved_device_id)
     mitm_listen_port = DEFAULT_MITM_PORT
     mitm_8080_listening = check_port_listening(port=mitm_listen_port)
     output_info = _check_output_writable()
-    serials = _device_serials(device_info, device_id)
+    serials = _device_serials(device_info, resolved_device_id)
 
     apktool_info = check_apktool()
     frida_python_info = check_frida_python_package()
@@ -821,7 +860,7 @@ def env_check(device_id: str | None = None):
 
     return {
         "ok": all(checks.values()),
-        "device_id": _redact_known_device_serials(device_id, serials),
+        "device_id": _redact_known_device_serials(resolved_device_id, serials),
         "checks": checks,
         "details": {
             "adb": _redact_known_device_serials(adb_info, serials),
@@ -843,7 +882,11 @@ def env_check(device_id: str | None = None):
 
 @app.get("/traffic/check")
 def traffic_check(device_id: str):
-    device_info = check_device_online(device_id=device_id)
+    try:
+        resolved_device_id = select_device_context(device_id).serial
+    except DeviceSelectionError:
+        resolved_device_id = device_id
+    device_info = check_device_online(device_id=resolved_device_id)
     mitm_status = get_mitm_status(port=DEFAULT_MITM_PORT)
     stream_log = mitm_status.get("stream_log")
     records = parse_traffic_text(stream_log) if stream_log else []
@@ -872,10 +915,10 @@ def traffic_check(device_id: str):
     if not captured_ok:
         reasons.append("No requests detected in latest capture; verify proxy/IP/certificate/SSL pinning.")
 
-    serials = _device_serials(device_info, device_id)
+    serials = _device_serials(device_info, resolved_device_id)
     response = {
         "ok": captured_ok,
-        "device_id": device_id,
+        "device_id": resolved_device_id,
         "captured_success": captured_ok,
         "captured_request_count": len(records),
         "flow_file_size": flow_file_size,
@@ -884,6 +927,45 @@ def traffic_check(device_id: str):
         "sample_requests": records[:10],
     }
     return _redact_known_device_serials(response, serials)
+
+
+@app.post("/frida/diagnostics")
+def frida_diagnostics(request: FridaDiagnosticsRequest):
+    """Run a read-only, exact-device diagnostic pass."""
+
+    device = select_device_context(request.device_id)
+    return frida_diagnostics_service.diagnose(
+        request.model_copy(update={"device_id": device.serial})
+    )
+
+
+@app.get("/frida/status")
+def frida_server_status(device_id: str = Query(min_length=1, max_length=256)):
+    return frida_server_manager.status(select_device_context(device_id))
+
+
+@app.post("/frida/server/deploy")
+def deploy_frida_server(request: FridaServerActionRequest):
+    return frida_server_manager.deploy(
+        select_device_context(request.device_id),
+        confirm=request.confirm,
+    )
+
+
+@app.post("/frida/server/start")
+def start_frida_server(request: FridaServerActionRequest):
+    return frida_server_manager.start(
+        select_device_context(request.device_id),
+        confirm=request.confirm,
+    )
+
+
+@app.post("/frida/server/stop")
+def stop_frida_server(request: FridaServerActionRequest):
+    return frida_server_manager.stop(
+        select_device_context(request.device_id),
+        confirm=request.confirm,
+    )
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -1566,6 +1648,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         if legacy_mode
         else context.events_raw_path
     )
+    frida_diagnostic_payload: dict[str, Any] | None = None
 
     if install_ok and device_context is not None:
         script_path = (
@@ -1592,17 +1675,112 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                     stop=stop_mitm,
                 )
         else:
-            frida_session = FridaSession(
-                run_id=context.run_id,
-                device=device_context,
-                package_name=package_name,
-                script_path=script_path,
-                event_log_path=context.events_raw_path,
-                protocol_error_path=(
-                    context.run_dir / "frida.protocol-errors.jsonl"
-                ),
-                stop_timeout_seconds=FRIDA_STOP_TIMEOUT_SECONDS,
-            )
+            if FridaSession is _ORIGINAL_FRIDA_SESSION_CLASS:
+                report_step("frida_diagnostics", "running", "正在执行 Frida 分层诊断")
+                diagnostic_result = frida_diagnostics_service.diagnose(
+                    FridaDiagnosticsRequest(
+                        device_id=device_context.serial,
+                        package_name=package_name,
+                    )
+                )
+                frida_diagnostic_payload = diagnostic_result.model_dump(mode="json")
+                diagnostic_status = (
+                    StepStatus.SUCCESS
+                    if diagnostic_result.overall_status == "ready"
+                    else StepStatus.PARTIAL
+                    if diagnostic_result.overall_status == "degraded"
+                    else StepStatus.FAILED
+                )
+                steps.append(
+                    _step_result(
+                        "frida_diagnostics",
+                        diagnostic_status,
+                        _utc_now(),
+                        required=req.dynamic_mode_policy == "strict",
+                        error_code=(
+                            diagnostic_result.issues[0].code
+                            if diagnostic_status is StepStatus.FAILED
+                            and diagnostic_result.issues
+                            else None
+                        ),
+                        error_message=(
+                            diagnostic_result.issues[0].summary
+                            if diagnostic_status is StepStatus.FAILED
+                            and diagnostic_result.issues
+                            else None
+                        ),
+                        details={
+                            "overall_status": diagnostic_result.overall_status,
+                            "recommended_mode": diagnostic_result.recommended_mode,
+                            "device_ref": diagnostic_result.device_ref,
+                        },
+                    )
+                )
+
+                def make_frida_session(mode: ExecutionMode) -> FridaSession:
+                    return FridaSession(
+                        run_id=context.run_id,
+                        device=device_context,
+                        package_name=package_name,
+                        script_path=script_path,
+                        event_log_path=context.events_raw_path,
+                        protocol_error_path=(
+                            context.run_dir / "frida.protocol-errors.jsonl"
+                        ),
+                        stop_timeout_seconds=FRIDA_STOP_TIMEOUT_SECONDS,
+                        execution_mode=(
+                            ExecutionMode.ATTACH_EXISTING.value
+                            if mode is ExecutionMode.LAUNCH_THEN_ATTACH
+                            else mode.value
+                        ),
+                    )
+
+                def launch_target_for_attach() -> None:
+                    launch_result = launch_app(
+                        package_name,
+                        device_context=device_context,
+                    )
+                    if launch_result.get("returncode") != 0:
+                        raise FridaSessionError(
+                            "package_launch_failed",
+                            "Target package launch command failed",
+                        )
+                    deadline = time.monotonic() + 5.0
+                    while time.monotonic() < deadline:
+                        pid_result = run_cmd(
+                            device_context.adb_command(
+                                "shell", "pidof", package_name
+                            ),
+                            timeout=3,
+                        )
+                        if (
+                            pid_result.get("returncode") == 0
+                            and str(pid_result.get("stdout") or "").strip()
+                        ):
+                            return
+                        time.sleep(0.25)
+                    raise FridaSessionError(
+                        "package_process_not_found",
+                        "Target package did not expose a process after launch",
+                    )
+
+                frida_session = PolicyFridaSession(
+                    policy=DynamicModePolicy(req.dynamic_mode_policy),
+                    session_factory=make_frida_session,
+                    launch_target=launch_target_for_attach,
+                )
+            else:
+                frida_session = FridaSession(
+                    run_id=context.run_id,
+                    device=device_context,
+                    package_name=package_name,
+                    script_path=script_path,
+                    event_log_path=context.events_raw_path,
+                    protocol_error_path=(
+                        context.run_dir / "frida.protocol-errors.jsonl"
+                    ),
+                    stop_timeout_seconds=FRIDA_STOP_TIMEOUT_SECONDS,
+                )
             if req.enable_traffic:
                 mitm_session = MitmSession(
                     run_id=context.run_id,
@@ -1896,16 +2074,242 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 )
             )
     write_traffic_summary(traffic_summary, str(context.traffic_summary_path))
+    mitm_public_status = (
+        _session_status(mitm_session, device_context)
+        if mitm_session is not None and device_context is not None
+        else None
+    )
+    try:
+        mitm_stderr_text = context.mitm_stderr_path.read_text(
+            encoding="utf-8", errors="replace"
+        )[-64 * 1024 :]
+    except OSError:
+        mitm_stderr_text = ""
+    traffic_diagnostics = diagnose_traffic(
+        collector_outcome=str(
+            traffic_summary.get("collector_outcome") or "collector_failed"
+        ),
+        request_count=int(traffic_summary.get("total_requests") or 0),
+        session_status=mitm_public_status,
+        stderr_text=mitm_stderr_text,
+    )
+    dynamic_diagnostics_dir = context.run_dir / "dynamic"
+    dynamic_diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        dynamic_diagnostics_dir / "traffic-diagnostics.json",
+        traffic_diagnostics.model_dump(mode="json"),
+    )
+    steps.append(
+        _step_result(
+            "network_diagnostics",
+            (
+                StepStatus.PARTIAL
+                if traffic_diagnostics.reason_codes
+                else StepStatus.SUCCESS
+            ),
+            _utc_now(),
+            required=False,
+            warnings=list(traffic_diagnostics.limitations),
+            details={
+                "outcome": traffic_diagnostics.outcome,
+                "proxy_status": traffic_diagnostics.proxy_status,
+                "pinning_suspected": traffic_diagnostics.pinning_suspected,
+            },
+        )
+    )
+
+    process_diagnostics_payload: dict[str, Any] | None = None
+    if (
+        device_context is not None
+        and FridaSession is _ORIGINAL_FRIDA_SESSION_CLASS
+        and frida_session is not None
+    ):
+        logcat = LogcatCollector(
+            device=device_context,
+            package_name=package_name,
+            output_dir=dynamic_diagnostics_dir,
+        ).collect(pid=getattr(frida_session, "pid", None))
+        pid_result = run_cmd(
+            device_context.adb_command("shell", "pidof", package_name),
+            timeout=10,
+        )
+        pid_text = str(pid_result.get("stdout") or "").strip()
+        observed_pid = getattr(frida_session, "pid", None)
+        if observed_pid is None and pid_text:
+            first_pid = pid_text.split()[0]
+            observed_pid = int(first_pid) if first_pid.isdigit() else None
+        timeline_for_process = collection_result.timeline.to_dict()
+        start_ms = timeline_for_process.get("app_resumed_monotonic_ms")
+        end_ms = timeline_for_process.get("collection_ended_monotonic_ms")
+        duration_ms = (
+            max(0, int(float(end_ms) - float(start_ms)))
+            if start_ms is not None and end_ms is not None
+            else None
+        )
+        process_diagnostics = classify_process_exit(
+            pid=observed_pid,
+            duration_ms=duration_ms,
+            hook_ready=hook_evidence_available,
+            hook_event_count=len(dynamic_events),
+            detached_reason=getattr(frida_session, "error_code", None),
+            logcat_lines=list(logcat["lines"]),
+            process_still_running=(
+                pid_result.get("returncode") == 0 and bool(pid_text)
+            ),
+        )
+        process_diagnostics_payload = process_diagnostics.model_dump(mode="json")
+        atomic_write_json(
+            dynamic_diagnostics_dir / "process-diagnostics.json",
+            process_diagnostics_payload,
+        )
+        steps.append(
+            _step_result(
+                "process_monitoring",
+                (
+                    StepStatus.SUCCESS
+                    if process_diagnostics.status == "running"
+                    else StepStatus.PARTIAL
+                ),
+                _utc_now(),
+                required=False,
+                warnings=(
+                    ["进程退出分类不等同于确定存在反调试"]
+                    if process_diagnostics.status != "running"
+                    else []
+                ),
+                details={
+                    "status": process_diagnostics.status,
+                    "confidence": process_diagnostics.confidence,
+                },
+            )
+        )
+    else:
+        steps.append(
+            _step_result(
+                "process_monitoring",
+                StepStatus.SKIPPED,
+                _utc_now(),
+                required=False,
+                warnings=["当前兼容会话未启用 M4 进程诊断"],
+            )
+        )
     network_evidence_available = traffic_summary.get("collector_outcome") in {
         "collector_success_zero_requests",
         "collector_success_requests_observed",
     }
-    dynamic_validation_level = (
-        "A"
-        if hook_evidence_available and network_evidence_available
-        else "B"
-        if hook_evidence_available or network_evidence_available
-        else "C"
+    timeline_payload = collection_result.timeline.to_dict()
+    consent_time = timeline_payload.get("consent_at")
+    selected_mode = (
+        getattr(frida_session, "selected_mode", ExecutionMode.SPAWN_SUSPENDED)
+        if frida_session is not None
+        else ExecutionMode.NONE
+    )
+    if isinstance(selected_mode, str):
+        selected_mode = ExecutionMode(selected_mode)
+    execution_attempts = list(getattr(frida_session, "attempts", []))
+    execution_decision = {
+        "policy": req.dynamic_mode_policy,
+        "selected_mode": selected_mode.value,
+        "attempts": [
+            item.model_dump(mode="json")
+            if hasattr(item, "model_dump")
+            else dict(item)
+            for item in execution_attempts
+        ],
+        "fallback_path": list(getattr(frida_session, "fallback_path", [])),
+    }
+    evidence_quality = build_evidence_quality(
+        selected_mode,
+        transport_trusted=hook_evidence_available,
+        hook_ready_trusted=hook_evidence_available,
+        event_protocol_trusted=hook_evidence_available
+        and not bool(getattr(frida_session, "protocol_errors", [])),
+        consent_boundary_trusted=hook_evidence_available
+        and (req.consent_after_seconds is None or consent_time is not None),
+        network_evidence=network_evidence_available,
+        reason_codes=[
+            code
+            for code in (
+                collection_result.primary_error_code,
+                *[
+                    getattr(item, "reason_code", None)
+                    for item in execution_attempts
+                ],
+            )
+            if code
+        ],
+    )
+    dynamic_validation_level = evidence_quality.level
+    for attempt in execution_attempts:
+        step_name = (
+            "spawn_suspended_attempt"
+            if attempt.mode is ExecutionMode.SPAWN_SUSPENDED
+            else "attach_attempt"
+            if attempt.mode is ExecutionMode.ATTACH_EXISTING
+            else f"{attempt.mode.value}_attempt"
+        )
+        steps.append(
+            _step_result(
+                step_name,
+                StepStatus(attempt.status),
+                _utc_now(),
+                required=(
+                    req.dynamic_mode_policy == "strict"
+                    and attempt.mode is ExecutionMode.SPAWN_SUSPENDED
+                ),
+                error_code=attempt.reason_code,
+                error_message=(
+                    attempt.message if attempt.status == "failed" else None
+                ),
+                details={"mode": attempt.mode.value},
+            )
+        )
+    steps.extend(
+        [
+            _step_result(
+                "execution_mode_selection",
+                (
+                    StepStatus.SUCCESS
+                    if selected_mode is not ExecutionMode.NONE
+                    else StepStatus.FAILED
+                ),
+                _utc_now(),
+                required=True,
+                error_code=(
+                    collection_result.primary_error_code
+                    if selected_mode is ExecutionMode.NONE
+                    else None
+                ),
+                error_message=(
+                    "没有可用的动态执行模式"
+                    if selected_mode is ExecutionMode.NONE
+                    else None
+                ),
+                details=execution_decision,
+            ),
+            _step_result(
+                "resource_cleanup",
+                (
+                    StepStatus.PARTIAL
+                    if collection_result.cleanup_errors
+                    else StepStatus.SUCCESS
+                ),
+                _utc_now(),
+                required=True,
+                warnings=list(collection_result.cleanup_errors),
+            ),
+            _step_result(
+                "evidence_evaluation",
+                StepStatus.SUCCESS,
+                _utc_now(),
+                required=True,
+                details={
+                    "level": evidence_quality.level,
+                    "mode": evidence_quality.mode.value,
+                    "limitations": evidence_quality.limitations,
+                },
+            ),
+        ]
     )
 
     sessions_payload = {
@@ -1922,17 +2326,16 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             else None
         ),
         "mitm": (
-            _session_status(mitm_session, device_context)
-            if mitm_session is not None and device_context is not None
-            else None
+            mitm_public_status
         ),
-        "timeline": collection_result.timeline.to_dict(),
+        "timeline": timeline_payload,
         "collection_status": collection_result.status,
         "cleanup_errors": list(collection_result.cleanup_errors),
+        "execution": execution_decision,
+        "evidence_quality": evidence_quality.model_dump(mode="json"),
     }
     atomic_write_json(context.sessions_path, sessions_payload)
 
-    consent_time = collection_result.timeline.to_dict().get("consent_at")
     dynamic_findings = _build_dynamic_findings(
         dynamic_events,
         evidence_available=hook_evidence_available,
@@ -1971,7 +2374,12 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             "collection_timeout_seconds": req.collection_timeout_seconds,
             "collection_status": collection_result.status,
             "dynamic_validation_level": dynamic_validation_level,
-            "dynamic_timeline": collection_result.timeline.to_dict(),
+            "dynamic_execution": execution_decision,
+            "dynamic_evidence_quality": evidence_quality.model_dump(mode="json"),
+            "frida_diagnostics": frida_diagnostic_payload,
+            "process_diagnostics": process_diagnostics_payload,
+            "traffic_diagnostics": traffic_diagnostics.model_dump(mode="json"),
+            "dynamic_timeline": timeline_payload,
             "collector_sessions": sessions_payload,
             "device": (
                 device_context.to_public_dict()

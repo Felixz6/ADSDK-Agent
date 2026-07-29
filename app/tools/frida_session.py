@@ -10,11 +10,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from app.core.device import DeviceContext
 from app.core.redaction import Redactor
 
+from .utils import run_cmd
 from .frida_events import (
     FridaControlEvent,
     FridaEventValidationError,
@@ -120,6 +121,11 @@ class FridaSession:
     device_timeout_seconds: float = 5.0
     stop_timeout_seconds: float = 3.0
     protocol_error_threshold: int = 10
+    execution_mode: str = "spawn_suspended"
+    command_runner: Callable[..., dict[str, Any]] = field(
+        default=run_cmd,
+        repr=False,
+    )
 
     state: FridaSessionState = field(
         default=FridaSessionState.CREATED,
@@ -148,6 +154,8 @@ class FridaSession:
             raise ValueError("package_name must not be empty")
         if self.protocol_error_threshold < 1:
             raise ValueError("protocol_error_threshold must be positive")
+        if self.execution_mode not in {"spawn_suspended", "attach_existing"}:
+            raise ValueError("unsupported Frida execution mode")
 
         self.script_path = Path(self.script_path)
         self.event_log_path = Path(self.event_log_path)
@@ -325,16 +333,63 @@ class FridaSession:
         self._device_handle = handle
 
         try:
-            pid = handle.spawn([self.package_name])
+            if self.execution_mode == "attach_existing":
+                processes = handle.enumerate_processes()
+                process = next(
+                    (
+                        item
+                        for item in processes
+                        if str(getattr(item, "identifier", "") or "") == self.package_name
+                        or str(getattr(item, "name", "") or "") == self.package_name
+                    ),
+                    None,
+                )
+                if process is None:
+                    pid_result = self.command_runner(
+                        self.device.adb_command(
+                            "shell", "pidof", self.package_name
+                        ),
+                        timeout=max(1, int(self.device_timeout_seconds)),
+                    )
+                    pid_text = str(pid_result.get("stdout") or "").strip()
+                    first_pid = pid_text.split()[0] if pid_text else ""
+                    adb_pid = int(first_pid) if first_pid.isdigit() else None
+                    process = next(
+                        (
+                            item
+                            for item in processes
+                            if getattr(item, "pid", None) == adb_pid
+                        ),
+                        None,
+                    )
+                if process is None:
+                    self._raise_failure(
+                        "package_process_not_found",
+                        "Target package process is not running",
+                    )
+                pid = getattr(process, "pid", None)
+            else:
+                pid = handle.spawn([self.package_name])
+        except FridaSessionError:
+            raise
         except Exception as exc:
-            code = _classify_frida_exception(exc, "frida_spawn_failed")
+            fallback = (
+                "frida_attach_failed"
+                if self.execution_mode == "attach_existing"
+                else "frida_spawn_failed"
+            )
+            code = _classify_frida_exception(exc, fallback)
             self._set_failure(
                 code,
-                "Frida could not spawn the target package",
+                (
+                    "Frida could not enumerate the target process"
+                    if self.execution_mode == "attach_existing"
+                    else "Frida could not spawn the target package"
+                ),
             )
             raise FridaSessionError(
                 code,
-                "Frida could not spawn the target package",
+                self.error_message or "Frida process selection failed",
             ) from exc
         if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
             self._raise_failure(
@@ -594,17 +649,18 @@ class FridaSession:
         # hook_ready -> collection_started -> resume.
         collection_start = self.emit_collection_started()
 
-        try:
-            self._device_handle.resume(self.pid)
-        except Exception as exc:
-            self._set_failure(
-                "frida_process_exited",
-                "Frida could not resume the spawned app",
-            )
-            raise FridaSessionError(
-                "frida_process_exited",
-                "Frida could not resume the spawned app",
-            ) from exc
+        if self.execution_mode == "spawn_suspended":
+            try:
+                self._device_handle.resume(self.pid)
+            except Exception as exc:
+                self._set_failure(
+                    "frida_process_exited",
+                    "Frida could not resume the spawned app",
+                )
+                raise FridaSessionError(
+                    "frida_process_exited",
+                    "Frida could not resume the spawned app",
+                ) from exc
 
         with self._lock:
             self._resumed = True

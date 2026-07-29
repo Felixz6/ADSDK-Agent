@@ -49,6 +49,10 @@ class DynamicAnalyzeRequest(BaseModel):
         le=86400,
         description="Hard timeout for the active dynamic collection window",
     )
+    dynamic_mode_policy: Literal["strict", "balanced", "attach_only"] = Field(
+        default="balanced",
+        description="Frida execution policy; balanced preserves historical fallback behavior",
+    )
 
 
 class EvidenceRef(BaseModel):
@@ -212,6 +216,11 @@ class AnalyzeResponse(BaseModel):
     collection_timeout_seconds: Optional[int] = None
     collection_status: Optional[str] = None
     dynamic_validation_level: Optional[str] = None
+    dynamic_execution: Optional[Dict[str, Any]] = None
+    dynamic_evidence_quality: Optional[Dict[str, Any]] = None
+    frida_diagnostics: Optional[Dict[str, Any]] = None
+    process_diagnostics: Optional[Dict[str, Any]] = None
+    traffic_diagnostics: Optional[Dict[str, Any]] = None
     traffic_coverage: Optional[str] = None
     dynamic_timeline: Optional[Dict[str, Any]] = None
     collector_sessions: Optional[Dict[str, Any]] = None

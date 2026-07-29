@@ -15,6 +15,7 @@ export interface TaskCreateRequest {
   pre_consent_seconds?: number
   post_consent_seconds?: number
   collection_timeout_seconds?: number
+  dynamic_mode_policy?: 'strict' | 'balanced' | 'attach_only'
 }
 
 export interface TaskStep {

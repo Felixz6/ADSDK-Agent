@@ -60,6 +60,10 @@ def render_html_report(report: dict[str, Any]) -> str:
     events = report.get("dynamic_events")
     steps = report.get("steps") or []
     limitations = [str(item) for item in report.get("limitations") or []]
+    execution = report.get("dynamic_execution") or {}
+    evidence_quality = report.get("dynamic_evidence_quality") or {}
+    process_diagnostics = report.get("process_diagnostics") or {}
+    traffic_diagnostics = report.get("traffic_diagnostics") or {}
     dynamic_trusted = (
         events is not None
         and report.get("collection_status") == "success"
@@ -160,6 +164,29 @@ def render_html_report(report: dict[str, Any]) -> str:
                 ),
                 "未识别到 SDK。",
             ),
+        ),
+        _section(
+            "dynamic-quality",
+            "动态证据质量",
+            _kv(
+                [
+                    ("最终执行模式", execution.get("selected_mode") or evidence_quality.get("mode") or "旧版报告未记录"),
+                    ("执行策略", execution.get("policy") or "旧版报告未记录"),
+                    ("证据等级", evidence_quality.get("level") or "无法判断"),
+                    ("进程摘要", process_diagnostics.get("most_likely_cause") or process_diagnostics.get("status")),
+                    ("网络结局", traffic_diagnostics.get("outcome")),
+                    ("Pinning", "疑似" if traffic_diagnostics.get("pinning_suspected") else "现有证据不支持"),
+                ]
+            )
+            + _items(
+                evidence_quality.get("limitations") or [
+                    "旧版报告未记录动态证据限制。",
+                ],
+                "旧版报告未记录动态证据限制。",
+            )
+            + '<div class="notice warning"><strong>证据边界</strong>'
+            "<p>not_evaluated 不代表安全；零请求不代表没有网络行为；"
+            "attach 不能证明启动阶段无行为；疑似反调试不等于确定存在。</p></div>",
         ),
         _section(
             "dynamic",
@@ -280,6 +307,7 @@ def render_html_report(report: dict[str, Any]) -> str:
             ("permissions", "权限"),
             ("sdks", "SDK"),
             ("dynamic", "动态"),
+            ("dynamic-quality", "证据质量"),
             ("network", "网络"),
             ("rules", "规则"),
             ("actions", "整改"),

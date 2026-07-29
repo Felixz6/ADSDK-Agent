@@ -19,6 +19,7 @@ import { GlassCard } from '@/components/common/GlassCard'
 import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
 import { SdkIntelligencePanel } from '@/components/analysis/SdkIntelligencePanel'
 import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryPanel'
+import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
 import { ComplianceInsight } from '@/components/report/ComplianceInsight'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
@@ -94,6 +95,16 @@ export default function Reports() {
       </div>
 
       <RiskSummaryCard summary={resp.risk_summary} />
+
+      {isDynamic && (
+        <DynamicReliabilityCard
+          diagnostics={resp.frida_diagnostics}
+          execution={resp.dynamic_execution}
+          evidence={resp.dynamic_evidence_quality}
+          process={resp.process_diagnostics}
+          traffic={resp.traffic_diagnostics}
+        />
+      )}
 
       <ComplianceInsight insight={resp.compliance_insight} />
       <PermissionSummaryPanel appInfo={resp.app_info} />

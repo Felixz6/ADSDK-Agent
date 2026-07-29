@@ -1,5 +1,6 @@
 import threading
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -102,6 +103,10 @@ class FakeDevice:
             raise self.spawn_error
         return 4242
 
+    def enumerate_processes(self):
+        self.calls.append(("device.enumerate_processes",))
+        return [SimpleNamespace(pid=4242, name="应用标签", identifier=None)]
+
     def attach(self, pid: int) -> FakeAttachedSession:
         self.calls.append(("device.attach", pid))
         if self.attach_error is not None:
@@ -133,6 +138,8 @@ def _make_session(
     spawn_error: Exception | None = None,
     attach_error: Exception | None = None,
     unload_gate: threading.Event | None = None,
+    execution_mode: str = "spawn_suspended",
+    command_runner=None,
 ):
     calls: list[tuple] = []
     script_path = tmp_path / "sensitive_apis.js"
@@ -150,6 +157,9 @@ def _make_session(
         attach_error=attach_error,
     )
     adapter = FakeAdapter(device, calls)
+    kwargs = {}
+    if command_runner is not None:
+        kwargs["command_runner"] = command_runner
     session = FridaSession(
         run_id="run-frida-1",
         device=DeviceContext(serial),
@@ -158,6 +168,8 @@ def _make_session(
         event_log_path=tmp_path / "events.raw.jsonl",
         adapter=adapter,
         clock=FakeClock(),
+        execution_mode=execution_mode,
+        **kwargs,
     )
     return session, script, calls
 
@@ -369,6 +381,26 @@ def test_attach_failure_is_distinct_from_hook_load_failure(tmp_path):
     assert captured.value.code == "frida_attach_failed"
     assert session.error_code == "frida_attach_failed"
     assert session.state is FridaSessionState.FAILED
+
+
+def test_attach_existing_resolves_package_pid_when_frida_name_is_app_label(tmp_path):
+    session, _script, calls = _make_session(
+        tmp_path,
+        execution_mode="attach_existing",
+        command_runner=lambda command, timeout: {
+            "returncode": 0,
+            "stdout": "4242\n",
+            "stderr": "",
+            "cmd": command,
+            "timed_out": False,
+        },
+    )
+
+    session.start()
+
+    assert session.pid == 4242
+    assert ("device.enumerate_processes",) in calls
+    assert ("device.attach", 4242) in calls
 
 
 def test_stop_timeout_is_bounded_and_attempts_owned_pid_termination(tmp_path):

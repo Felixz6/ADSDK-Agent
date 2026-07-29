@@ -27,6 +27,10 @@ def write_markdown_report(report: dict, report_path: str):
     risk_summary = report.get("risk_summary", {}) or {}
     compliance_insight = report.get("compliance_insight", {}) or {}
     timeline = report.get("timeline", {}) or {}
+    execution = report.get("dynamic_execution", {}) or {}
+    evidence_quality = report.get("dynamic_evidence_quality", {}) or {}
+    process_diagnostics = report.get("process_diagnostics", {}) or {}
+    traffic_diagnostics = report.get("traffic_diagnostics", {}) or {}
 
     lines = []
     lines.append("# Android 广告 SDK 分析报告")
@@ -89,6 +93,44 @@ def write_markdown_report(report: dict, report_path: str):
             lines.append(
                 f"| {_md_cell(step.get('name'))} | {_md_cell(step.get('status'))} | "
                 f"{_md_cell(step.get('duration_ms'))} | {_md_cell(error)} |"
+            )
+
+    if execution or evidence_quality:
+        lines.append("")
+        lines.append("## 动态证据质量")
+        lines.append("")
+        lines.append(f"- 最终执行模式: `{_md_cell(execution.get('selected_mode') or evidence_quality.get('mode') or '旧版报告未记录')}`")
+        lines.append(f"- 执行策略: `{_md_cell(execution.get('policy') or '旧版报告未记录')}`")
+        lines.append(f"- 证据等级: `{_md_cell(evidence_quality.get('level') or '无法判断')}`")
+        for item in evidence_quality.get("coverage") or []:
+            lines.append(f"- 覆盖: {_md_cell(item)}")
+        for item in evidence_quality.get("limitations") or []:
+            lines.append(f"- 限制: {_md_cell(item)}")
+        attempts = execution.get("attempts") or []
+        if attempts:
+            lines.append("")
+            lines.append("| 执行尝试 | 状态 | 原因码 |")
+            lines.append("|---|---|---|")
+            for item in attempts:
+                lines.append(
+                    f"| {_md_cell(item.get('mode'))} | {_md_cell(item.get('status'))} | "
+                    f"{_md_cell(item.get('reason_code'))} |"
+                )
+        lines.append("")
+        lines.append("### 证据边界")
+        lines.append("")
+        lines.append("- `not_evaluated` 代表证据不足，不代表安全。")
+        lines.append("- 零请求不代表应用没有网络行为。")
+        lines.append("- attach 模式不能证明启动阶段没有行为。")
+        lines.append("- 疑似反调试不等于确定存在反调试。")
+        if process_diagnostics:
+            lines.append(
+                f"- 进程退出摘要: {_md_cell(process_diagnostics.get('most_likely_cause') or process_diagnostics.get('status'))}"
+            )
+        if traffic_diagnostics:
+            lines.append(
+                f"- 网络诊断: {_md_cell(traffic_diagnostics.get('outcome'))}; "
+                f"Pinning 疑似=`{_md_cell(traffic_diagnostics.get('pinning_suspected'))}`"
             )
 
     lines.append("")
