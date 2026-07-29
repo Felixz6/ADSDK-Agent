@@ -226,6 +226,7 @@ class AnalyzeResponse(BaseModel):
     traffic_coverage: Optional[str] = None
     dynamic_timeline: Optional[Dict[str, Any]] = None
     collector_sessions: Optional[Dict[str, Any]] = None
+    manifest_evidence: Optional[Dict[str, Any]] = None
     evidence_correlation: Optional[Dict[str, Any]] = None
     risk_summary: Optional[RiskSummary] = None
     timeline: Optional[BehaviorTimeline] = None

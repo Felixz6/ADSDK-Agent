@@ -560,3 +560,64 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
     body = _post_dynamic(client, apk_path)
     _run_dir(body, output_root)
     _assert_degraded_result(body, expected_keyword)
+
+
+def test_manifest_value_error_keeps_structured_reports_and_correlation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_root = tmp_path / "output"
+    apk_path = tmp_path / "manifest-error-regression.apk"
+    _write_fake_apk(apk_path, marker="manifest-error-regression")
+    _install_common_fakes(monkeypatch, output_root)
+    monkeypatch.setattr(
+        main_module,
+        "parse_manifest_info",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ValueError("manifest parse failed")
+        ),
+    )
+
+    client = TestClient(main_module.app, raise_server_exceptions=True)
+    response = client.post(
+        "/dynamic/analyze",
+        json={
+            "apk_path": str(apk_path),
+            "device_id": "emulator-5554",
+            "package_name": "com.example.fixture",
+            "pre_consent_seconds": 0,
+            "post_consent_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert body["status"] == "partial"
+    assert body["app_info"]["package_name"] == "com.example.fixture"
+    assert body["app_info"]["declared_permissions"] == []
+    assert body["manifest_evidence"] == {
+        "status": "not_evaluated",
+        "error_code": "manifest_parse_failed",
+        "message": "manifest parse failed: ValueError",
+    }
+    assert body["evidence_correlation"]["schema_version"] == "correlation-v1"
+    assert body["evidence_correlation"]["status"] in {
+        "evaluated",
+        "not_evaluated",
+        "no_observations",
+    }
+    assert "manifest" in json.dumps(body["steps"], ensure_ascii=False).casefold()
+    assert "not_evaluated" in _rule_statuses(body)
+
+    run_dir = _run_dir(body, output_root)
+    for name in (
+        "correlations.json",
+        "report.json",
+        "report.md",
+        "report.html",
+    ):
+        assert (run_dir / name).is_file()
+    persisted = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    assert persisted["manifest_evidence"]["status"] == "not_evaluated"
+    assert persisted["evidence_correlation"]["schema_version"] == "correlation-v1"
