@@ -175,6 +175,26 @@ def _parse_manifest_application(
             raise
         return parse_manifest_info(unpack_dir)
 
+
+def _manifest_application_fallback(
+    package_name: str | None = None,
+) -> dict[str, Any]:
+    """Return explicit unknowns without inventing Manifest-derived evidence."""
+
+    normalized_package = str(package_name or "").strip() or None
+    return {
+        "package_name": normalized_package,
+        "version_name": None,
+        "version_code": None,
+        "application_label": None,
+        "permissions": [],
+        "declared_permissions": [],
+        "custom_permissions": [],
+        "component_permissions": [],
+        "sensitive_permissions": [],
+        "high_attention_permissions": [],
+    }
+
 # 跨域传输配置(CORS):仅放行本端开发常用来源,不改动任何接口契约/响应结构。
 # web/ 前端默认从 http://127.0.0.1:5173 访问本服务,Vite 代理为另一条路径;
 # 此中间件保证浏览器对绝对地址的跨域请求也能得到正确的 CORS 头。
@@ -1021,7 +1041,12 @@ def analyze(req: AnalyzeRequest):
         return failure_response
     assert context is not None
 
-    app_info: dict[str, Any] | None = None
+    app_info = _manifest_application_fallback()
+    manifest_evidence: dict[str, Any] = {
+        "status": "not_evaluated",
+        "error_code": None,
+        "message": "Manifest evidence has not been evaluated",
+    }
     sdk_hits: list[dict[str, Any]] = []
     analysis_dir = context.unpacked_dir
 
@@ -1107,10 +1132,19 @@ def analyze(req: AnalyzeRequest):
     if steps[-1].status is StepStatus.SUCCESS:
         manifest_started = _utc_now()
         try:
-            app_info = _parse_manifest_application(
+            parsed_app_info = _parse_manifest_application(
                 str(analysis_dir),
                 apk_filename=context.source_apk_display,
             )
+            app_info = {
+                **_manifest_application_fallback(),
+                **parsed_app_info,
+            }
+            manifest_evidence = {
+                "status": "evaluated",
+                "error_code": None,
+                "message": None,
+            }
             steps.append(
                 _step_result(
                     "manifest_parse",
@@ -1123,6 +1157,11 @@ def analyze(req: AnalyzeRequest):
                 )
             )
         except Exception as exc:
+            manifest_evidence = {
+                "status": "not_evaluated",
+                "error_code": "manifest_parse_failed",
+                "message": f"manifest parse failed: {type(exc).__name__}",
+            }
             steps.append(
                 _step_result(
                     "manifest_parse",
@@ -1184,6 +1223,11 @@ def analyze(req: AnalyzeRequest):
         app_info=app_info,
         sdk_hits=sdk_hits,
     )
+    report["manifest_evidence"] = manifest_evidence
+    if manifest_evidence["status"] != "evaluated":
+        report.setdefault("limitations", []).append(
+            "Manifest evidence unavailable; Manifest-dependent conclusions were not evaluated"
+        )
     report, report_error = _finalize_report(report, context, steps)
     if report_error is not None or report.get("status") == "failed":
         return JSONResponse(status_code=500, content=report)
@@ -1447,7 +1491,12 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         return failure_response
     assert context is not None
 
-    app_info: dict[str, Any] | None = None
+    app_info = _manifest_application_fallback(req.package_name)
+    manifest_evidence: dict[str, Any] = {
+        "status": "not_evaluated",
+        "error_code": None,
+        "message": "Manifest evidence has not been evaluated",
+    }
     sdk_hits: list[dict[str, Any]] = []
     analysis_dir = context.unpacked_dir
     unpack_started = _utc_now()
@@ -1532,10 +1581,23 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
     if unpack_ok:
         started = _utc_now()
         try:
-            app_info = _parse_manifest_application(
+            parsed_app_info = _parse_manifest_application(
                 str(analysis_dir),
                 apk_filename=context.source_apk_display,
             )
+            app_info = {
+                **_manifest_application_fallback(req.package_name),
+                **parsed_app_info,
+            }
+            if not app_info.get("package_name"):
+                app_info["package_name"] = (
+                    str(req.package_name or "").strip() or None
+                )
+            manifest_evidence = {
+                "status": "evaluated",
+                "error_code": None,
+                "message": None,
+            }
             steps.append(
                 _step_result(
                     "manifest_parse",
@@ -1545,6 +1607,11 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 )
             )
         except Exception as exc:
+            manifest_evidence = {
+                "status": "not_evaluated",
+                "error_code": "manifest_parse_failed",
+                "message": f"manifest parse failed: {type(exc).__name__}",
+            }
             steps.append(
                 _step_result(
                     "manifest_parse",
@@ -2567,6 +2634,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             "traffic_diagnostics": traffic_diagnostics.model_dump(mode="json"),
             "dynamic_timeline": timeline_payload,
             "collector_sessions": sessions_payload,
+            "manifest_evidence": manifest_evidence,
             "device": (
                 device_context.to_public_dict()
                 if device_context is not None
@@ -2576,6 +2644,13 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 "SSL pinning can reduce traffic visibility",
                 "the in-process mitm port pool is limited to one Uvicorn worker",
                 "event-request correlation expresses temporal proximity, not causality",
+                *(
+                    [
+                        "Manifest evidence unavailable; Manifest-dependent conclusions were not evaluated"
+                    ]
+                    if manifest_evidence["status"] != "evaluated"
+                    else []
+                ),
             ],
         }
     )
