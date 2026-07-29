@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ShieldCheck,
   Home,
+  GitCompareArrows,
 } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/utils'
@@ -37,7 +38,8 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: '分析',
     items: [
       { to: '/analysis/new', label: '新建分析', icon: PlusCircle, desc: '四步向导' },
-      { to: '/tasks', label: '任务列表', icon: ListChecks, desc: '本地历史' },
+      { to: '/tasks', label: '任务中心', icon: ListChecks, desc: '持久化与实时进度' },
+      { to: '/comparisons', label: '版本对比', icon: GitCompareArrows, desc: '历史任务差异' },
       { to: '/tasks/:id', label: '任务详情', icon: FileSearch, desc: '流水线时间线' },
     ].map((i) => (i.to === '/tasks/:id' ? { ...i, hidden: true } : i)) as unknown as NavItem[],
   },

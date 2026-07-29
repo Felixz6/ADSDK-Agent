@@ -1,208 +1,334 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ListChecks, Trash2, Search, Filter, AlertTriangle } from 'lucide-react'
+import {
+  AlertTriangle,
+  Ban,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Filter,
+  ListChecks,
+  RefreshCw,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
-import { EmptyState } from '@/components/common/States'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/States'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { RiskBadge } from '@/components/common/RiskBadge'
+import { StatCard } from '@/components/common/StatCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { cn } from '@/utils'
-import { listLocalTasks, clearLocalTasks, deleteLocalTask, type LocalTaskRecord } from '@/api/tasks'
+import { listLocalTasks } from '@/api/tasks'
+import { useCancelTask, useDeleteTask, useRetryTask, useTasks } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
 import { formatDateTime } from '@/utils'
+import type { TaskRecord, TaskStatus, TaskType } from '@/types/tasks'
 
-type KindFilter = 'all' | 'static' | 'dynamic'
-type StatusFilter = 'all' | 'success' | 'partial' | 'failed'
+type PendingAction = { type: 'cancel' | 'delete'; task: TaskRecord } | null
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  queued: '排队中',
+  running: '分析中',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+}
 
 export default function Tasks() {
   const navigate = useNavigate()
-  const pushToast = useUIStore((s) => s.pushToast)
-  const [, force] = useState(0)
-  const [search, setSearch] = useState('')
-  const [kindFilter, setKindFilter] = useState<KindFilter>('all')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [confirmClear, setConfirmClear] = useState(false)
+  const pushToast = useUIStore((state) => state.pushToast)
+  const [keyword, setKeyword] = useState('')
+  const [status, setStatus] = useState<TaskStatus | ''>('')
+  const [taskType, setTaskType] = useState<TaskType | ''>('')
+  const [page, setPage] = useState(1)
+  const [pending, setPending] = useState<PendingAction>(null)
+  const [showLegacy, setShowLegacy] = useState(false)
+  const legacy = listLocalTasks()
 
-  const all = listLocalTasks()
+  const tasks = useTasks({
+    keyword: keyword.trim() || undefined,
+    status,
+    task_type: taskType,
+    page,
+    page_size: 20,
+  })
+  const running = useTasks({ status: 'running', page: 1, page_size: 1 })
+  const completed = useTasks({ status: 'completed', page: 1, page_size: 1 })
+  const failed = useTasks({ status: 'failed', page: 1, page_size: 1 })
+  const cancelMutation = useCancelTask()
+  const deleteMutation = useDeleteTask()
+  const retryMutation = useRetryTask()
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return all.filter((t) => {
-      if (kindFilter !== 'all' && t.kind !== kindFilter) return false
-      if (statusFilter !== 'all' && t.status !== statusFilter) return false
-      if (q) {
-        const hay = `${t.package_name} ${t.apk_path} ${t.local_id} ${t.run_id ?? ''}`.toLowerCase()
-        if (!hay.includes(q)) return false
+  async function confirmAction() {
+    if (!pending) return
+    try {
+      if (pending.type === 'cancel') {
+        await cancelMutation.mutateAsync(pending.task.id)
+        pushToast({ kind: 'success', message: '取消信号已发送，正在执行资源清理。', duration: 3500 })
+      } else {
+        await deleteMutation.mutateAsync(pending.task.id)
+        pushToast({ kind: 'success', message: '任务记录已删除。', duration: 2500 })
       }
-      return true
-    })
-  }, [all, search, kindFilter, statusFilter])
-
-  function refresh() {
-    force((n) => n + 1)
+      setPending(null)
+    } catch (error) {
+      pushToast({ kind: 'error', message: (error as { message?: string }).message ?? '操作失败', duration: 5000 })
+    }
   }
 
-  function handleDelete(t: LocalTaskRecord) {
-    deleteLocalTask(t.local_id)
-    pushToast({ kind: 'success', message: '已删除该任务记录。', duration: 2500 })
-    refresh()
-  }
-
-  function handleClearAll() {
-    clearLocalTasks()
-    setConfirmClear(false)
-    pushToast({ kind: 'success', message: '已清空全部本地任务记录。', duration: 2500 })
-    refresh()
+  async function retry(task: TaskRecord) {
+    try {
+      const response = await retryMutation.mutateAsync(task.id)
+      pushToast({ kind: 'success', message: '已创建重试任务。', duration: 2500 })
+      navigate(`/tasks/${response.task.id}`)
+    } catch (error) {
+      pushToast({ kind: 'error', message: (error as { message?: string }).message ?? '重试失败', duration: 5000 })
+    }
   }
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="任务"
-        description="本地分析任务记录(浏览器持久化)。后端不提供任务列表端点,记录仅存于本设备。"
-        eyebrow="历史"
-        actions={
-          all.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => setConfirmClear(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs border border-[var(--border-soft)] text-[var(--danger)] hover:bg-[rgba(255,107,138,0.08)]"
-            >
-              <Trash2 size={14} /> 清空全部
-            </button>
-          ) : undefined
-        }
+        title="任务中心"
+        description="SQLite 持久化的分析任务、实时步骤、报告索引与资源生命周期。"
+        eyebrow="任务 · 后端持久化"
       />
 
-      <div
-        role="note"
-        aria-live="polite"
-        className="glass rounded-[12px] border border-[rgba(245,166,35,0.45)] bg-[rgba(245,166,35,0.08)] px-4 py-3 flex items-start gap-2.5"
-      >
-        <AlertTriangle size={18} className="text-[var(--warning)] shrink-0 mt-0.5" aria-hidden="true" />
-        <div className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
-          <strong className="text-[var(--text-primary)]">当前记录保存在本浏览器中,不代表后端持久化任务。</strong>
-          清理浏览器数据后,这些记录将丢失。后端当前为同步接口,不提供任务列表 / 状态 / 进度查询端点,
-          因此页面仅展示真实分析返回支撑的状态(成功 / 部分 / 失败),不会出现伪造的「排队中 / 运行中 / 已取消」状态。
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard label="全部任务" value={tasks.data?.total ?? '—'} tone="default" icon={<ListChecks size={18} />} />
+        <StatCard label="分析中" value={running.data?.total ?? '—'} tone="accent" icon={<RefreshCw size={18} />} />
+        <StatCard label="已完成" value={completed.data?.total ?? '—'} tone="success" icon={<FileText size={18} />} />
+        <StatCard label="失败" value={failed.data?.total ?? '—'} tone="danger" icon={<AlertTriangle size={18} />} />
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <label className="flex items-center gap-2 glass rounded-[10px] px-3 py-1.5 w-full sm:w-72 focus-within:border-[var(--border-active)]">
-          <span className="sr-only">搜索</span>
-          <Search size={16} className="text-[var(--text-tertiary)] shrink-0" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="按包名 / 路径 / 任务 ID 搜索"
-            className="bg-transparent outline-none text-sm text-[var(--text-primary)] w-full placeholder:text-[var(--text-tertiary)]"
+      <GlassCard padding="md" className="flex flex-col gap-3">
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
+          <label className="flex items-center gap-2 glass rounded-[10px] px-3 py-2 flex-1 focus-within:border-[var(--border-active)]">
+            <Search size={16} className="text-[var(--text-tertiary)]" />
+            <span className="sr-only">搜索任务</span>
+            <input
+              value={keyword}
+              onChange={(event) => { setKeyword(event.target.value); setPage(1) }}
+              placeholder="按应用、包名、APK 路径或任务 ID 搜索"
+              className="w-full bg-transparent outline-none text-sm text-[var(--text-primary)]"
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <FilterSelect
+              label="状态"
+              value={status}
+              onChange={(value) => { setStatus(value as TaskStatus | ''); setPage(1) }}
+              options={[
+                ['全部状态', ''],
+                ['排队中', 'queued'],
+                ['分析中', 'running'],
+                ['已完成', 'completed'],
+                ['失败', 'failed'],
+                ['已取消', 'cancelled'],
+              ]}
+            />
+            <FilterSelect
+              label="类型"
+              value={taskType}
+              onChange={(value) => { setTaskType(value as TaskType | ''); setPage(1) }}
+              options={[
+                ['全部类型', ''],
+                ['静态分析', 'static'],
+                ['动态分析', 'dynamic'],
+                ['版本对比', 'comparison'],
+              ]}
+            />
+          </div>
+        </div>
+      </GlassCard>
+
+      {tasks.isLoading ? (
+        <GlassCard padding="none"><LoadingState title="正在加载后端任务…" /></GlassCard>
+      ) : tasks.isError ? (
+        <GlassCard padding="none">
+          <ErrorState
+            icon={<AlertTriangle size={28} />}
+            title="任务中心暂时不可用"
+            description={tasks.error.message}
+            action={<button type="button" onClick={() => void tasks.refetch()} className="control-button">重新加载</button>}
           />
-        </label>
-        <div className="flex items-center gap-2 flex-wrap">
-          <FilterSelect label="类型" value={kindFilter} onChange={(v) => setKindFilter(v as KindFilter)} options={[{ label: '全部', value: 'all' }, { label: '静态', value: 'static' }, { label: '动态', value: 'dynamic' }]} />
-          <FilterSelect label="状态" value={statusFilter} onChange={(v) => setStatusFilter(v as StatusFilter)} options={[{ label: '全部', value: 'all' }, { label: '成功', value: 'success' }, { label: '部分', value: 'partial' }, { label: '失败', value: 'failed' }]} />
-        </div>
-      </div>
-
-      {all.length === 0 ? (
-        <EmptyState
-          icon={<ListChecks size={28} />}
-          title="尚无任务记录"
-          description="完成一次分析后,任务会出现在这里以便回看。"
-        />
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={<Filter size={26} />}
-          title="无匹配任务"
-          description="当前筛选条件下没有记录,试着放宽搜索或筛选。"
-        />
+        </GlassCard>
+      ) : !tasks.data?.items.length ? (
+        <GlassCard padding="none">
+          <EmptyState
+            icon={<Filter size={28} />}
+            title="没有匹配的后端任务"
+            description="新建分析后，任务会立即进入这里并持续写入真实进度。"
+          />
+        </GlassCard>
       ) : (
-        <GlassCard padding="md" highlight>
-          <ul className="flex flex-col gap-1.5">
-            {filtered.map((t) => (
-              <li key={t.local_id} className="rounded-[10px] border border-[var(--border-soft)] px-3 py-2.5 hover:border-[var(--border-active)] transition-colors flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/tasks/${t.local_id}`)}
-                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                >
-                  <StatusBadge
-                    tone={t.status === 'success' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'partial' ? 'warning' : 'neutral'}
-                    label={t.kind === 'static' ? '静态' : '动态'}
-                    size="sm"
+        <GlassCard padding="none" highlight>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1050px] text-left">
+              <thead className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] border-b border-[var(--border-soft)]">
+                <tr>
+                  {['应用 / APK', '类型', '设备', '状态', '阶段与进度', '风险', '创建时间', '操作'].map((label) => (
+                    <th key={label} className="px-4 py-3 font-medium">{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.data.items.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    onOpen={() => navigate(`/tasks/${task.id}`)}
+                    onCancel={() => setPending({ type: 'cancel', task })}
+                    onDelete={() => setPending({ type: 'delete', task })}
+                    onRetry={() => void retry(task)}
+                    onReport={() => navigate(`/reports?task_id=${task.id}`)}
                   />
-                  {t.risk_level && (
-                    <RiskBadge level={t.risk_level === 'critical' ? 'high' : t.risk_level} label={t.risk_level} />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-[var(--text-primary)] font-mono truncate">{t.package_name || t.apk_path}</p>
-                    <p className="text-[11px] text-[var(--text-tertiary)] truncate">
-                      {t.local_id} · {formatDateTime(t.created_at)}
-                    </p>
-                  </div>
-                  <div className="hidden sm:flex items-center gap-3 text-[11px] text-[var(--text-tertiary)] shrink-0">
-                    <span>命中 <b className="text-[var(--danger)]">{t.summary?.matched ?? 0}</b></span>
-                    <span>未命中 <b className="text-[var(--success)]">{t.summary?.not_matched ?? 0}</b></span>
-                    <span>未评估 <b className="text-[var(--status-neutral)]">{t.summary?.not_evaluated ?? 0}</b></span>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(t)}
-                  aria-label="删除任务"
-                  className="shrink-0 text-[var(--text-tertiary)] hover:text-[var(--danger)] p-1 rounded-md"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="text-[11px] text-[var(--text-tertiary)] mt-3">共 {filtered.length} 条 / 全部 {all.length} 条。</p>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-[var(--border-soft)] text-xs text-[var(--text-tertiary)]">
+            <span>共 {tasks.data.total} 条 · 第 {tasks.data.page} / {Math.max(1, tasks.data.pages)} 页</span>
+            <div className="flex gap-2">
+              <button type="button" aria-label="上一页" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="control-icon"><ChevronLeft size={15} /></button>
+              <button type="button" aria-label="下一页" disabled={page >= tasks.data.pages} onClick={() => setPage((value) => value + 1)} className="control-icon"><ChevronRight size={15} /></button>
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
+      {legacy.length > 0 && (
+        <GlassCard padding="md">
+          <button type="button" onClick={() => setShowLegacy((value) => !value)} className="w-full flex items-center justify-between text-left">
+            <span>
+              <strong className="text-sm text-[var(--text-primary)]">浏览器旧记录</strong>
+              <span className="ml-2 text-xs text-[var(--text-tertiary)]">{legacy.length} 条 · 只读兼容</span>
+            </span>
+            <ChevronRight size={16} className={showLegacy ? 'rotate-90' : ''} />
+          </button>
+          {showLegacy && (
+            <ul className="mt-3 flex flex-col gap-2">
+              {legacy.map((task) => (
+                <li key={task.local_id} className="rounded-[10px] border border-[var(--border-soft)] px-3 py-2">
+                  <p className="text-sm text-[var(--text-primary)] truncate">{task.package_name || task.apk_path}</p>
+                  <p className="text-[11px] text-[var(--text-tertiary)]">浏览器旧记录 · {formatDateTime(task.created_at)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </GlassCard>
       )}
 
       <ConfirmDialog
-        open={confirmClear}
-        title="清空全部任务记录?"
-        description="此操作将删除本设备上保存的所有本地任务记录,无法恢复。"
-        confirmLabel="清空"
+        open={pending !== null}
+        title={pending?.type === 'cancel' ? '取消该任务？' : '删除该任务记录？'}
+        description={
+          pending?.type === 'cancel'
+            ? '后台将在安全点停止，并清理设备代理、Frida 会话、mitmdump 进程及资源租约。'
+            : '删除 SQLite 索引记录；分析产物默认保留，避免误删其他任务目录。'
+        }
+        confirmLabel={pending?.type === 'cancel' ? '发送取消信号' : '删除记录'}
         tone="danger"
-        onConfirm={handleClearAll}
-        onCancel={() => setConfirmClear(false)}
+        onConfirm={() => void confirmAction()}
+        onCancel={() => setPending(null)}
       />
     </div>
   )
 }
 
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
+function TaskRow({
+  task,
+  onOpen,
+  onCancel,
+  onDelete,
+  onRetry,
+  onReport,
 }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  options: { label: string; value: string }[]
+  task: TaskRecord
+  onOpen: () => void
+  onCancel: () => void
+  onDelete: () => void
+  onRetry: () => void
+  onReport: () => void
 }) {
+  const active = task.status === 'queued' || task.status === 'running'
   return (
-    <label className="inline-flex items-center gap-1.5 glass rounded-[10px] px-2.5 py-1.5">
-      <span className="sr-only">{label}</span>
-      <Filter size={14} className="text-[var(--text-tertiary)]" />
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={label}
-        className={cn('bg-transparent outline-none text-sm text-[var(--text-primary)] cursor-pointer')}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-[#0d1430] text-[var(--text-primary)]">
-            {o.label}
-          </option>
-        ))}
+    <tr className="border-b border-[var(--border-soft)]/60 hover:bg-[rgba(157,192,255,0.05)]">
+      <td className="px-4 py-3 max-w-[260px]">
+        <button type="button" onClick={onOpen} className="text-left max-w-full">
+          <p className="text-sm text-[var(--text-primary)] font-medium truncate">{task.app_name || task.package_name || task.apk_path || task.id}</p>
+          <p className="text-[11px] text-[var(--text-tertiary)] font-mono truncate">{task.package_name || task.id}</p>
+        </button>
+      </td>
+      <td className="px-4 py-3"><StatusBadge tone="info" label={taskTypeLabel(task.task_type)} /></td>
+      <td className="px-4 py-3 text-xs text-[var(--text-secondary)] font-mono">{task.device_id || '—'}</td>
+      <td className="px-4 py-3"><StatusBadge tone={statusTone(task.status)} label={STATUS_LABEL[task.status]} /></td>
+      <td className="px-4 py-3 min-w-[190px]">
+        <div className="flex items-center justify-between text-[11px] text-[var(--text-tertiary)] mb-1">
+          <span>{stageLabel(task.current_stage)}</span><span>{task.progress_percent}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-[rgba(127,147,186,0.2)] overflow-hidden">
+          <span className="block h-full bg-[var(--accent-blue)] transition-[width]" style={{ width: `${task.progress_percent}%` }} />
+        </div>
+      </td>
+      <td className="px-4 py-3">{task.risk_level ? <RiskBadge level={task.risk_level === 'critical' ? 'high' : task.risk_level as 'low' | 'medium' | 'high'} /> : '—'}</td>
+      <td className="px-4 py-3 text-xs text-[var(--text-tertiary)] whitespace-nowrap">{formatDateTime(task.created_at)}</td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-1">
+          {active ? (
+            <button type="button" aria-label="取消任务" onClick={onCancel} className="control-icon text-[var(--warning)]"><Ban size={14} /></button>
+          ) : (
+            <button type="button" aria-label="重试任务" onClick={onRetry} className="control-icon"><RefreshCw size={14} /></button>
+          )}
+          {task.report_json_path && <button type="button" aria-label="打开报告" onClick={onReport} className="control-icon"><FileText size={14} /></button>}
+          {!active && <button type="button" aria-label="删除任务" onClick={onDelete} className="control-icon text-[var(--danger)]"><Trash2 size={14} /></button>}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string][] }) {
+  return (
+    <label className="flex items-center gap-2 glass rounded-[10px] px-3 py-2">
+      <span className="text-[11px] text-[var(--text-tertiary)]">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="bg-transparent outline-none text-xs text-[var(--text-primary)]">
+        {options.map(([text, option]) => <option key={option} value={option} className="bg-[var(--bg-deep)]">{text}</option>)}
       </select>
     </label>
   )
+}
+
+function statusTone(status: TaskStatus): 'success' | 'warning' | 'danger' | 'neutral' | 'info' {
+  if (status === 'completed') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'running') return 'info'
+  if (status === 'queued') return 'warning'
+  return 'neutral'
+}
+
+function taskTypeLabel(type: TaskType): string {
+  return type === 'static' ? '静态' : type === 'dynamic' ? '动态' : '对比'
+}
+
+function stageLabel(stage: string | null): string {
+  const labels: Record<string, string> = {
+    input_validation: '输入校验',
+    apk_validation: 'APK 校验',
+    apk_hash: 'SHA-256 复核',
+    apk_snapshot: 'APK 快照',
+    apk_unpack: 'APK 解包',
+    manifest_parse: 'Manifest 解析',
+    sdk_scan: 'SDK 识别',
+    device_selection: '设备校验',
+    apk_install: '安装 APK',
+    frida_ready: '等待 Hook',
+    collection_start: '动态采集',
+    resource_cleanup: '资源清理',
+    report_write: '生成报告',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+  }
+  return stage ? labels[stage] ?? stage : '等待开始'
 }

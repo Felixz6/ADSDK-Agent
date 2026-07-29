@@ -8,6 +8,7 @@ import {
   Server,
   Info,
   Github,
+  Database,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -16,6 +17,7 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { useUIStore, applyTheme, type Theme } from '@/stores/uiStore'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useServiceHealth } from '@/hooks/useApi'
+import { useTaskSystemStatus } from '@/hooks/useTasks'
 import { clearLocalTasks, listLocalTasks } from '@/api/tasks'
 import { API_BASE_URL } from '@/api/client'
 import { cn } from '@/utils'
@@ -28,6 +30,7 @@ export default function Settings() {
   const clearActive = useAnalysisStore((s) => s.clear)
   const pushToast = useUIStore((s) => s.pushToast)
   const health = useServiceHealth()
+  const taskSystem = useTaskSystemStatus()
   const [confirmClearTasks, setConfirmClearTasks] = useState(false)
   const [, force] = useState(0)
 
@@ -68,6 +71,20 @@ export default function Settings() {
           <ThemeOption current={theme} value="light" label="亮色" icon={<Sun size={16} />} onSelect={changeTheme} />
         </div>
         <p className="text-[11px] text-[var(--text-tertiary)] mt-2">推荐使用深空主题以呈现「星空控制台」视觉效果。</p>
+      </GlassCard>
+
+      <GlassCard padding="md" highlight>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-1.5">
+          <Database size={15} /> 任务系统
+        </h3>
+        <dl className="flex flex-col gap-1">
+          <KV k="SQLite 状态" v={taskSystem.data?.database_ok ? '正常' : taskSystem.isError ? '不可达' : '检测中'} />
+          <KV k="数据库路径" v={taskSystem.data?.database_path ?? '—'} mono />
+          <KV k="运行中任务" v={String(taskSystem.data?.running_tasks ?? '—')} />
+          <KV k="排队中任务" v={String(taskSystem.data?.queued_tasks ?? '—')} />
+          <KV k="设备资源占用" v={taskSystem.data?.occupied_devices.length ? taskSystem.data.occupied_devices.join('、') : '无'} mono />
+        </dl>
+        <p className="text-[11px] text-[var(--text-tertiary)] mt-2">设备标识仅显示稳定脱敏令牌；原始 serial 不进入前端任务记录。</p>
       </GlassCard>
 
       <GlassCard padding="md" highlight>
@@ -128,7 +145,7 @@ export default function Settings() {
             <Trash2 size={14} /> 清空全部本地任务记录({taskCount})
           </button>
         </div>
-        <p className="text-[11px] text-[var(--text-tertiary)] mt-2">本地任务记录仅保存在浏览器,不与后端同步,删除不影响后端产物文件。</p>
+        <p className="text-[11px] text-[var(--text-tertiary)] mt-2">此处仅管理升级前的浏览器旧记录；新任务由后端 SQLite 任务中心管理。</p>
       </GlassCard>
 
       <GlassCard padding="md">

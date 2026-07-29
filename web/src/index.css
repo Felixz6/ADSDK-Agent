@@ -110,6 +110,50 @@ body {
     opacity: 0.5;
     border-radius: var(--radius-glass) var(--radius-glass) 0 0;
   }
+
+  .control-button {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs border transition-colors;
+    border-color: var(--border-soft);
+    color: var(--text-secondary);
+    background: rgba(10, 22, 48, 0.28);
+  }
+
+  .control-button:hover {
+    color: var(--text-primary);
+    border-color: var(--border-active);
+    background: rgba(157, 192, 255, 0.08);
+  }
+
+  .control-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[12px] text-sm font-medium transition-all;
+    color: var(--text-on-accent);
+    background: var(--accent-blue);
+    box-shadow: var(--shadow-glow);
+  }
+
+  .control-primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .control-button:disabled,
+  .control-primary:disabled,
+  .control-icon:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .control-icon {
+    @apply inline-flex items-center justify-center w-8 h-8 rounded-[9px] transition-colors;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-soft);
+    background: rgba(10, 22, 48, 0.26);
+  }
+
+  .control-icon:hover {
+    color: var(--text-primary);
+    border-color: var(--border-active);
+    background: rgba(157, 192, 255, 0.08);
+  }
 }
 
 /* =========================================================================

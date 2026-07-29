@@ -1,5 +1,6 @@
 import { Copy, CheckCircle2, ShieldCheck, Package } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
@@ -11,14 +12,22 @@ import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryP
 import { useActiveResult, NoActiveResult } from '@/pages/shared/NoActiveResult'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useTaskReport } from '@/hooks/useTasks'
+import { ErrorState, LoadingState } from '@/components/common/States'
 import { RiskBadge, deriveRiskLevel } from '@/components/common/RiskBadge'
 import { cn, copyText, formatDateTime } from '@/utils'
 
 export default function StaticAnalysis() {
-  const resp = useActiveResult('static')
+  const [searchParams] = useSearchParams()
+  const taskId = searchParams.get('task_id') ?? undefined
+  const localResp = useActiveResult('static')
+  const remote = useTaskReport(taskId)
+  const resp = remote.data?.report ?? localResp
   const task = useAnalysisStore((s) => s.task)
   const pushToast = useUIStore((s) => s.pushToast)
 
+  if (taskId && remote.isLoading) return renderShell(<LoadingState title="正在加载静态报告…" />)
+  if (taskId && remote.isError) return renderShell(<ErrorState icon={<Package size={28} />} title="静态报告加载失败" description={remote.error.message} />)
   if (!resp) return renderShell(<NoActiveResult expected="static" />)
 
   const info = resp.app_info
@@ -34,7 +43,7 @@ export default function StaticAnalysis() {
       <PageHeader
         title="静态分析"
         description="基于 AndroidManifest 解析与 SDK 指纹识别的结果概览。原始敏感字段已脱敏。"
-        eyebrow={`任务 ${task?.local_id ?? ''} · 完成于 ${formatDateTime(task?.created_at)}`}
+        eyebrow={`任务 ${taskId ?? task?.local_id ?? ''} · 完成于 ${formatDateTime(task?.created_at)}`}
         actions={<RiskBadge level={risk} />}
       />
 

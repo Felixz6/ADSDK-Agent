@@ -16,12 +16,11 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { ApkPathInput } from '@/components/analysis/ApkPathInput'
 import { AnalysisModeSelector, type AnalysisMode } from '@/components/analysis/AnalysisModeSelector'
 import { DeviceSelector } from '@/components/analysis/DeviceSelector'
-import { useSubmitStaticAnalysis, useSubmitDynamicAnalysis } from '@/hooks/useApi'
+import { useCreateTask } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
-import { useAnalysisStore } from '@/stores/analysisStore'
-import { recordTask, type LocalTaskRecord } from '@/api/tasks'
 import { cn } from '@/utils'
-import type { AnalyzeResponse } from '@/types/api'
+
+const RECENT_APK_KEY = 'adsdk-agent:recent-apk-path'
 
 const STEPS = [
   { key: 'mode', title: '选择模式' },
@@ -35,11 +34,12 @@ type StepKey = (typeof STEPS)[number]['key']
 export default function NewAnalysis() {
   const navigate = useNavigate()
   const pushToast = useUIStore((s) => s.pushToast)
-  const setActive = useAnalysisStore((s) => s.setActive)
 
   const [step, setStep] = useState<StepKey>('mode')
   const [mode, setMode] = useState<AnalysisMode>('static')
-  const [apkPath, setApkPath] = useState('')
+  const [apkPath, setApkPath] = useState(() =>
+    import.meta.env.DEV ? localStorage.getItem(RECENT_APK_KEY) ?? '' : '',
+  )
   const [packageName, setPackageName] = useState('')
   const [deviceId, setDeviceId] = useState('')
   const [consentAfter, setConsentAfter] = useState<number>(20)
@@ -49,9 +49,8 @@ export default function NewAnalysis() {
   const [enableUiStim, setEnableUiStim] = useState(false)
   const [timeoutSec, setTimeoutSec] = useState(300)
 
-  const staticMut = useSubmitStaticAnalysis()
-  const dynamicMut = useSubmitDynamicAnalysis()
-  const submitting = staticMut.isPending || dynamicMut.isPending
+  const createMut = useCreateTask()
+  const submitting = createMut.isPending
 
   const stepIndex = STEPS.findIndex((s) => s.key === step)
   const isDynamic = mode === 'dynamic' || mode === 'traffic'
@@ -72,49 +71,37 @@ export default function NewAnalysis() {
       return
     }
     const kind = isDynamic ? 'dynamic' : 'static'
-    let result: AnalyzeResponse | null = null
-    let failure: { error: string | null; error_code: string | null } | undefined
+    if (kind === 'dynamic' && !deviceId.trim()) {
+      pushToast({ kind: 'warning', message: '动态任务必须显式选择在线设备。', duration: 4000 })
+      return
+    }
     try {
-      if (kind === 'static') {
-        result = await staticMut.mutateAsync({ apk_path: apkPath.trim() })
-      } else {
-        result = await dynamicMut.mutateAsync({
+      const task = await createMut.mutateAsync(
+        kind === 'static'
+          ? { task_type: 'static', apk_path: apkPath.trim() }
+          : {
+          task_type: 'dynamic',
           apk_path: apkPath.trim(),
           package_name: packageName.trim() || undefined,
-          device_id: deviceId.trim() || undefined,
+          device_id: deviceId.trim(),
           consent_after_seconds: consentAfter,
           pre_consent_seconds: preSeconds,
           post_consent_seconds: postSeconds,
           enable_traffic: enableTraffic,
           enable_ui_stimulation: enableUiStim,
           collection_timeout_seconds: timeoutSec,
-        })
-      }
+        },
+      )
+      if (import.meta.env.DEV) localStorage.setItem(RECENT_APK_KEY, apkPath.trim())
+      pushToast({ kind: 'success', message: '任务已进入后台队列。', duration: 3500 })
+      navigate(`/tasks/${task.id}`)
     } catch (err) {
       const e = err as { message?: string; code?: string | null; unreachable?: boolean }
-      failure = { error: e.message ?? '提交失败', error_code: e.code ?? null }
       pushToast({
         kind: 'error',
         message: e.message ?? '提交失败',
         duration: 6000,
       })
-    }
-
-    const task: LocalTaskRecord = recordTask(
-      kind === 'dynamic' ? 'dynamic' : 'static',
-      { apk_path: apkPath.trim(), package_name: packageName.trim() || null },
-      result,
-      failure,
-    )
-
-    if (result) {
-      setActive(result, task, kind)
-      pushToast({ kind: 'success', message: '分析完成。', duration: 3500 })
-      // 跳转到对应结果页 + 保留本地任务引用
-      navigate(kind === 'dynamic' ? `/dynamic` : `/static`)
-    } else {
-      // 失败仍落到任务详情,便于查看错误
-      navigate(`/tasks/${task.local_id}`)
     }
   }
 
@@ -226,7 +213,10 @@ export default function NewAnalysis() {
                     : ([] as [string, string][])),
                 ]}
               />
-              <p className="text-xs text-[var(--text-tertiary)]">提交后为长耗时同步请求,请耐心等待返回。</p>
+              <div className="rounded-[10px] border border-[var(--border-soft)] bg-[rgba(120,216,255,0.06)] px-3 py-2 text-xs text-[var(--text-secondary)] leading-relaxed">
+                提交后将进入任务详情页；任务在后台运行，可实时查看真实步骤。
+                动态任务会独占所选设备，离开页面不会中断分析。
+              </div>
             </GlassCard>
           )}
         </motion.div>
@@ -271,7 +261,7 @@ export default function NewAnalysis() {
             )}
           >
             {submitting ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-            {submitting ? '分析中…' : '提交分析'}
+            {submitting ? '正在创建任务…' : '提交后台任务'}
           </button>
         )}
       </div>

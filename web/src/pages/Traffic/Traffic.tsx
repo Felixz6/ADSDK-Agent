@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Network, Loader2, Hand, ShieldAlert, Info } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { EmptyState, ErrorState } from '@/components/common/States'
+import { EmptyState, ErrorState, LoadingState } from '@/components/common/States'
 import { TrafficRequestDrawer } from '@/components/traffic/TrafficRequestDrawer'
 import { DeviceSelector } from '@/components/analysis/DeviceSelector'
 import { useTrafficCheck } from '@/hooks/useApi'
-import type { TrafficCheckResponse, HttpRequestRecord, CollectorOutcome } from '@/types/api'
+import { useTaskReport } from '@/hooks/useTasks'
+import type { TrafficCheckResponse, HttpRequestRecord, CollectorOutcome, TrafficSummary } from '@/types/api'
 import { formatBytes, cn } from '@/utils'
 
 const COLLECTOR_LABEL: Record<CollectorOutcome, string> = {
@@ -19,6 +21,9 @@ const COLLECTOR_LABEL: Record<CollectorOutcome, string> = {
 }
 
 export default function Traffic() {
+  const [searchParams] = useSearchParams()
+  const taskId = searchParams.get('task_id') ?? undefined
+  const taskReport = useTaskReport(taskId)
   const [deviceId, setDeviceId] = useState('')
   const [enabled, setEnabled] = useState(false)
   const query = useTrafficCheck(deviceId, enabled)
@@ -29,6 +34,16 @@ export default function Traffic() {
     const raw = (query.data?.sample_requests ?? []) as unknown as HttpRequestRecord[]
     return raw.filter((r) => typeof r === 'object' && r !== null && r.type === 'http_request')
   }, [query.data])
+
+  if (taskId && taskReport.isLoading) {
+    return <GlassCard padding="none"><LoadingState title="正在加载任务流量证据…" /></GlassCard>
+  }
+  if (taskId && taskReport.isError) {
+    return <GlassCard padding="none"><ErrorState icon={<ShieldAlert size={28} />} title="任务流量加载失败" description={taskReport.error.message} /></GlassCard>
+  }
+  if (taskId) {
+    return <TaskTraffic taskId={taskId} summary={taskReport.data?.report?.traffic_summary ?? null} />
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -109,6 +124,47 @@ export default function Traffic() {
       )}
 
       <TrafficRequestDrawer record={active} onClose={() => setActive(null)} />
+    </div>
+  )
+}
+
+function TaskTraffic({ taskId, summary }: { taskId: string; summary: TrafficSummary | null }) {
+  return (
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="网络外发"
+        description="当前展示指定任务持久化报告中的真实流量采集结果。"
+        eyebrow={`任务 ${taskId}`}
+      />
+      {!summary ? (
+        <GlassCard padding="none">
+          <EmptyState icon={<Network size={28} />} title="无任务流量证据" description="任务未启用流量采集或采集结果未形成；这不代表应用不存在网络行为。" />
+        </GlassCard>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatCard label="采集状态" value={summary.status} tone={summary.status === 'success' ? 'success' : 'danger'} />
+            <StatCard label="请求总数" value={summary.total_requests} tone="default" />
+            <StatCard label="覆盖度" value={summary.coverage} tone="accent" />
+            <StatCard label="采集结局" value={COLLECTOR_LABEL[summary.collector_outcome]} tone={summary.collector_outcome === 'collector_failed' ? 'danger' : 'success'} />
+          </div>
+          <GlassCard padding="md" highlight>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">访问域名摘要</h3>
+            {summary.top_hosts.length ? (
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {summary.top_hosts.map((host) => (
+                  <li key={host.host ?? 'unknown'} className="rounded-[10px] border border-[var(--border-soft)] px-3 py-2 flex items-center justify-between gap-3">
+                    <span className="text-sm text-[var(--text-secondary)] font-mono truncate">{host.host ?? '(未记录)'}</span>
+                    <span className="text-xs text-[var(--text-tertiary)]">{host.count}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-[var(--text-tertiary)]">采集流程未记录到可确认域名；零请求不等于无网络行为。</p>
+            )}
+          </GlassCard>
+        </>
+      )}
     </div>
   )
 }
