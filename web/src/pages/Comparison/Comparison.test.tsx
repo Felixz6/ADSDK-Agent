@@ -28,6 +28,7 @@ function completed(id: string, version: string): TaskRecord {
     enable_ui_stimulation: false,
     progress_percent: 100,
     current_stage: 'completed',
+    cancelled_at_stage: null,
     error_code: null,
     error_message: null,
     report_json_path: `D:/output/${id}.json`,
@@ -50,8 +51,9 @@ const result: ComparisonResult = {
   task_id: 'comparison-task-1',
   base_task_id: 'base',
   target_task_id: 'target',
-  base_summary: { package_name: 'com.example.compare', version_name: '1.0', risk_score: 10 },
-  target_summary: { package_name: 'com.example.compare', version_name: '2.0', risk_score: 18 },
+  created_at: '2026-07-29T02:00:00Z',
+  base_summary: { app_name: 'Compare App', package_name: 'com.example.compare', version_name: '1.0', version_code: '100', risk_score: 10 },
+  target_summary: { app_name: 'Compare App', package_name: 'com.example.compare', version_name: '2.0', version_code: '200', risk_score: 18 },
   risk_score_delta: 8,
   permissions: { added: ['android.permission.CAMERA'], removed: [], unchanged: ['android.permission.INTERNET'], unavailable: false },
   high_risk_permissions: emptyDiff,
@@ -70,7 +72,10 @@ describe('Comparison — 版本差异', () => {
   it('至少需要两个已完成且有报告的任务', async () => {
     server.use(http.get(`${API}/tasks`, () => HttpResponse.json({ items: [completed('base', '1.0')], total: 1, page: 1, page_size: 100, pages: 1 })))
     renderWithProviders(<Comparison />)
-    expect(await screen.findByText('至少需要两个已完成任务')).toBeInTheDocument()
+    expect(await screen.findByText('至少需要两个带有效报告的静态或动态任务。')).toBeInTheDocument()
+    expect(screen.getByText('选择两个版本，建立清晰的变化视图')).toBeInTheDocument()
+    expect(screen.getByText('证据覆盖率')).toBeInTheDocument()
+    expect(screen.getByText('还没有历史对比')).toBeInTheDocument()
   })
 
   it('提交两个版本并展示权限、SDK、规则和证据不足语义', async () => {
@@ -95,6 +100,23 @@ describe('Comparison — 版本差异', () => {
     expect(screen.getByText('NewAdSDK')).toBeInTheDocument()
     expect(screen.getByText('RULE_NEW:matched')).toBeInTheDocument()
     expect(screen.getByText('动态证据不足，相关维度标记为不可比较')).toBeInTheDocument()
-    expect(screen.getByText('comparison-v1')).toBeInTheDocument()
+    expect(screen.queryByText('comparison-v1')).not.toBeInTheDocument()
+    expect(screen.getByText('差异报告')).toBeInTheDocument()
+    expect(screen.getByText('未评估')).toBeInTheDocument()
+  })
+
+  it('最近对比使用应用名称并可直接打开已有结果', async () => {
+    server.use(
+      http.get(`${API}/tasks`, () => HttpResponse.json({ items: [completed('base', '1.0'), completed('target', '2.0')], total: 2, page: 1, page_size: 100, pages: 1 })),
+      http.get(`${API}/comparisons`, () => HttpResponse.json([result])),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<Comparison />)
+
+    const recent = await screen.findByRole('button', { name: /Compare App · 版本对比/ })
+    expect(recent).toHaveAttribute('title', '对比 ID：comparison-1')
+    await user.click(recent)
+    expect(await screen.findByTestId('comparison-result')).toBeInTheDocument()
+    expect(screen.getByText('android.permission.CAMERA')).toBeInTheDocument()
   })
 })

@@ -24,4 +24,7 @@ export const server = setupServer(
       occupied_devices: [],
     }),
   ),
+  http.get('http://127.0.0.1:8000/comparisons', () =>
+    HttpResponse.json([]),
+  ),
 )

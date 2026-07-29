@@ -354,6 +354,10 @@ def test_comparison_is_deterministic_and_persistent(tmp_path: Path):
     assert result.sdks.added == ["SDK-B"]
     assert result.risk_score_delta == 12
     assert loaded == result
+    comparison_task = repository.get_task(result.task_id)
+    assert comparison_task is not None
+    assert comparison_task.app_name == "com.example · 版本对比"
+    assert comparison_task.app_name != result.id
 
 
 def test_comparison_validates_inputs_and_cross_app_confirmation(tmp_path: Path):
