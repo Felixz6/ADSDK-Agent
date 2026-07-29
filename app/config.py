@@ -80,6 +80,27 @@ FRIDA_STOP_TIMEOUT_SECONDS = _env_positive_float(
     "FRIDA_STOP_TIMEOUT_SECONDS",
     5.0,
 )
+FRIDA_SERVER_MANAGEMENT_ENABLED = _env_bool(
+    "FRIDA_SERVER_MANAGEMENT_ENABLED",
+    default=False,
+)
+FRIDA_SERVER_LOCAL_PATH = os.getenv("FRIDA_SERVER_LOCAL_PATH", "").strip()
+FRIDA_SERVER_REMOTE_PATH = (
+    os.getenv("FRIDA_SERVER_REMOTE_PATH", "").strip()
+    or "/data/local/tmp/frida-server"
+)
+FRIDA_SERVER_START_TIMEOUT_SECONDS = _env_positive_float(
+    "FRIDA_SERVER_START_TIMEOUT_SECONDS",
+    10.0,
+)
+FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS = _env_positive_float(
+    "FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS",
+    10.0,
+)
+FRIDA_SERVER_STOP_ON_TASK_END = _env_bool(
+    "FRIDA_SERVER_STOP_ON_TASK_END",
+    default=False,
+)
 MITM_READY_TIMEOUT_SECONDS = _env_positive_float(
     "MITM_READY_TIMEOUT_SECONDS",
     10.0,

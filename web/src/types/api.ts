@@ -216,6 +216,78 @@ export interface DynamicAnalyzeRequest {
   enable_ui_stimulation?: boolean
   /** 整体采集超时(秒,1-86400),默认 300 */
   collection_timeout_seconds?: number
+  /** strict 不降级;balanced 记录真实降级;attach_only 只观察已运行进程 */
+  dynamic_mode_policy?: DynamicModePolicy
+}
+
+export type DynamicModePolicy = 'strict' | 'balanced' | 'attach_only'
+export type DynamicExecutionMode =
+  | 'spawn_suspended'
+  | 'spawn'
+  | 'attach_existing'
+  | 'launch_then_attach'
+  | 'none'
+
+export interface DiagnosticCheck {
+  status: 'pass' | 'warning' | 'error' | 'unknown' | 'not_configured'
+  detected_value: unknown
+  expected_value: unknown
+  error_code: string | null
+  message: string
+  remediation: string | null
+  evidence: Record<string, unknown>
+}
+
+export interface DiagnosticSection {
+  status: DiagnosticCheck['status']
+  checks: Record<string, DiagnosticCheck>
+}
+
+export interface FridaDiagnosticsResponse {
+  schema_version: 'frida-diagnostics-v1'
+  overall_status: 'ready' | 'degraded' | 'blocked' | 'error'
+  recommended_mode: DynamicExecutionMode
+  host: DiagnosticSection
+  device: DiagnosticSection
+  server: DiagnosticSection
+  transport: DiagnosticSection
+  target: DiagnosticSection
+  issues: Array<{
+    code: string
+    severity: 'info' | 'warning' | 'error' | 'blocking'
+    summary: string
+    detail: string
+    remediation: string
+    evidence_available: boolean
+  }>
+  remediations: string[]
+  checked_at: string
+  duration_ms: number
+  device_ref: string | null
+  management_enabled: boolean
+}
+
+export interface DynamicExecutionSummary {
+  policy: DynamicModePolicy
+  selected_mode: DynamicExecutionMode
+  attempts: Array<{
+    mode: DynamicExecutionMode
+    status: 'success' | 'failed' | 'skipped'
+    reason_code?: string | null
+    message: string
+  }>
+  fallback_path: string[]
+}
+
+export interface DynamicEvidenceQuality {
+  schema_version: 'dynamic-evidence-quality-v1'
+  level: 'A' | 'B' | 'C' | 'D'
+  mode: DynamicExecutionMode
+  coverage: string[]
+  limitations: string[]
+  trusted_capabilities: string[]
+  untrusted_capabilities: string[]
+  reason_codes: string[]
 }
 
 /** APK 快照信息 */
@@ -612,7 +684,31 @@ export interface AnalyzeResponse {
   enable_ui_stimulation: boolean | null
   collection_timeout_seconds: number | null
   collection_status: CollectionStatus | null
-  dynamic_validation_level?: 'A' | 'B' | 'C' | null
+  dynamic_validation_level?: 'A' | 'B' | 'C' | 'D' | null
+  dynamic_execution?: DynamicExecutionSummary | null
+  dynamic_evidence_quality?: DynamicEvidenceQuality | null
+  frida_diagnostics?: FridaDiagnosticsResponse | null
+  process_diagnostics?: {
+    status: string
+    duration_ms?: number | null
+    hook_ready?: boolean
+    hook_event_count?: number
+    most_likely_cause?: string
+    alternative_explanations?: string[]
+    supporting_evidence?: string[]
+    confidence?: 'low' | 'medium' | 'high'
+  } | null
+  traffic_diagnostics?: {
+    collector_status: string
+    proxy_status: string
+    host_listener: string
+    tls_failure_observed: boolean
+    pinning_suspected: boolean
+    request_count: number
+    outcome: string
+    reason_codes: string[]
+    limitations: string[]
+  } | null
   traffic_coverage: TrafficCoverage | null
   dynamic_timeline: DynamicTimeline | null
   collector_sessions?: {

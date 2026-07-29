@@ -67,5 +67,10 @@ export function normalizeAnalyzeResponse(data: AnalyzeResponse): AnalyzeResponse
     risk_summary: data.risk_summary ?? null,
     timeline: data.timeline ?? null,
     compliance_insight: data.compliance_insight ?? null,
+    dynamic_execution: data.dynamic_execution ?? null,
+    dynamic_evidence_quality: data.dynamic_evidence_quality ?? null,
+    frida_diagnostics: data.frida_diagnostics ?? null,
+    process_diagnostics: data.process_diagnostics ?? null,
+    traffic_diagnostics: data.traffic_diagnostics ?? null,
   }
 }

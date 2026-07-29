@@ -4,6 +4,7 @@
 import { useMutation, useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import { getServiceHealth, getEnvCheck, getTrafficCheck } from '@/api/system'
 import { submitStaticAnalysis, submitDynamicAnalysis } from '@/api/analysis'
+import { runFridaDiagnostics, manageFridaServer } from '@/api/frida'
 import type { ApiError } from '@/api/client'
 import type {
   AnalyzeRequest,
@@ -12,6 +13,7 @@ import type {
   EnvCheckResponse,
   ServiceHealth,
   TrafficCheckResponse,
+  FridaDiagnosticsResponse,
 } from '@/types/api'
 
 /* -------- 健康检查 -------- */
@@ -23,6 +25,22 @@ export function useServiceHealth(
     queryFn: ({ signal }) => getServiceHealth(signal),
     refetchInterval: 30_000,
     ...options,
+  })
+}
+
+export function useFridaDiagnostics() {
+  return useMutation<FridaDiagnosticsResponse, ApiError, { deviceId: string; packageName?: string }>({
+    mutationFn: ({ deviceId, packageName }) => runFridaDiagnostics(deviceId, packageName),
+  })
+}
+
+export function useFridaServerAction() {
+  return useMutation<
+    { status: string; message: string; error_code?: string | null },
+    ApiError,
+    { action: 'deploy' | 'start' | 'stop'; deviceId: string }
+  >({
+    mutationFn: ({ action, deviceId }) => manageFridaServer(action, deviceId),
   })
 }
 

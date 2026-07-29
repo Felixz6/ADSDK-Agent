@@ -347,7 +347,7 @@ Remove-Item -LiteralPath .\output\cache\static-unpack -Recurse
 所有动态命令必须显式绑定设备：
 
 ```powershell
-$device = '127.0.0.1:16416'
+$device = 'TARGET_DEVICE'
 $apk = 'D:\adsdk-agent\samples\hongguo.apk'
 
 adb devices -l
@@ -363,7 +363,7 @@ adb -s $device shell settings get global http_proxy
 {
   "task_type": "dynamic",
   "apk_path": "D:\\adsdk-agent\\samples\\hongguo.apk",
-  "device_id": "127.0.0.1:16416",
+  "device_id": "TARGET_DEVICE",
   "enable_traffic": true,
   "enable_ui_stimulation": false,
   "pre_consent_seconds": 5,
@@ -381,3 +381,14 @@ adb -s $device shell settings get global http_proxy
 - 浏览器 PDF 结果依赖用户本机打印设置，后端不生成原生 PDF；
 - 动态分析质量仍取决于应用可运行性、Frida 兼容性、证书信任和 SSL Pinning；
 - 删除任务默认保留完整分析目录，磁盘回收由操作者在停止服务后按目录执行。
+
+## M4 前端融合补充（2026-07-29）
+
+- 环境页增加“动态分析就绪度”，按就绪、降级可用、阻塞、检测失败展示；
+- 新建动态任务支持严格、平衡、仅附加三种策略及中文证据说明；
+- Frida 完整诊断只在用户点击后执行，不因打开页面部署或启动服务；
+- 部署、启动、停止均使用确认弹窗，停止文案明确仅处理平台拥有的进程；
+- 任务详情展示真实 spawn/attach 尝试；报告页展示证据等级、退出摘要和网络边界；
+- 错误码进入折叠技术详情，主区域使用中文说明；
+- 旧报告缺字段保持“尚未检测/无法判断”，不会补成成功；
+- 窄屏容器使用 `min-w-0` 与现有响应式卡片，动画继续遵循全局 reduced-motion。

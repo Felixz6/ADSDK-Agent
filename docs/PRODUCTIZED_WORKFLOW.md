@@ -109,7 +109,7 @@ Remove-Item -LiteralPath .\output\cache\static-unpack -Recurse
 所有动态命令必须显式绑定设备：
 
 ```powershell
-$device = '127.0.0.1:16416'
+$device = 'TARGET_DEVICE'
 $apk = 'D:\adsdk-agent\samples\hongguo.apk'
 
 adb devices -l
@@ -125,7 +125,7 @@ adb -s $device shell settings get global http_proxy
 {
   "task_type": "dynamic",
   "apk_path": "D:\\adsdk-agent\\samples\\hongguo.apk",
-  "device_id": "127.0.0.1:16416",
+  "device_id": "TARGET_DEVICE",
   "enable_traffic": true,
   "enable_ui_stimulation": false,
   "pre_consent_seconds": 5,
@@ -143,3 +143,16 @@ adb -s $device shell settings get global http_proxy
 - 浏览器 PDF 结果依赖用户本机打印设置，后端不生成原生 PDF；
 - 动态分析质量仍取决于应用可运行性、Frida 兼容性、证书信任和 SSL Pinning；
 - 删除任务默认保留完整分析目录，磁盘回收由操作者在停止服务后按目录执行。
+
+## M4 动态可靠性工作流
+
+动态任务在正式采集前执行 `frida-diagnostics-v1`，并把 host、device、server、
+transport、target 的结论写入任务步骤和报告。`strict` 不降级；`balanced` 记录
+启动前 Hook 失败和 attach 路径；`attach_only` 明确缺少启动阶段覆盖。
+
+任务结束后报告保存 `dynamic_execution`、`dynamic_evidence_quality`、
+`process_diagnostics` 和 `traffic_diagnostics`。前端、Markdown 与 HTML 均解释
+证据等级，而不是只显示字母。旧报告缺少这些字段时显示“旧版报告未记录”。
+
+server 管理默认关闭，诊断不会产生部署或启动副作用。管理启用后仍需要用户逐次
+确认；停止操作仅作用于平台启动并登记 PID 所有权的进程。
