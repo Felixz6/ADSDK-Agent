@@ -2,6 +2,7 @@ import { AlertTriangle, ClipboardCheck } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import type { ComplianceInsightData } from '@/types/api'
+import { localizeRiskText, riskLevelLabel } from '@/utils/taskPresentation'
 
 export function ComplianceInsight({ insight }: { insight?: ComplianceInsightData | null }) {
   if (!insight) {
@@ -16,14 +17,14 @@ export function ComplianceInsight({ insight }: { insight?: ComplianceInsightData
       <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
         <ClipboardCheck size={15} /> 合规解读
       </h3>
-      <p className="text-sm text-[var(--text-secondary)] leading-relaxed mt-2">{insight.overall_assessment}</p>
+      <p className="text-sm text-[var(--text-secondary)] leading-relaxed mt-2">{localizeRiskText(insight.overall_assessment)}</p>
       {insight.key_findings.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2">
           {insight.key_findings.map((finding, index) => (
             <li key={`${finding.title}-${index}`} className="rounded-[9px] border border-[var(--border-soft)] p-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <strong className="text-sm text-[var(--text-primary)] break-words">{finding.title}</strong>
-                <StatusBadge tone={finding.severity === 'high' || finding.severity === 'critical' ? 'danger' : 'warning'} label={finding.severity} />
+                <StatusBadge tone={finding.severity === 'high' || finding.severity === 'critical' ? 'danger' : 'warning'} label={riskLevelLabel(finding.severity)} />
               </div>
               <p className="text-xs text-[var(--text-secondary)] mt-1">{finding.summary}</p>
               <p className="text-xs text-[var(--accent-blue)] mt-1">建议：{finding.recommendation}</p>

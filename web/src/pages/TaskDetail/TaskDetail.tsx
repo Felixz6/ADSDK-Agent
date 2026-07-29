@@ -186,7 +186,17 @@ export default function TaskDetail() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium text-[var(--text-primary)]">{stageLabel(step.step_name)}</p>
-                    {step.message && <p className="text-xs text-[var(--text-secondary)] mt-1">{step.message}</p>}
+                    {step.message && (
+                      <>
+                        <p className="mt-1 text-xs text-[var(--text-secondary)]">{friendlyStepMessage(step.message)}</p>
+                        {isTechnicalStepMessage(step.message) && (
+                          <details className="mt-2 rounded-[8px] border border-[rgba(157,192,255,0.08)] px-2.5 py-1.5">
+                            <summary className="cursor-pointer text-[11px] text-[var(--text-tertiary)]">技术详情</summary>
+                            <p className="mt-1.5 break-all font-mono text-[11px] text-[var(--text-tertiary)]">{step.message}</p>
+                          </details>
+                        )}
+                      </>
+                    )}
                     <p className="text-[11px] text-[var(--text-tertiary)] mt-1">
                       {formatDateTime(step.started_at)}{step.completed_at ? ` → ${formatDateTime(step.completed_at)}` : ''}
                     </p>
@@ -282,11 +292,17 @@ function stageLabel(stage: string | null): string {
     frida_spawn: 'Frida suspended spawn',
     frida_script_load: '加载 Hook',
     frida_ready: '等待 Hook-ready',
+    mitm_ready: '流量代理就绪',
     mitm_start: '启动流量采集',
     collection_start: 'Consent 前动态采集',
+    dynamic_collection: '动态行为采集',
     app_resume: '恢复应用',
     consent_boundary: 'Consent 边界',
+    consent_event: '用户同意事件',
+    frida_stop: '停止 Frida 会话',
+    mitm_stop: '停止流量采集',
     event_validation: '动态证据校验',
+    traffic_validation: '流量证据校验',
     resource_cleanup: '资源清理',
     rule_evaluation: '规则评估',
     report_write: '生成报告',
@@ -295,4 +311,18 @@ function stageLabel(stage: string | null): string {
     cancelled: '任务已取消',
   }
   return stage ? labels[stage] ?? stage : '等待开始'
+}
+
+function friendlyStepMessage(message: string): string {
+  if (message.startsWith('frida_server_unavailable:')) {
+    return 'Frida 会话未就绪，已保留网络侧采集结果。'
+  }
+  if (message === 'Frida hook evidence unavailable; network-only collection retained') {
+    return 'Hook 证据缺失，已保留网络侧采集结果。'
+  }
+  return message
+}
+
+function isTechnicalStepMessage(message: string): boolean {
+  return friendlyStepMessage(message) !== message
 }

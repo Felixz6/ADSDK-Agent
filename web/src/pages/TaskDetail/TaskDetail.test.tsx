@@ -92,4 +92,30 @@ describe('TaskDetail — 实时生命周期', () => {
     expect(await screen.findByText('HTTP 轮询')).toBeInTheDocument()
   })
 
+
+  it('uses friendly timeline copy and keeps raw error enums in collapsed technical details', async () => {
+    const record = task({
+      current_stage: 'dynamic_collection',
+      steps: [{
+        id: 2,
+        task_id: 'detail-1',
+        step_key: 'frida_spawn',
+        step_name: 'frida_spawn',
+        status: 'partial',
+        progress_percent: 63,
+        message: 'frida_server_unavailable: Frida could not spawn the target package',
+        started_at: '2026-07-29T01:00:02Z',
+        completed_at: '2026-07-29T01:00:03Z',
+        updated_at: '2026-07-29T01:00:03Z',
+      }],
+    })
+
+    renderDetail(record)
+
+    expect(await screen.findByText('Frida \u4f1a\u8bdd\u672a\u5c31\u7eea\uff0c\u5df2\u4fdd\u7559\u7f51\u7edc\u4fa7\u91c7\u96c6\u7ed3\u679c\u3002')).toBeInTheDocument()
+    expect(screen.getByText('\u52a8\u6001\u884c\u4e3a\u91c7\u96c6')).toBeInTheDocument()
+    const technicalValue = screen.getByText('frida_server_unavailable: Frida could not spawn the target package')
+    expect(technicalValue.closest('details')).not.toHaveAttribute('open')
+  })
+
 })
