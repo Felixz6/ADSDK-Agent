@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from fastapi.responses import JSONResponse
 
+from app.core.redaction import Redactor
 from app.repositories.task_repository import TaskRepository, utc_now
 from app.tasks.models import (
     TaskActionResponse,
@@ -81,10 +82,15 @@ class TaskService:
     def create(self, request: TaskCreateRequest) -> TaskRecord:
         task_id = str(uuid4())
         payload = request.model_dump(mode="json")
+        public_device_id = Redactor().redact_identifier(
+            request.device_id,
+            kind="device_serial",
+        )
         task = self.repository.create_task(
             {
                 "id": task_id,
                 **payload,
+                "device_id": public_device_id,
                 "request_payload": payload,
             }
         )
@@ -109,6 +115,8 @@ class TaskService:
         task = self.repository.get_task(task_id)
         if task is None:
             return
+        private_payload = self.repository.get_request_payload(task_id)
+        task = task.model_copy(update={"request_payload": private_payload})
         device_lock: threading.Lock | None = None
         if task.task_type == "dynamic":
             key = task.device_id or "__unselected_device__"
@@ -282,7 +290,9 @@ class TaskService:
             raise KeyError(task_id)
         if source.status not in {"failed", "cancelled", "completed"}:
             raise ValueError("running or queued task cannot be retried")
-        request = TaskCreateRequest.model_validate(source.request_payload)
+        request = TaskCreateRequest.model_validate(
+            self.repository.get_request_payload(task_id)
+        )
         task = self.create(request)
         return TaskActionResponse(task=task, message="已创建重试任务")
 

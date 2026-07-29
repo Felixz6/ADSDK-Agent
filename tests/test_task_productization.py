@@ -66,6 +66,34 @@ def _wait_terminal(service: TaskService, task_id: str, timeout: float = 3):
     raise AssertionError("task did not reach a terminal state")
 
 
+def test_task_device_serial_is_private_but_runner_receives_raw_value(tmp_path: Path):
+    repository = _repository(tmp_path)
+    captured: list[str | None] = []
+    service = TaskService(repository, max_workers=1)
+    service.set_runner(
+        lambda task: (
+            captured.append(task.request_payload.get("device_id")),
+            {"ok": True, "status": "success"},
+        )[1]
+    )
+    raw_serial = "127.0.0.1:16416"
+
+    created = service.create(
+        TaskCreateRequest(
+            task_type="dynamic",
+            apk_path="D:/samples/app.apk",
+            device_id=raw_serial,
+        )
+    )
+    completed = _wait_terminal(service, created.id)
+
+    assert raw_serial not in created.model_dump_json()
+    assert raw_serial not in completed.model_dump_json()
+    assert captured == [raw_serial]
+    assert repository.get_request_payload(created.id)["device_id"] == raw_serial
+    service.shutdown()
+
+
 def test_sqlite_initialization_and_crud(tmp_path: Path):
     repository = _repository(tmp_path)
     task = _create_task(repository)

@@ -179,6 +179,17 @@ class TaskRepository:
             )
         return self._to_task(row, steps)
 
+    def get_request_payload(self, task_id: str) -> dict[str, Any]:
+        """Return the private execution payload without exposing it through TaskRecord."""
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT request_json FROM tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(task_id)
+        return json.loads(row["request_json"] or "{}")
+
     def list_tasks(
         self,
         *,
@@ -362,6 +373,9 @@ class TaskRepository:
         item = dict(row)
         item["enable_traffic"] = bool(item["enable_traffic"])
         item["enable_ui_stimulation"] = bool(item["enable_ui_stimulation"])
-        item["request_payload"] = json.loads(item.pop("request_json") or "{}")
+        request_payload = json.loads(item.pop("request_json") or "{}")
+        if "device_id" in request_payload:
+            request_payload["device_id"] = item.get("device_id")
+        item["request_payload"] = request_payload
         item["steps"] = [self._to_step(step) for step in steps]
         return TaskRecord(**item)
