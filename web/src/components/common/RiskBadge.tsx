@@ -17,7 +17,7 @@ const labelMap: Record<RiskLevel, string> = {
   high: '高风险',
   medium: '中风险',
   low: '低风险',
-  unknown: '未知风险',
+  unknown: '未评估',
 }
 
 export function RiskBadge({ level, label, className }: { level: RiskLevel; label?: string; className?: string }) {

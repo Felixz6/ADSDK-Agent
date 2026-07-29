@@ -59,6 +59,11 @@ export async function createComparison(request: ComparisonCreateRequest): Promis
   return data
 }
 
+export async function listComparisons(signal?: AbortSignal): Promise<ComparisonResult[]> {
+  const { data } = await api.get<ComparisonResult[]>('/comparisons', { signal })
+  return data
+}
+
 export async function getComparison(comparisonId: string, signal?: AbortSignal): Promise<ComparisonResult> {
   const { data } = await api.get<ComparisonResult>(`/comparisons/${encodeURIComponent(comparisonId)}`, { signal })
   return data

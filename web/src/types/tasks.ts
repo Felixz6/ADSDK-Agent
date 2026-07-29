@@ -46,6 +46,7 @@ export interface TaskRecord {
   enable_ui_stimulation: boolean
   progress_percent: number
   current_stage: string | null
+  cancelled_at_stage?: string | null
   error_code: string | null
   error_message: string | null
   report_json_path: string | null
@@ -119,6 +120,7 @@ export interface ComparisonResult {
   task_id: string
   base_task_id: string
   target_task_id: string
+  created_at?: string | null
   base_summary: Record<string, unknown>
   target_summary: Record<string, unknown>
   risk_score_delta: number | null

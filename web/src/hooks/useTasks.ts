@@ -15,6 +15,7 @@ import {
   getTask,
   getTaskReport,
   getTaskSystemStatus,
+  listComparisons,
   listTasks,
   retryTask,
   taskWebSocketUrl,
@@ -152,8 +153,22 @@ export function useTaskSystemStatus() {
 }
 
 export function useCreateComparison() {
+  const client = useQueryClient()
   return useMutation<ComparisonResult, ApiError, ComparisonCreateRequest>({
     mutationFn: createComparison,
+    onSuccess: (comparison) => {
+      client.setQueryData(['comparisons', comparison.id], comparison)
+      void client.invalidateQueries({ queryKey: ['comparisons'] })
+      void client.invalidateQueries({ queryKey: ['tasks'] })
+    },
+  })
+}
+
+export function useComparisons() {
+  return useQuery<ComparisonResult[], ApiError>({
+    queryKey: ['comparisons'],
+    queryFn: ({ signal }) => listComparisons(signal),
+    staleTime: 5_000,
   })
 }
 

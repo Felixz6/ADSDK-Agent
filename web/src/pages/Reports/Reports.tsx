@@ -31,6 +31,7 @@ import { useTaskReport } from '@/hooks/useTasks'
 import { absoluteApiUrl } from '@/api/taskCenter'
 import type { AnalyzeResponse, RuleEvaluationStatus } from '@/types/api'
 import { cn, copyText } from '@/utils'
+import { riskLevelLabel, safeApplicationName } from '@/utils/taskPresentation'
 
 export default function Reports() {
   const [searchParams] = useSearchParams()
@@ -40,7 +41,6 @@ export default function Reports() {
   const staticResp = useActiveResult2('static')
   const dynamicResp = useActiveResult2('dynamic')
   const resp = remote.data?.report ?? dynamicResp ?? staticResp
-  const task = useAnalysisStore((s) => s.task)
   const pushToast = useUIStore((s) => s.pushToast)
   const [tab, setTab] = useState<'rules' | 'report' | 'traffic'>('rules')
 
@@ -57,13 +57,18 @@ export default function Reports() {
   const advertisingSdkCount = resp.sdks.filter((sdk) => sdk.category === 'advertising').length
   const dynamicSdkCount = resp.sdks.filter((sdk) => sdk.dynamic_correlated).length
   const attentionSdkCount = resp.sdks.filter((sdk) => sdk.risk_level === 'high' || sdk.risk_level === 'critical').length
+  const applicationName = safeApplicationName({
+    appName: resp.app_info?.application_label,
+    apkPath: resp.normalized_apk_name || resp.apk_path,
+    packageName: resp.app_info?.package_name,
+  })
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="报告"
+        title={applicationName}
         description="规则评估结论与可读报告/流量摘要。所有敏感标识已脱敏;未评估绝不等于无风险。"
-        eyebrow={`任务 ${taskId ?? task?.local_id ?? ''} · ${isDynamic ? '动态' : '静态'}`}
+        eyebrow={`分析报告 · ${isDynamic ? '动态分析' : '静态分析'}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {remote.data?.html_url && (
@@ -82,7 +87,7 @@ export default function Reports() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="命中(mismatched)" value={counts.matched} tone="danger" icon={<Hand size={18} />} />
+        <StatCard label="规则命中" value={counts.matched} tone="danger" icon={<Hand size={18} />} />
         <StatCard label="未命中" value={counts.not_matched} tone="success" icon={<ShieldCheck size={18} />} />
         <StatCard label="未评估" value={counts.not_evaluated} tone="neutral" icon={<ShieldQuestion size={18} />} />
         <StatCard label="异常" value={counts.error} tone="warning" icon={<Activity size={18} />} />
@@ -253,14 +258,20 @@ function DownloadLink({ href, label }: { href: string; label: string }) {
 function reportSummary(resp: AnalyzeResponse): string {
   const app = resp.app_info
   const risk = resp.risk_summary
+  const statusLabels: Record<string, string> = {
+    success: '成功',
+    partial: '部分完成',
+    failed: '失败',
+    skipped: '已跳过',
+  }
   return [
     `AdSDK Agent 报告摘要`,
-    `应用：${app?.application_label ?? '—'}`,
-    `包名：${app?.package_name ?? '—'}`,
-    `风险：${risk?.score ?? '—'} / ${risk?.level ?? '—'}`,
+    `应用：${safeApplicationName({ appName: app?.application_label, apkPath: resp.normalized_apk_name || resp.apk_path, packageName: app?.package_name })}`,
+    `包名：${app?.package_name ?? '待解析'}`,
+    `风险：${risk?.score ?? '未评估'} / ${riskLevelLabel(risk?.level)}`,
     `SDK：${resp.sdk_count}`,
-    `状态：${resp.status ?? '—'}`,
-    `提示：not_evaluated 仅表示证据不足，不代表安全。`,
+    `状态：${statusLabels[resp.status] ?? '未评估'}`,
+    `提示：未评估仅表示证据不足，不代表安全。`,
   ].join('\n')
 }
 
