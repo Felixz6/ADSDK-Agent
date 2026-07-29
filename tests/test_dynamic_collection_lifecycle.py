@@ -145,6 +145,44 @@ def test_ready_precedes_collection_start_and_app_resume() -> None:
     assert controls[1]["source"] == "configured_delay"
 
 
+def test_post_resume_crash_preserves_resume_success_and_fails_stability_gate() -> None:
+    DynamicCollectionConfig, run_dynamic_collection = _import_collection_api()
+    calls: list[str] = []
+
+    class RuntimeCrash(RuntimeError):
+        code = "process_crashed"
+
+    class CrashingFrida(FakeFridaSession):
+        error_code = "process_crashed"
+        error_message = "native crash"
+
+        def wait_stable(self, timeout_seconds: float) -> bool:
+            calls.append(f"frida.wait_stable:{timeout_seconds}")
+            raise RuntimeCrash("native crash")
+
+    result = run_dynamic_collection(
+        frida_session=CrashingFrida(calls),
+        mitm_session=None,
+        config=DynamicCollectionConfig(
+            consent_after_seconds=None,
+            pre_consent_seconds=0,
+            post_consent_seconds=0,
+            enable_traffic=False,
+            frida_spawn_stability_seconds=3,
+        ),
+        emit_control_event=lambda event: calls.append(
+            f"control.{event['event']}"
+        ),
+        clock=FakeClock(),
+    )
+
+    assert result.status == "failed"
+    assert result.primary_error_code == "process_crashed"
+    assert result.outcomes["app_resume"] == "success"
+    assert result.outcomes["post_resume_stability"] == "failed"
+    assert "frida.wait_stable:3" in calls
+
+
 def test_frida_ready_failure_cleans_only_started_mitm_session() -> None:
     DynamicCollectionConfig, run_dynamic_collection = _import_collection_api()
     calls: list[str] = []
