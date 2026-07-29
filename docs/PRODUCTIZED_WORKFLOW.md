@@ -156,3 +156,27 @@ transport、target 的结论写入任务步骤和报告。`strict` 不降级；`
 
 server 管理默认关闭，诊断不会产生部署或启动副作用。管理启用后仍需要用户逐次
 确认；停止操作仅作用于平台启动并登记 PID 所有权的进程。
+
+## M5A 轻量证据关联
+
+动态任务完成事件与流量校验后生成 `correlation-v1`：
+
+```text
+output/runs/<run_id>/correlations.json
+```
+
+关联算法只使用同任务内可信时间。可比 monotonic 优先；UTC 仅作降级。默认窗口
+`2500 ms`，可通过 `EVIDENCE_CORRELATION_WINDOW_MS` 配置为 `100`–`10000`
+毫秒。每个事件最多保留 5 个最近请求，结果按绝对时间差稳定排序，关联 ID 由
+schema、事件 ID 和请求 ID 确定性生成。
+
+状态语义：
+
+- `evaluated`：两侧均有观察且存在可对齐时间，已完成计算；结果可以为空；
+- `no_observations`：动态事件或网络请求一侧为零；
+- `not_evaluated`：两侧均有观察，但时间信息不足；
+- `error`：关联模块自身异常，主报告继续生成。
+
+页面和报告使用“时间上接近”“可能相关”“未观察到可关联证据”。这些描述不表达
+因果关系。关联产物只保留安全请求元数据，不包含 Cookie、Header、正文、原始 URL
+或 query value。旧报告缺少 `evidence_correlation` 时继续正常打开并显示旧版说明。
