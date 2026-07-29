@@ -69,6 +69,10 @@ class AnalysisRunContext:
     def sessions_path(self) -> Path:
         return self.run_dir / "sessions.json"
 
+    @property
+    def report_html_path(self) -> Path:
+        return self.run_dir / "report.html"
+
 
 def _normalize_run_id(value: str | UUID | None) -> str:
     if value is None:

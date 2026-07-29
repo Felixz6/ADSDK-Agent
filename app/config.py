@@ -7,6 +7,10 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = str(BASE_DIR / "output")
+TASK_DATABASE_PATH = os.getenv(
+    "TASK_DATABASE_PATH",
+    str(Path(OUTPUT_DIR) / "state" / "adsdk-agent.db"),
+)
 SAMPLES_DIR = str(BASE_DIR / "samples")
 STATIC_UNPACK_CACHE_DIR = (
     os.getenv("STATIC_UNPACK_CACHE_DIR", "").strip()
