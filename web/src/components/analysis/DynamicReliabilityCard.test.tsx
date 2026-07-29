@@ -19,6 +19,13 @@ function diagnostics(
     server: section,
     transport: section,
     target: section,
+    capabilities: {
+      transport_available: true,
+      process_enumeration_available: true,
+      attach_available: true,
+      spawn_creation_available: true,
+      spawn_resume_stable: false,
+    },
     issues: overall_status === 'ready' ? [] : [{
       code: 'frida_server_transport_unreachable',
       severity: overall_status === 'degraded' ? 'warning' : 'blocking',
@@ -35,66 +42,138 @@ function diagnostics(
   }
 }
 
+const execution = {
+  policy: 'balanced' as const,
+  selected_mode: 'launch_then_attach' as const,
+  fallback_path: ['launch_then_attach'],
+  attempts: [
+    {
+      mode: 'spawn_suspended' as const,
+      status: 'failed' as const,
+      reason_code: 'spawn_runtime_failed',
+      message: 'runtime crash',
+      phase: 'post_resume_stability',
+      process_result: 'process_crashed',
+      post_resume_survival_ms: 980,
+    },
+    {
+      mode: 'launch_then_attach' as const,
+      status: 'success' as const,
+      message: 'collecting',
+      phase: 'collecting',
+      process_result: 'running',
+    },
+  ],
+  launch_timing: { startup_gap_ms: 120 },
+}
+
+const evidence = {
+  schema_version: 'dynamic-evidence-quality-v1' as const,
+  level: 'C' as const,
+  mode: 'launch_then_attach' as const,
+  coverage: ['Hook 就绪后的运行时事件'],
+  limitations: ['正常启动到 Attach 完成之间存在启动覆盖间隙'],
+  trusted_capabilities: ['结构化事件'],
+  untrusted_capabilities: ['最早启动阶段'],
+  reason_codes: ['spawn_runtime_failed'],
+}
+
+const nativeCrash = {
+  status: 'process_crashed',
+  duration_ms: 980,
+  most_likely_cause: '应用在 suspended spawn 恢复后发生原生崩溃，崩溃栈涉及 MuMu Native Bridge 与 MMKV。',
+  reason_code: 'native_bridge_compatibility_suspected',
+  crash_type: 'native_sigsegv',
+  signal: 'SIGSEGV',
+  signal_code: 'SEGV_ACCERR',
+  summary: 'trying to execute non-executable memory',
+  suspected_components: ['libhoudini.so', 'libhp15_x86_64.so', 'MMKV'],
+  native_frames: ['#00 pc 00 libhoudini.so', '#01 pc 01 libhp15_x86_64.so'],
+  confidence: 'high' as const,
+}
+
 describe('DynamicReliabilityCard', () => {
-  it.each([
-    ['ready', '就绪'],
-    ['degraded', '降级可用'],
-    ['blocked', '阻塞'],
-    ['error', '检测失败'],
-  ] as const)('renders %s readiness as %s', (state, label) => {
-    render(<DynamicReliabilityCard diagnostics={diagnostics(state)} />)
-    expect(screen.getAllByText(label).length).toBeGreaterThan(0)
-  })
-
-  it('does not turn an absent legacy field into success', () => {
-    render(<DynamicReliabilityCard />)
-    expect(screen.getByText(/尚未检测/)).toBeInTheDocument()
-    expect(screen.queryByText('就绪')).not.toBeInTheDocument()
-  })
-
-  it('shows fallback attempts and evidence limitations', () => {
+  it('separates environment capabilities from task result', () => {
     render(
       <DynamicReliabilityCard
-        execution={{
-          policy: 'balanced',
-          selected_mode: 'attach_existing',
-          fallback_path: ['attach_existing'],
-          attempts: [
-            { mode: 'spawn_suspended', status: 'failed', reason_code: 'spawn_failed', message: 'failed' },
-            { mode: 'attach_existing', status: 'success', message: 'ok' },
-          ],
-        }}
-        evidence={{
-          schema_version: 'dynamic-evidence-quality-v1',
-          level: 'C',
-          mode: 'attach_existing',
-          coverage: ['Hook 就绪后的事件'],
-          limitations: ['无法证明应用启动阶段行为完整'],
-          trusted_capabilities: ['结构化事件'],
-          untrusted_capabilities: ['启动阶段'],
-          reason_codes: ['spawn_failed'],
-        }}
+        diagnostics={diagnostics('ready')}
+        execution={execution}
+        process={nativeCrash}
       />,
     )
+    expect(screen.getByRole('region', { name: '环境能力' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '本次采集结果' })).toBeInTheDocument()
+    expect(screen.getByText('通信就绪')).toBeInTheDocument()
+    expect(screen.getByText('当前样本不兼容')).toBeInTheDocument()
+  })
+
+  it('shows structured native crash summary and components', () => {
+    render(<DynamicReliabilityCard process={nativeCrash} />)
+    expect(screen.getByText('Native 崩溃摘要')).toBeInTheDocument()
+    expect(screen.getByText('SIGSEGV / SEGV_ACCERR')).toBeInTheDocument()
+    expect(screen.getByText('libhoudini.so, libhp15_x86_64.so, MMKV')).toBeInTheDocument()
+  })
+
+  it('shows suspended spawn failure at post-resume stability phase', () => {
+    render(<DynamicReliabilityCard execution={execution} />)
+    expect(screen.getByText(/恢复稳定窗口/)).toBeInTheDocument()
+    expect(screen.getByText(/恢复后存活 980 ms/)).toBeInTheDocument()
+  })
+
+  it('keeps the complete balanced attempt chain', () => {
+    render(<DynamicReliabilityCard execution={execution} />)
+    expect(screen.getByText(/spawn_suspended/)).toBeInTheDocument()
+    expect(screen.getAllByText(/launch_then_attach/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/正常启动至附加完成间隙：120 ms/)).toBeInTheDocument()
+  })
+
+  it('shows attach or launch-attach grade C limitations', () => {
+    render(<DynamicReliabilityCard execution={execution} evidence={evidence} />)
     expect(screen.getByText('证据 C 级')).toBeInTheDocument()
-    expect(screen.getByText(/启动前 Hook 模式执行失败/)).toBeInTheDocument()
-    expect(screen.getByText('无法证明应用启动阶段行为完整')).toBeInTheDocument()
+    expect(screen.getByText('正常启动到 Attach 完成之间存在启动覆盖间隙')).toBeInTheDocument()
   })
 
-  it('explains zero requests and only labels pinning as suspected', () => {
+  it('treats application-requested detach as normal cleanup', () => {
     render(
       <DynamicReliabilityCard
-        traffic={{
-          outcome: 'collector_success_zero_requests',
-          proxy_status: 'restored',
-          pinning_suspected: true,
-          request_count: 0,
-          limitations: [],
+        process={{
+          status: 'normal_cleanup',
+          detached_reason: 'application-requested',
+          most_likely_cause: '会话由采集流程主动分离，属于正常清理',
         }}
       />,
     )
-    expect(screen.getByText(/零请求不代表应用没有网络行为/)).toBeInTheDocument()
-    expect(screen.getByText(/疑似 Pinning/)).toBeInTheDocument()
-    expect(screen.queryByText('检测到 Pinning')).not.toBeInTheDocument()
+    expect(screen.queryByText('Native 崩溃摘要')).not.toBeInTheDocument()
+    expect(screen.queryByText(/进程：/)).not.toBeInTheDocument()
+  })
+
+  it('collapses the full backtrace by default', () => {
+    render(<DynamicReliabilityCard process={nativeCrash} />)
+    const summary = screen.getByText(/完整 Native backtrace/)
+    expect(summary.closest('details')).not.toHaveAttribute('open')
+    expect(screen.getByText('#00 pc 00 libhoudini.so', { exact: false })).toBeInTheDocument()
+  })
+
+  it('uses the bounded Chinese compatibility diagnosis', () => {
+    render(<DynamicReliabilityCard process={nativeCrash} />)
+    expect(screen.getByText(/MuMu Native Bridge 与 MMKV/)).toBeInTheDocument()
+    expect(screen.getByText('native_bridge_compatibility_suspected')).toBeInTheDocument()
+  })
+
+  it('keeps old reports with absent reliability fields neutral', () => {
+    render(<DynamicReliabilityCard />)
+    expect(screen.getByText(/尚未检查/)).toBeInTheDocument()
+    expect(screen.queryByText('通信就绪')).not.toBeInTheDocument()
+  })
+
+  it('does not describe a task crash as an unavailable Frida environment', () => {
+    render(
+      <DynamicReliabilityCard
+        diagnostics={diagnostics('ready')}
+        process={nativeCrash}
+      />,
+    )
+    expect(screen.getByText('通信就绪')).toBeInTheDocument()
+    expect(screen.queryByText('Frida 服务不可用')).not.toBeInTheDocument()
   })
 })
