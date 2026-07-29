@@ -2,6 +2,7 @@ import { AlertTriangle, ShieldCheck } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import type { RiskLevel, RiskSummary } from '@/types/api'
+import { riskConfidenceLabel } from '@/utils/taskPresentation'
 
 const levelLabel: Record<RiskLevel, string> = {
   low: '低风险',
@@ -41,7 +42,7 @@ export function RiskSummaryCard({ summary }: { summary?: RiskSummary | null }) {
         <div className="flex flex-col items-end gap-1.5">
           <StatusBadge tone={levelTone[summary.level]} label={levelLabel[summary.level]} />
           <span className="text-[11px] text-[var(--text-tertiary)]">
-            置信度：{summary.confidence} · {summary.calculation_version}
+            置信度：{riskConfidenceLabel(summary.confidence)} · {summary.calculation_version}
           </span>
         </div>
       </div>

@@ -73,6 +73,19 @@ export function riskLevelLabel(value: string | null | undefined): string {
   return labels[String(value || '').toLowerCase()] || '未评估'
 }
 
+export function riskConfidenceLabel(value: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    low: '较低',
+    medium: '中等',
+    high: '较高',
+  }
+  return labels[String(value || '').toLowerCase()] || '待确认'
+}
+
+export function localizeRiskText(value: string): string {
+  return value.replace(/\b(critical|medium|high|low)\b/gi, (level) => riskLevelLabel(level))
+}
+
 export function riskBadgeLevel(
   value: string | null | undefined,
 ): 'low' | 'medium' | 'high' | 'unknown' {
@@ -87,4 +100,3 @@ export function formatVersion(task: Pick<TaskRecord, 'version_name' | 'version_c
   if (!task.version_name && !task.version_code) return '版本未知'
   return `${task.version_name || '—'} (${task.version_code || '—'})`
 }
-

@@ -3,6 +3,7 @@ import { ChevronDown, PackageSearch } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import type { SdkHit } from '@/types/api'
+import { riskLevelLabel } from '@/utils/taskPresentation'
 
 export function SdkIntelligencePanel({ sdks }: { sdks: SdkHit[] }) {
   const [category, setCategory] = useState('all')
@@ -54,7 +55,7 @@ function SdkDetail({ sdk }: { sdk: SdkHit }) {
       <button type="button" onClick={() => setOpen((value) => !value)} className="w-full text-left">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <strong className="text-sm text-[var(--text-primary)] break-words">{sdk.sdk_name}</strong>
-          <StatusBadge tone={tone} label={sdk.risk_level ?? '未分级'} size="sm" />
+          <StatusBadge tone={tone} label={sdk.risk_level ? riskLevelLabel(sdk.risk_level) : '未分级'} size="sm" />
           <span className="text-[11px] text-[var(--text-tertiary)]">{sdk.vendor ?? '厂商未知'} · {sdk.category ?? '未分类'}</span>
           <span className="ml-auto text-[11px] text-[var(--text-tertiary)]">{sdk.evidence.length} 条证据 <ChevronDown size={12} className="inline" /></span>
         </div>

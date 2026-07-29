@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  localizeRiskText,
+  riskConfidenceLabel,
   riskLevelLabel,
   safeApplicationName,
   shortDeviceLabel,
@@ -58,4 +60,12 @@ describe('taskPresentation', () => {
     expect(taskTitle(comparison)).toBe('示例应用 · 版本对比')
     expect(shortDeviceLabel('redacted:80a563aa99887766')).toBe('设备 80a563aa')
   })
+
+  it('localizes confidence and risk words embedded in readable report copy', () => {
+    expect(riskConfidenceLabel('low')).toBe('\u8f83\u4f4e')
+    expect(localizeRiskText('risk is low, finding severity medium')).toBe(
+      'risk is \u4f4e\u98ce\u9669, finding severity \u4e2d\u98ce\u9669',
+    )
+  })
+
 })
