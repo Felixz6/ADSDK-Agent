@@ -393,6 +393,7 @@ Web 提交分析请求
 | `MITM_LISTEN_HOST`            | `127.0.0.1` | mitmdump 监听地址                                 |
 | `MITM_READY_TIMEOUT_SECONDS`  |        `10` | mitmproxy addon ready 超时                        |
 | `MITM_STOP_TIMEOUT_SECONDS`   |         `5` | mitmproxy 进程树清理超时                          |
+| `EVIDENCE_CORRELATION_WINDOW_MS` | `2500` | 动态事件—请求时间关联窗口，允许 100–10000 ms |
 
 ### `MITM_LISTEN_HOST` 安全说明
 
@@ -638,7 +639,7 @@ docs/screenshots/
 - 尚未提供任务恢复、取消和实时进度接口；
 - 端口租约仅支持进程内管理；
 - SSL Pinning 可能降低 HTTPS 流量可见性；
-- 动态事件与网络请求尚未完成完整关联；
+- 动态事件与网络请求仅按可信时间信息做轻量关联，不表达因果；
 - 部分 APK 的反调试、兼容性或启动行为可能导致动态采集失败；
 - 当前报告以 JSON 和 Markdown 为主要持久化格式。
 
@@ -650,7 +651,7 @@ docs/screenshots/
 2. 异步、可恢复的分析流水线；
 3. 任务状态、进度和取消接口；
 4. 跨进程端口与设备资源租约；
-5. 动态事件与网络请求关联；
+5. 扩展事件—请求关联的可观测时间来源；
 6. 更完整的规则库和 SDK 指纹库；
 7. HTML / 可导出可视化报告；
 8. 前端任务实时更新与历史持久化。
@@ -850,6 +851,18 @@ adb -s $device shell settings get global http_proxy
 
 完整流程见 [动态可靠性](docs/DYNAMIC_RELIABILITY.md)、[Frida 诊断](docs/FRIDA_DIAGNOSTICS.md)
 与 [MuMu 验收](docs/MUMU_DYNAMIC_ACCEPTANCE.md)。
+
+## M5A 动态事件与网络请求证据关联
+
+- `correlation-v1` 对同一任务内已有 Frida 事件和安全网络请求元数据做确定性时间关联；
+- 默认窗口为 `2500 ms`，每个动态事件最多保留时间差最小的 5 个候选；
+- 两侧具有可比单调时钟时优先使用 monotonic；否则仅在 UTC 均可信且 `run_id` 一致时降级；
+- Consent 阶段明确冲突的候选不进入结果；缺少观察、时间不足和模块异常分别使用
+  `no_observations`、`not_evaluated`、`error`；
+- 输出写入 `output/runs/<run_id>/correlations.json`，并嵌入 JSON、Markdown 和 HTML 报告；
+- 关联只表示“时间上接近”或“可能相关”，不表示动态事件触发请求，也不证明数据由某 API 上传；
+- 关联结果仅包含事件标识、事件类型、请求标识、脱敏主机、方法、时间差、Consent、置信度和原因码，
+  不写入 Cookie、Header、正文、原始 URL 或 query value。
 
 
 ### M4.2 MuMu suspended-spawn 可靠性边界
