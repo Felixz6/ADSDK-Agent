@@ -77,6 +77,10 @@ class AnalysisRunContext:
     def correlations_path(self) -> Path:
         return self.run_dir / "correlations.json"
 
+    @property
+    def privacy_findings_path(self) -> Path:
+        return self.run_dir / "privacy-findings.json"
+
 
 def _normalize_run_id(value: str | UUID | None) -> str:
     if value is None:

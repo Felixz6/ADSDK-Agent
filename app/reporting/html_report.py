@@ -67,6 +67,7 @@ def render_html_report(report: dict[str, Any]) -> str:
     environment_capabilities = report.get("environment_capabilities") or {}
     task_result = report.get("dynamic_task_result") or {}
     correlation = report.get("evidence_correlation")
+    privacy_findings = report.get("privacy_findings")
     dynamic_trusted = (
         events is not None
         and report.get("collection_status") == "success"
@@ -328,6 +329,95 @@ def render_html_report(report: dict[str, Any]) -> str:
             if isinstance(correlation, dict)
             else []
         ),
+        *(
+            [
+                _section(
+                    "privacy-findings",
+                    "可解释隐私发现",
+                    '<div class="notice warning"><strong>结果边界</strong>'
+                    "<p>本结果是基于当前观察窗口和技术证据形成的风险提示，"
+                    "不构成法律合规结论。未观察到某项行为不代表该行为不会在其他设备、"
+                    "时间、账号或操作路径下发生。</p></div>"
+                    + _kv(
+                        [
+                            ("状态", privacy_findings.get("status")),
+                            (
+                                "发现数量",
+                                (privacy_findings.get("summary") or {}).get(
+                                    "finding_count"
+                                ),
+                            ),
+                            (
+                                "已观察事实",
+                                (privacy_findings.get("summary") or {}).get(
+                                    "confirmed_observation_count"
+                                ),
+                            ),
+                            (
+                                "疑似风险提示",
+                                (privacy_findings.get("summary") or {}).get(
+                                    "suspected_risk_count"
+                                ),
+                            ),
+                            (
+                                "证据缺口",
+                                (privacy_findings.get("summary") or {}).get(
+                                    "evidence_gap_count"
+                                ),
+                            ),
+                            (
+                                "未评估规则",
+                                (privacy_findings.get("summary") or {}).get(
+                                    "not_evaluated_rule_count"
+                                ),
+                            ),
+                        ]
+                    )
+                    + _table(
+                        [
+                            "发现",
+                            "类型",
+                            "严重性",
+                            "置信度",
+                            "Consent",
+                            "证据数",
+                            "说明",
+                        ],
+                        (
+                            (
+                                item.get("title"),
+                                item.get("finding_type"),
+                                item.get("severity"),
+                                item.get("confidence"),
+                                item.get("consent_state"),
+                                len(item.get("evidence_refs") or []),
+                                item.get("summary"),
+                            )
+                            for item in privacy_findings.get("findings") or []
+                        ),
+                        "本次观察中没有形成可展示的隐私发现。",
+                    )
+                    + _table(
+                        ["规则", "状态", "原因码"],
+                        (
+                            (
+                                rule.get("rule_id"),
+                                rule.get("status"),
+                                ", ".join(rule.get("reason_codes") or []),
+                            )
+                            for rule in privacy_findings.get("rule_results") or []
+                        ),
+                        "没有可展示的规则评估结果。",
+                    )
+                    + _items(
+                        privacy_findings.get("limitations") or [],
+                        "未记录额外证据限制。",
+                    ),
+                )
+            ]
+            if isinstance(privacy_findings, dict)
+            else []
+        ),
         _section(
             "rules",
             "规则评估结果",
@@ -416,6 +506,11 @@ def render_html_report(report: dict[str, Any]) -> str:
             ("dynamic-quality", "证据质量"),
             ("network", "网络"),
             *(([("correlation", "关联")]) if isinstance(correlation, dict) else []),
+            *(
+                ([("privacy-findings", "隐私发现")])
+                if isinstance(privacy_findings, dict)
+                else []
+            ),
             ("rules", "规则"),
             ("actions", "整改"),
             ("pipeline", "完整性"),
