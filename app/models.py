@@ -228,6 +228,7 @@ class AnalyzeResponse(BaseModel):
     collector_sessions: Optional[Dict[str, Any]] = None
     manifest_evidence: Optional[Dict[str, Any]] = None
     evidence_correlation: Optional[Dict[str, Any]] = None
+    privacy_findings: Optional[Dict[str, Any]] = None
     risk_summary: Optional[RiskSummary] = None
     timeline: Optional[BehaviorTimeline] = None
     compliance_insight: Optional[ComplianceInsight] = None

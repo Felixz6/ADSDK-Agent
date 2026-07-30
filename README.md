@@ -864,6 +864,29 @@ adb -s $device shell settings get global http_proxy
 - 关联结果仅包含事件标识、事件类型、请求标识、脱敏主机、方法、时间差、Consent、置信度和原因码，
   不写入 Cookie、Header、正文、原始 URL 或 query value。
 
+## M5B 可解释隐私发现
+
+- `privacy-findings-v2` 把已有静态、动态、网络、Consent 时间线和 `correlation-v1` 证据
+  转换为确定性、可追溯、可解释的隐私发现；
+- 七条规则独立评估：`PF-PRECONSENT-SENSITIVE-EVENT`、`PF-PRECONSENT-NETWORK`、
+  `PF-PRECONSENT-CORRELATED-ACTIVITY`、`PF-CONSENT-STATE-UNKNOWN`、
+  `PF-DYNAMIC-EVIDENCE-GAP`、`PF-NETWORK-EVIDENCE-GAP`、`PF-POSTCONSENT-OBSERVATION`；
+- 每条发现区分 `finding_type`：`observed`（已观察技术事实）、`suspected`（疑似风险提示）、
+  `evidence_gap`（证据缺口）；规则状态区分 `matched`、`not_matched`、`not_evaluated`、`error`；
+- 严重性与置信度独立：动态证据等级 A 支持高置信，B 高到中，C 最高中，D 不形成确定性动态结论；
+  关联置信度、UTC 墙钟降级和未知 Consent 阶段各自独立压低置信度上限；
+- `finding_id` 由 schema 版本、`rule_id`、排序后的证据标识和 Consent 阶段做 SHA-256 派生，
+  相同输入得到相同标识与相同排序；
+- 规则之间故障隔离：Manifest 解析失败不阻塞动态规则，缺少 `correlation-v1` 不阻塞独立规则，
+  单条规则异常只把该规则记为 `error`，其余规则继续评估；
+- 输出写入 `output/runs/<run_id>/privacy-findings.json`，并嵌入 JSON、Markdown 和 HTML 报告；
+  模块异常时报告仍生成，`privacy_findings.status` 为 `error`；
+- 发现只包含事件标识、事件类型、请求标识、脱敏主机、方法、粗粒度路径摘要、时间、Consent 阶段、
+  关联标识和证据等级，不写入 Cookie、Authorization、Token、请求体、响应体、完整 query value、
+  原始设备序列号、Android ID、IMEI、OAID、广告 ID 或未脱敏设备路径；
+- 结果是风险提示，不是法律合规结论。未观察到某项行为不代表该行为不存在，
+  `not_evaluated` 代表证据不足，不代表安全或合规。
+
 
 ### M4.2 MuMu suspended-spawn 可靠性边界
 

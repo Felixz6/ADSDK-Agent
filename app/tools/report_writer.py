@@ -34,6 +34,7 @@ def write_markdown_report(report: dict, report_path: str):
     environment_capabilities = report.get("environment_capabilities", {}) or {}
     task_result = report.get("dynamic_task_result", {}) or {}
     correlation = report.get("evidence_correlation")
+    privacy_findings = report.get("privacy_findings")
 
     lines = []
     lines.append("# Android 广告 SDK 分析报告")
@@ -303,6 +304,65 @@ def write_markdown_report(report: dict, report_path: str):
             lines.append("")
             lines.append("- 未观察到可关联证据；该结果不表示相关行为未发生。")
         for limitation in correlation.get("limitations") or []:
+            lines.append(f"- 证据限制: {_md_cell(limitation)}")
+
+    if isinstance(privacy_findings, dict):
+        findings_summary = privacy_findings.get("summary") or {}
+        lines.append("")
+        lines.append("## 可解释隐私发现")
+        lines.append("")
+        lines.append(
+            "> 本结果是基于当前观察窗口和技术证据形成的风险提示，不构成法律合规结论。"
+            "未观察到某项行为不代表该行为不会在其他设备、时间、账号或操作路径下发生。"
+        )
+        lines.append("")
+        lines.append(f"- 状态: `{_md_cell(privacy_findings.get('status'))}`")
+        lines.append(
+            f"- 发现数量: `{_md_cell(findings_summary.get('finding_count'))}`"
+        )
+        lines.append(
+            "- 已观察事实 / 疑似风险提示 / 证据缺口: "
+            f"`{_md_cell(findings_summary.get('confirmed_observation_count'))}` / "
+            f"`{_md_cell(findings_summary.get('suspected_risk_count'))}` / "
+            f"`{_md_cell(findings_summary.get('evidence_gap_count'))}`"
+        )
+        lines.append(
+            "- 规则命中 / 未命中 / 未评估 / 异常: "
+            f"`{_md_cell(findings_summary.get('matched_rule_count'))}` / "
+            f"`{_md_cell(findings_summary.get('not_matched_rule_count'))}` / "
+            f"`{_md_cell(findings_summary.get('not_evaluated_rule_count'))}` / "
+            f"`{_md_cell(findings_summary.get('error_rule_count'))}`"
+        )
+        finding_items = privacy_findings.get("findings") or []
+        if finding_items:
+            lines.append("")
+            lines.append("| 发现 | 类型 | 严重性 | 置信度 | Consent | 证据数 | 说明 |")
+            lines.append("|---|---|---|---|---|---:|---|")
+            for item in finding_items[:30]:
+                lines.append(
+                    f"| {_md_cell(item.get('title'))} | "
+                    f"{_md_cell(item.get('finding_type'))} | "
+                    f"{_md_cell(item.get('severity'))} | "
+                    f"{_md_cell(item.get('confidence'))} | "
+                    f"{_md_cell(item.get('consent_state'))} | "
+                    f"{_md_cell(len(item.get('evidence_refs') or []))} | "
+                    f"{_md_cell(item.get('summary'))} |"
+                )
+        else:
+            lines.append("")
+            lines.append("- 本次观察中没有形成可展示的隐私发现；该结果不代表应用安全或合规。")
+        rule_results = privacy_findings.get("rule_results") or []
+        if rule_results:
+            lines.append("")
+            lines.append("| 规则 | 状态 | 原因码 |")
+            lines.append("|---|---|---|")
+            for rule in rule_results:
+                lines.append(
+                    f"| {_md_cell(rule.get('rule_id'))} | "
+                    f"{_md_cell(rule.get('status'))} | "
+                    f"{_md_cell(', '.join(rule.get('reason_codes') or []))} |"
+                )
+        for limitation in privacy_findings.get("limitations") or []:
             lines.append(f"- 证据限制: {_md_cell(limitation)}")
 
     lines.append(f"- collection_status: `{_md_cell(traffic_summary.get('status'))}`")

@@ -18,6 +18,7 @@ import {
 import { GlassCard } from '@/components/common/GlassCard'
 import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
 import { EvidenceCorrelationCard } from '@/components/analysis/EvidenceCorrelationCard'
+import { PrivacyFindingsCard } from '@/components/analysis/PrivacyFindingsCard'
 import type { DynamicExecutionSummary, DynamicModePolicy } from '@/types/api'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
@@ -210,9 +211,14 @@ export default function TaskDetail() {
         <>
           <DynamicReliabilityCard execution={dynamicExecution} />
           {task.report_json_path && (
-            <EvidenceCorrelationCard
-              correlation={reportQuery.data?.report?.evidence_correlation}
-            />
+            <>
+              <EvidenceCorrelationCard
+                correlation={reportQuery.data?.report?.evidence_correlation}
+              />
+              <PrivacyFindingsCard
+                findings={reportQuery.data?.report?.privacy_findings}
+              />
+            </>
           )}
         </>
       )}

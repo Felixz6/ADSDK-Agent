@@ -499,6 +499,80 @@ export interface EvidenceCorrelation {
   limitations: string[]
 }
 
+export type PrivacyFindingsStatus =
+  | 'evaluated'
+  | 'partially_evaluated'
+  | 'not_evaluated'
+  | 'no_observations'
+  | 'error'
+export type PrivacyFindingSeverity = 'high' | 'medium' | 'low' | 'info'
+export type PrivacyFindingConfidence = 'high' | 'medium' | 'low'
+export type PrivacyFindingType = 'observed' | 'suspected' | 'evidence_gap'
+export type PrivacyEvidenceType =
+  | 'manifest'
+  | 'dynamic_event'
+  | 'network_request'
+  | 'correlation'
+  | 'timeline'
+  | 'diagnostic'
+export type PrivacyRuleStatus = 'matched' | 'not_matched' | 'not_evaluated' | 'error'
+
+export interface PrivacyEvidenceRef {
+  evidence_type: PrivacyEvidenceType
+  evidence_id: string
+  artifact: string
+  label: string
+}
+
+export interface PrivacyFinding {
+  finding_id: string
+  rule_id: string
+  title: string
+  category: string
+  severity: PrivacyFindingSeverity
+  confidence: PrivacyFindingConfidence
+  finding_type: PrivacyFindingType
+  consent_state: ConsentState
+  summary: string
+  explanation: string
+  reason_codes: string[]
+  evidence_refs: PrivacyEvidenceRef[]
+  limitations: string[]
+}
+
+export interface PrivacyRuleResult {
+  rule_id: string
+  status: PrivacyRuleStatus
+  reason_codes: string[]
+  evidence_refs: PrivacyEvidenceRef[]
+  limitations: string[]
+}
+
+export interface PrivacyFindingsSummary {
+  finding_count: number
+  high_severity_count: number
+  medium_severity_count: number
+  low_severity_count: number
+  info_severity_count: number
+  confirmed_observation_count: number
+  suspected_risk_count: number
+  evidence_gap_count: number
+  matched_rule_count: number
+  not_matched_rule_count: number
+  not_evaluated_rule_count: number
+  error_rule_count: number
+}
+
+export interface PrivacyFindings {
+  schema_version: 'privacy-findings-v2'
+  status: PrivacyFindingsStatus
+  disclaimer: string
+  findings: PrivacyFinding[]
+  rule_results: PrivacyRuleResult[]
+  summary: PrivacyFindingsSummary
+  limitations: string[]
+}
+
 export interface ComplianceFinding {
   title: string
   severity: RiskLevel
@@ -807,6 +881,7 @@ export interface AnalyzeResponse {
     [key: string]: unknown
   } | null
   evidence_correlation?: EvidenceCorrelation | null
+  privacy_findings?: PrivacyFindings | null
   risk_summary?: RiskSummary | null
   timeline?: BehaviorTimelineData | null
   compliance_insight?: ComplianceInsightData | null
