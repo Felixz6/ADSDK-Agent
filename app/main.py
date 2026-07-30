@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os
 import time
 from collections import Counter
@@ -57,6 +58,10 @@ from app.analyzers.evidence_correlation import (
     EvidenceCorrelationConfig,
     build_error_correlation,
     build_evidence_correlations,
+)
+from app.analyzers.privacy_findings import (
+    build_error_privacy_findings,
+    build_privacy_findings,
 )
 from app.analyzers.risk_scoring import calculate_risk_summary
 from app.analyzers.sdk_intelligence import correlate_sdk_evidence
@@ -864,6 +869,103 @@ def _build_and_write_evidence_correlation(
         payload["status"] = "error"
         payload.setdefault("limitations", []).append(
             "correlations.json 写入失败，主报告仍基于原始证据生成"
+        )
+    return payload
+
+
+def _has_trusted_consent_boundary(timeline_payload: dict[str, Any]) -> bool:
+    """A Consent boundary is trustworthy only with a finite monotonic mark."""
+
+    consent_at = timeline_payload.get("consent_at")
+    if not isinstance(consent_at, dict):
+        return False
+    monotonic = consent_at.get("monotonic_ms")
+    if isinstance(monotonic, bool) or not isinstance(monotonic, (int, float)):
+        return False
+    return math.isfinite(float(monotonic)) and float(monotonic) >= 0
+
+
+def _network_consent_states(
+    network_requests: list[dict[str, Any]],
+    consent_timestamp_utc: str | None,
+) -> dict[str, str]:
+    """Classify request consent stage from UTC evidence already in the record."""
+
+    consent_dt = _parse_utc(consent_timestamp_utc)
+    if consent_dt is None:
+        return {}
+    states: dict[str, str] = {}
+    for index, record in enumerate(network_requests):
+        if not isinstance(record, dict):
+            continue
+        request_id = str(
+            record.get("request_id")
+            or record.get("flow_id")
+            or f"request-{index + 1}"
+        )
+        observed = _parse_utc(record.get("timestamp_utc") or record.get("timestamp"))
+        if observed is None:
+            continue
+        states[request_id] = (
+            "pre_consent" if observed < consent_dt else "post_consent"
+        )
+    return states
+
+
+def _parse_utc(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _build_and_write_privacy_findings(
+    *,
+    context: AnalysisRunContext,
+    dynamic_events: list[dict[str, Any]],
+    network_requests: list[dict[str, Any]],
+    correlation: dict[str, Any] | None,
+    manifest_evidence: dict[str, Any] | None,
+    dynamic_evidence_available: bool,
+    network_evidence_available: bool,
+    consent_boundary_available: bool,
+    dynamic_evidence_grade: str | None,
+    consent_timestamp_utc: str | None = None,
+) -> dict[str, Any]:
+    """Keep privacy-findings failures isolated from the primary report pipeline."""
+
+    try:
+        findings = build_privacy_findings(
+            dynamic_events=dynamic_events,
+            network_requests=network_requests,
+            correlation=correlation,
+            manifest_evidence=manifest_evidence,
+            dynamic_evidence_available=dynamic_evidence_available,
+            network_evidence_available=network_evidence_available,
+            consent_boundary_available=consent_boundary_available,
+            dynamic_evidence_grade=dynamic_evidence_grade,
+            request_consent_states=_network_consent_states(
+                network_requests,
+                consent_timestamp_utc,
+            ),
+        )
+    except Exception as exc:
+        findings = build_error_privacy_findings(reason=type(exc).__name__)
+    payload = findings.model_dump(mode="json")
+    try:
+        atomic_write_json(context.privacy_findings_path, payload)
+    except Exception:
+        payload["status"] = "error"
+        payload.setdefault("limitations", []).append(
+            "privacy-findings.json 写入失败，主报告仍基于原始证据生成"
         )
     return payload
 
@@ -2665,6 +2767,19 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
         context=context,
         dynamic_events=dynamic_events,
         network_requests=correlation_requests,
+        consent_timestamp_utc=consent_timestamp_utc,
+    )
+    consent_boundary_available = _has_trusted_consent_boundary(timeline_payload)
+    report["privacy_findings"] = _build_and_write_privacy_findings(
+        context=context,
+        dynamic_events=dynamic_events,
+        network_requests=correlation_requests,
+        correlation=report["evidence_correlation"],
+        manifest_evidence=manifest_evidence,
+        dynamic_evidence_available=hook_evidence_available,
+        network_evidence_available=network_evidence_available,
+        consent_boundary_available=consent_boundary_available,
+        dynamic_evidence_grade=dynamic_validation_level,
         consent_timestamp_utc=consent_timestamp_utc,
     )
     report, report_error = _finalize_report(report, context, steps)

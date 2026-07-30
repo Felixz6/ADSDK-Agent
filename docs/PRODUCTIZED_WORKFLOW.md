@@ -180,3 +180,48 @@ schema、事件 ID 和请求 ID 确定性生成。
 页面和报告使用“时间上接近”“可能相关”“未观察到可关联证据”。这些描述不表达
 因果关系。关联产物只保留安全请求元数据，不包含 Cookie、Header、正文、原始 URL
 或 query value。旧报告缺少 `evidence_correlation` 时继续正常打开并显示旧版说明。
+
+## M5B 可解释隐私发现
+
+关联完成后生成 `privacy-findings-v2`：
+
+```text
+output/runs/<run_id>/privacy-findings.json
+```
+
+七条规则各自独立评估，互不阻塞：
+
+| 规则 | 覆盖内容 |
+| --- | --- |
+| `PF-PRECONSENT-SENSITIVE-EVENT` | Consent 前敏感 API 调用观察 |
+| `PF-PRECONSENT-NETWORK` | Consent 前网络请求观察 |
+| `PF-PRECONSENT-CORRELATED-ACTIVITY` | Consent 前事件与请求时间接近 |
+| `PF-CONSENT-STATE-UNKNOWN` | Consent 阶段无法判定的观察 |
+| `PF-DYNAMIC-EVIDENCE-GAP` | 动态证据缺失或等级不足 |
+| `PF-NETWORK-EVIDENCE-GAP` | 网络侧证据缺失 |
+| `PF-POSTCONSENT-OBSERVATION` | Consent 后行为基线观察 |
+
+发现类型语义：
+
+- `observed`：已观察到的技术事实；
+- `suspected`：基于时间接近的疑似风险提示，不表达因果关系；
+- `evidence_gap`：证据覆盖不足提示，不是风险判定。
+
+结果状态语义：
+
+- `evaluated`：所有可评估规则完成判定；
+- `partially_evaluated`：部分规则因证据不足未评估；
+- `not_evaluated`：没有可判定的规则；
+- `no_observations`：没有可用于隐私发现的观察；
+- `error`：模块自身异常，主报告继续生成。
+
+置信度只由证据质量决定，与严重性独立。动态等级 A 支持高置信，B 高到中，C 最高
+中，D 不形成确定性动态结论。关联置信度上限、UTC 墙钟降级和未知 Consent 阶段各自
+把上限压到对应级别。`finding_id` 由 schema 版本、`rule_id`、排序后证据标识和
+Consent 阶段做 SHA-256 派生，相同输入得到相同标识与排序。
+
+页面和报告固定展示：“本结果是基于当前观察窗口和技术证据形成的风险提示，不构成
+法律合规结论。未观察到某项行为不代表该行为不会在其他设备、时间、账号或操作路径
+下发生。”发现产物只保留安全标识与元数据，不包含 Cookie、Authorization、Token、
+请求体、响应体、完整 query value、原始设备序列号、Android ID、IMEI、OAID、广告 ID
+或未脱敏设备路径。旧报告缺少 `privacy_findings` 时继续正常打开并显示旧版说明。

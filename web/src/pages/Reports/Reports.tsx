@@ -21,6 +21,7 @@ import { SdkIntelligencePanel } from '@/components/analysis/SdkIntelligencePanel
 import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryPanel'
 import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
 import { EvidenceCorrelationCard } from '@/components/analysis/EvidenceCorrelationCard'
+import { PrivacyFindingsCard } from '@/components/analysis/PrivacyFindingsCard'
 import { ComplianceInsight } from '@/components/report/ComplianceInsight'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
@@ -109,6 +110,7 @@ export default function Reports() {
               traffic={resp.traffic_diagnostics}
           />
           <EvidenceCorrelationCard correlation={resp.evidence_correlation} />
+          <PrivacyFindingsCard findings={resp.privacy_findings} />
         </>
       )}
 
