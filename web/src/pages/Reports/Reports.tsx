@@ -16,6 +16,7 @@ import {
   Printer,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
+import { AISynthesisCard } from '@/components/analysis/AISynthesisCard'
 import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
 import { SdkIntelligencePanel } from '@/components/analysis/SdkIntelligencePanel'
 import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryPanel'
@@ -33,6 +34,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useTaskReport } from '@/hooks/useTasks'
 import { absoluteApiUrl } from '@/api/taskCenter'
 import type { AnalyzeResponse, RuleEvaluationStatus } from '@/types/api'
+import type { AIOrchestrationSection } from '@/types/tasks'
 import { cn, copyText } from '@/utils'
 import { riskLevelLabel, safeApplicationName } from '@/utils/taskPresentation'
 
@@ -65,6 +67,8 @@ export default function Reports() {
     apkPath: resp.normalized_apk_name || resp.apk_path,
     packageName: resp.app_info?.package_name,
   })
+  // 旧报告没有 ai_orchestration 字段:AI 区块不渲染,其余部分完全不变。
+  const aiSection = (resp as { ai_orchestration?: AIOrchestrationSection }).ai_orchestration ?? null
 
   return (
     <div className="flex flex-col gap-5">
@@ -97,6 +101,8 @@ export default function Reports() {
       </div>
 
       <RiskSummaryCard summary={resp.risk_summary} />
+
+      <AISynthesisCard section={aiSection} />
 
       {isDynamic && (
         <>

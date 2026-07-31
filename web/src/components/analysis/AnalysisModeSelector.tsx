@@ -1,8 +1,8 @@
 import { useId } from 'react'
-import { FileSearch, Activity, Network } from 'lucide-react'
+import { FileSearch, Activity, Network, Bot } from 'lucide-react'
 import { cn } from '@/utils'
 
-export type AnalysisMode = 'static' | 'dynamic' | 'traffic'
+export type AnalysisMode = 'static' | 'dynamic' | 'traffic' | 'ai'
 
 interface ModeOption {
   value: AnalysisMode
@@ -15,6 +15,7 @@ const OPTIONS: ModeOption[] = [
   { value: 'static', label: '静态分析', desc: '解包识别 SDK 与清单', icon: FileSearch },
   { value: 'dynamic', label: '动态分析', desc: ' consenting 前后行为取证', icon: Activity },
   { value: 'traffic', label: '流量观测', desc: '记录网络外发样本', icon: Network },
+  { value: 'ai', label: 'AI 编排分析', desc: '按目标编排工具并生成综合研判', icon: Bot },
 ]
 
 export interface AnalysisModeSelectorProps {
@@ -28,7 +29,7 @@ export function AnalysisModeSelector({ value, onChange, disabled }: AnalysisMode
   return (
     <fieldset className="flex flex-col gap-2" disabled={disabled}>
       <legend className="text-sm font-medium text-[var(--text-secondary)] mb-1">分析模式</legend>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
         {OPTIONS.map((opt) => {
           const Icon = opt.icon
           const active = value === opt.value

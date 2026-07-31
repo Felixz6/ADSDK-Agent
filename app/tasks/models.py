@@ -5,15 +5,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-TaskType = Literal["static", "dynamic", "comparison"]
+TaskType = Literal["static", "dynamic", "comparison", "ai_orchestrated"]
 TaskStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 TaskStepStatus = Literal["success", "partial", "failed", "skipped", "running"]
+AnalysisScope = Literal[
+    "static_only", "dynamic_only", "full_analysis", "report_only"
+]
 
 
 class TaskCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    task_type: Literal["static", "dynamic"]
+    task_type: Literal["static", "dynamic", "ai_orchestrated"]
     apk_path: str = Field(min_length=1, max_length=32768)
     package_name: str | None = Field(default=None, max_length=512)
     device_id: str | None = Field(default=None, max_length=256)
@@ -24,6 +27,21 @@ class TaskCreateRequest(BaseModel):
     post_consent_seconds: int = Field(default=10, ge=0, le=3600)
     collection_timeout_seconds: int = Field(default=300, ge=1, le=86400)
     dynamic_mode_policy: Literal["strict", "balanced", "attach_only"] = "balanced"
+
+    # --- AI orchestration (task_type="ai_orchestrated") --------------------
+    # All AI fields are optional so existing static/dynamic submissions keep
+    # their exact current shape and behaviour.
+    objective: str | None = Field(default=None, max_length=2000)
+    analysis_scope: AnalysisScope = "static_only"
+    allow_dynamic: bool = False
+    allow_network: bool = False
+    ai_enabled: bool = True
+    # Bounded on both ends: an unlimited budget is never accepted.
+    token_budget: int = Field(default=6000, ge=256, le=200_000)
+    report_language: str = Field(default="zh-CN", max_length=16)
+    # Explicit confirmations for device_state_change tools. Without an entry
+    # here the orchestrator refuses to execute the tool.
+    confirmed_tools: list[str] = Field(default_factory=list, max_length=8)
 
 
 class TaskStepRecord(BaseModel):
@@ -99,3 +117,32 @@ class TaskSystemStatus(BaseModel):
     running_tasks: int
     queued_tasks: int
     occupied_devices: list[str] = Field(default_factory=list)
+
+
+class AIStatusResponse(BaseModel):
+    """Public AI availability. Never exposes the API key or its length."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    provider: str
+    model: str
+    configured: bool
+    reachable: bool | None = None
+    last_error_code: str | None = None
+    default_token_budget: int
+    max_rounds: int
+    max_tool_calls: int
+    report_language: str
+    allow_dynamic_tools: bool
+
+
+class TaskAIArtifactResponse(BaseModel):
+    """Wrapper for ai-plan.json / ai-report.json reads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    status: TaskStatus
+    available: bool
+    payload: dict[str, Any] | None = None

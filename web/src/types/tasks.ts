@@ -1,11 +1,12 @@
 import type { AnalyzeResponse } from './api'
 
-export type TaskType = 'static' | 'dynamic' | 'comparison'
+export type TaskType = 'static' | 'dynamic' | 'comparison' | 'ai_orchestrated'
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type TaskStepStatus = 'success' | 'partial' | 'failed' | 'skipped' | 'running'
+export type AnalysisScope = 'static_only' | 'dynamic_only' | 'full_analysis' | 'report_only'
 
 export interface TaskCreateRequest {
-  task_type: 'static' | 'dynamic'
+  task_type: 'static' | 'dynamic' | 'ai_orchestrated'
   apk_path: string
   package_name?: string
   device_id?: string
@@ -16,6 +17,15 @@ export interface TaskCreateRequest {
   post_consent_seconds?: number
   collection_timeout_seconds?: number
   dynamic_mode_policy?: 'strict' | 'balanced' | 'attach_only'
+  /** AI 编排分析(task_type='ai_orchestrated')专用字段 */
+  objective?: string
+  analysis_scope?: AnalysisScope
+  allow_dynamic?: boolean
+  allow_network?: boolean
+  ai_enabled?: boolean
+  token_budget?: number
+  report_language?: string
+  confirmed_tools?: string[]
 }
 
 export interface TaskStep {
@@ -100,6 +110,133 @@ export interface TaskSystemStatus {
   running_tasks: number
   queued_tasks: number
   occupied_devices: string[]
+}
+
+// --- AI 编排(M6A)-----------------------------------------------------------
+export type AISynthesisStatus =
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'budget_exhausted'
+  | 'disabled'
+
+export type AIToolStatus =
+  | 'success'
+  | 'partial'
+  | 'failed'
+  | 'not_run'
+  | 'blocked_confirmation_required'
+
+/** GET /ai/status —— 绝不包含 API Key */
+export interface AIStatusResponse {
+  enabled: boolean
+  provider: string
+  model: string
+  configured: boolean
+  /** null 表示「未按需探测」,不是「不可达」 */
+  reachable: boolean | null
+  last_error_code: string | null
+  default_token_budget: number
+  max_rounds: number
+  max_tool_calls: number
+  report_language: string
+  allow_dynamic_tools: boolean
+}
+
+export interface AIPlanStep {
+  step_id: string
+  tool_name: string
+  reason: string
+  arguments: Record<string, unknown>
+  depends_on: string[]
+  requires_confirmation: boolean
+}
+
+export interface AIPlan {
+  schema_version: 'ai-plan-v1'
+  objective: string
+  strategy: AnalysisScope
+  steps: AIPlanStep[]
+  expected_outputs: string[]
+  stop_conditions: string[]
+  limitations: string[]
+  generated_by: 'ai' | 'default'
+}
+
+export interface AIKeyFinding {
+  title: string
+  severity: 'high' | 'medium' | 'low' | 'info'
+  confidence: 'high' | 'medium' | 'low'
+  summary: string
+  evidence_refs: string[]
+}
+
+export interface AIReport {
+  schema_version: 'ai-report-v1'
+  status: AISynthesisStatus
+  executive_summary: string
+  key_findings: AIKeyFinding[]
+  evidence_gaps: string[]
+  risk_priorities: string[]
+  recommended_actions: string[]
+  evidence_refs: string[]
+  limitations: string[]
+  disclaimer: string
+  usage: Record<string, unknown>
+}
+
+export interface AITokenUsage {
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  estimated_tokens: number
+  tool_call_count: number
+  model_round_count: number
+  latency_ms: number
+  cache_hit: boolean
+  budget_exhausted: boolean
+  usage_is_estimate: boolean
+}
+
+export interface AIToolTraceStep {
+  step_id: string
+  tool_name: string
+  started_at: string | null
+  ended_at: string | null
+  status: AIToolStatus
+  safe_summary: string
+  artifact_refs: string[]
+  reused: boolean
+  confirmation_required: boolean
+  decision_summary: string | null
+}
+
+export interface AIToolTrace {
+  trace_id: string
+  steps: AIToolTraceStep[]
+  model_round_count: number
+  cache_hit: boolean
+  budget_exhausted: boolean
+}
+
+/** report.json 中的 ai_orchestration 段(旧报告没有该字段) */
+export interface AIOrchestrationSection {
+  schema_version: 'ai-report-v1'
+  status: AISynthesisStatus
+  plan: AIPlan
+  report: AIReport
+  usage: AITokenUsage
+  trace: AIToolTrace
+  evidence_digest_hash: string
+  error_code: string | null
+  unavailable_reason: string | null
+}
+
+export interface TaskAIArtifactResponse {
+  task_id: string
+  status: TaskStatus
+  available: boolean
+  payload: Record<string, unknown> | null
 }
 
 export interface DifferenceSet {
