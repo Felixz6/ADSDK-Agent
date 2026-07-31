@@ -55,6 +55,15 @@ _DYNAMIC_PROGRESS = {
     "rule_evaluation": 94,
     "report_write": 97,
 }
+# AI orchestration reuses the deterministic step keys and appends its own
+# phases; the deterministic analysis still dominates the progress curve.
+_AI_PROGRESS = {
+    **_DYNAMIC_PROGRESS,
+    "ai_planning": 80,
+    "ai_tool_execution": 88,
+    "ai_evidence_digest": 92,
+    "ai_report": 96,
+}
 
 
 class TaskService:
@@ -118,7 +127,13 @@ class TaskService:
         private_payload = self.repository.get_request_payload(task_id)
         task = task.model_copy(update={"request_payload": private_payload})
         device_lock: threading.Lock | None = None
-        if task.task_type == "dynamic":
+        # An AI task that is permitted to run device-touching tools must take
+        # the same device lease a plain dynamic task takes.
+        needs_device = task.task_type == "dynamic" or (
+            task.task_type == "ai_orchestrated"
+            and bool(private_payload.get("allow_dynamic"))
+        )
+        if needs_device:
             key = task.device_id or "__unselected_device__"
             with self._lock:
                 device_lock = self._device_locks.setdefault(key, threading.Lock())
@@ -235,7 +250,13 @@ class TaskService:
         status: str,
         message: str | None,
     ) -> None:
-        progress_map = _DYNAMIC_PROGRESS if task_type == "dynamic" else _STATIC_PROGRESS
+        progress_map = (
+            _AI_PROGRESS
+            if task_type == "ai_orchestrated"
+            else _DYNAMIC_PROGRESS
+            if task_type == "dynamic"
+            else _STATIC_PROGRESS
+        )
         progress = progress_map.get(step_key)
         if progress is None:
             current = self.repository.get_task(task_id, include_steps=False)

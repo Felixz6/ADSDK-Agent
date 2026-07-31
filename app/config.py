@@ -153,3 +153,42 @@ REDACTION_HMAC_KEY = os.getenv(
 )
 
 SCHEMA_VERSION = "1.0"
+
+
+# ---------------------------------------------------------------------------
+# AI orchestration (M6A).
+#
+# Everything here defaults OFF: enabling AI must never change existing
+# deterministic analysis or report behaviour. API keys are read from the
+# environment only and never logged/persisted by config. The AI module owns
+# its own redaction; this block only captures raw configurable surface.
+# ---------------------------------------------------------------------------
+AI_ENABLED = _env_bool("AI_ENABLED", default=False)
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openai_compatible").strip() or (
+    "openai_compatible"
+)
+
+# API key: env var only. Never read a literal value here; never log it.
+AI_API_KEY = os.getenv("AI_API_KEY", "")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip()
+AI_MODEL = os.getenv("AI_MODEL", "").strip()
+AI_TIMEOUT_SECONDS = _env_int_range("AI_TIMEOUT_SECONDS", 60, 1, 600)
+AI_MAX_ROUNDS = _env_int_range("AI_MAX_ROUNDS", 2, 1, 6)
+AI_MAX_TOOL_CALLS = _env_int_range("AI_MAX_TOOL_CALLS", 6, 1, 20)
+AI_MAX_INPUT_TOKENS = _env_int_range("AI_MAX_INPUT_TOKENS", 6000, 512, 65536)
+AI_MAX_OUTPUT_TOKENS = _env_int_range("AI_MAX_OUTPUT_TOKENS", 1800, 128, 16384)
+AI_MAX_TOOL_RESULT_CHARS = _env_int_range(
+    "AI_MAX_TOOL_RESULT_CHARS", 8000, 256, 65536
+)
+AI_CACHE_ENABLED = _env_bool("AI_CACHE_ENABLED", default=True)
+AI_CACHE_TTL_SECONDS = _env_int_range("AI_CACHE_TTL_SECONDS", 86400, 60, 604800)
+AI_REPORT_LANGUAGE = os.getenv("AI_REPORT_LANGUAGE", "zh-CN").strip() or "zh-CN"
+# When False, dynamic/device-touching tools are never offered to the model
+# regardless of the task objective (defense-in-depth on the capability router).
+AI_ALLOW_DYNAMIC_TOOLS = _env_bool("AI_ALLOW_DYNAMIC_TOOLS", default=False)
+# Tagged version of the system prompt / tool definitions. Bump it when the
+# prompt or tool schemas change; it is part of the cache key so cached answers
+# are not reused against a different prompt surface.
+AI_PROMPT_VERSION = os.getenv("AI_PROMPT_VERSION", "ai-plan-v1.0").strip() or (
+    "ai-plan-v1.0"
+)

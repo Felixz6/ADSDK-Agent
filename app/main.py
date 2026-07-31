@@ -1,4 +1,5 @@
 import asyncio
+import json
 import math
 import os
 import time
@@ -14,6 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import (
+    AI_ALLOW_DYNAMIC_TOOLS,
+    AI_ENABLED,
+    AI_MAX_ROUNDS,
+    AI_MAX_TOOL_CALLS,
+    AI_PROVIDER,
+    AI_REPORT_LANGUAGE,
     ALLOW_UNC_APK_PATHS,
     APK_ALLOWED_ROOTS,
     APK_MAX_SIZE_BYTES,
@@ -66,6 +73,13 @@ from app.analyzers.privacy_findings import (
 from app.analyzers.risk_scoring import calculate_risk_summary
 from app.analyzers.sdk_intelligence import correlate_sdk_evidence
 from app.analyzers.timeline_builder import build_timeline
+from app.ai.orchestrator import (
+    AIOrchestrationRequest,
+    AIOrchestrationResult,
+    AIOrchestrator,
+)
+from app.ai.provider import build_provider_from_config as build_ai_provider
+from app.ai.tool_registry import AIToolRegistry
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
 from app.frida import (
     DynamicModePolicy,
@@ -86,12 +100,14 @@ from app.comparisons import (
 )
 from app.reporting import write_html_report
 from app.repositories import TaskRepository
-from app.services import TaskService
+from app.services import AITaskService, TaskService
 from app.services.application_name_service import (
     repair_historical_application_names,
 )
 from app.tasks.models import (
+    AIStatusResponse,
     TaskActionResponse,
+    TaskAIArtifactResponse,
     TaskCreateRequest,
     TaskListResponse,
     TaskRecord,
@@ -99,6 +115,8 @@ from app.tasks.models import (
     TaskSystemStatus,
 )
 from app.tasks.runtime import (
+    TaskCancelled,
+    checkpoint,
     current_task_id,
     register_cleanup,
     report_step,
@@ -2811,7 +2829,179 @@ def _run_persisted_task(task: TaskRecord):
         return analyze(AnalyzeRequest(apk_path=str(payload["apk_path"])))
     if task.task_type == "dynamic":
         return dynamic_analyze(DynamicAnalyzeRequest.model_validate(payload))
+    if task.task_type == "ai_orchestrated":
+        return _run_ai_orchestrated_task(task, payload)
     raise ValueError(f"unsupported executable task type: {task.task_type}")
+
+
+def _run_ai_orchestrated_task(
+    task: TaskRecord,
+    payload: dict[str, Any],
+) -> dict[str, Any] | JSONResponse:
+    """Run one ``ai_orchestrated`` task.
+
+    The deterministic analysis runs first and owns the task's success/failure
+    semantics. AI orchestration then layers scheduling and narration on top:
+    an AI failure degrades the AI section only and never fails the task.
+    """
+
+    scope = str(payload.get("analysis_scope") or "static_only")
+    allow_dynamic = bool(payload.get("allow_dynamic"))
+    apk_path = str(payload["apk_path"])
+
+    # 1. Deterministic analysis via the existing entry points. This is the
+    #    same code path the plain static / dynamic task types use.
+    report_step("ai_planning", "running", "正在准备确定性证据")
+    deterministic: dict[str, Any] | JSONResponse
+    if allow_dynamic and scope in {"dynamic_only", "full_analysis"}:
+        dynamic_request = DynamicAnalyzeRequest.model_validate(
+            {
+                key: value
+                for key, value in payload.items()
+                if key in DynamicAnalyzeRequest.model_fields
+            }
+        )
+        deterministic = dynamic_analyze(dynamic_request)
+    else:
+        deterministic = analyze(AnalyzeRequest(apk_path=apk_path))
+
+    base_report = task_service_response_payload(deterministic)
+    run_dir = _ai_run_dir(base_report)
+
+    # 2. AI orchestration. Every failure inside this block degrades the AI
+    #    section only; the deterministic report above is already published.
+    ai_section: dict[str, Any]
+    try:
+        ai_section = _execute_ai_orchestration(
+            task=task,
+            payload=payload,
+            run_dir=run_dir,
+            base_report=base_report,
+        )
+    except TaskCancelled:
+        raise
+    except Exception as exc:
+        ai_section = {
+            "status": "failed",
+            "error_code": "ai_orchestration_failed",
+            "limitations": [f"AI 编排执行异常：{type(exc).__name__}"],
+        }
+
+    base_report["ai_orchestration"] = ai_section
+    # Re-publish report.json so the AI section is part of the persisted
+    # artifact, without touching any deterministic field.
+    try:
+        if run_dir is not None:
+            atomic_write_json(run_dir / "report.json", base_report)
+    except Exception:
+        base_report.setdefault("limitations", []).append(
+            "AI 综合研判未能写入 report.json，确定性证据不受影响"
+        )
+    if isinstance(deterministic, JSONResponse):
+        return JSONResponse(
+            status_code=deterministic.status_code,
+            content=base_report,
+        )
+    return base_report
+
+
+def task_service_response_payload(
+    result: dict[str, Any] | JSONResponse,
+) -> dict[str, Any]:
+    """Normalise a runner result to a plain dict without losing failure state."""
+
+    if isinstance(result, JSONResponse):
+        return json.loads(result.body.decode("utf-8"))
+    return dict(result)
+
+
+def _ai_run_dir(report: dict[str, Any]) -> Path | None:
+    raw = report.get("output_dir")
+    if not raw:
+        return None
+    candidate = Path(str(raw))
+    return candidate if candidate.is_dir() else None
+
+
+def _execute_ai_orchestration(
+    *,
+    task: TaskRecord,
+    payload: dict[str, Any],
+    run_dir: Path | None,
+    base_report: dict[str, Any],
+) -> dict[str, Any]:
+    """Build and run the orchestrator, returning the public AI section."""
+
+    report_step("ai_tool_execution", "running", "正在执行 AI 编排工具")
+    scope = str(payload.get("analysis_scope") or "static_only")
+    allow_dynamic = bool(payload.get("allow_dynamic"))
+    confirmed = frozenset(
+        str(item) for item in (payload.get("confirmed_tools") or [])
+    )
+    ai_enabled = AI_ENABLED and bool(payload.get("ai_enabled", True))
+
+    provider = build_ai_provider() if ai_enabled else None
+    orchestrator = AIOrchestrator(
+        provider=provider,
+        registry=AIToolRegistry(allow_dynamic_tools=AI_ALLOW_DYNAMIC_TOOLS),
+        enabled=ai_enabled,
+        cancelled=_ai_cancelled,
+    )
+    service = AITaskService(
+        orchestrator=orchestrator,
+        run_dir=run_dir or Path(OUTPUT_DIR),
+        static_runner=lambda: base_report,
+        dynamic_runner=lambda: base_report,
+        environment_probe=lambda: env_check(payload.get("device_id")),
+    )
+    request = AIOrchestrationRequest(
+        objective=str(payload.get("objective") or "分析本次 APK 的隐私风险"),
+        analysis_scope=scope,
+        task_id=task.id,
+        allow_dynamic=allow_dynamic,
+        allow_network=bool(payload.get("allow_network")),
+        confirmed_tools=confirmed,
+        token_budget=int(payload.get("token_budget") or 0) or None,
+        report_language=str(payload.get("report_language") or AI_REPORT_LANGUAGE),
+        run_dir=run_dir,
+    )
+    report_step("ai_evidence_digest", "running", "正在构建证据摘要")
+    result = service.run(request)
+    report_step(
+        "ai_report",
+        "success" if result.status in {"completed", "partial"} else "partial",
+        f"AI 综合研判：{result.status}",
+    )
+    return _public_ai_section(result)
+
+
+def _ai_cancelled() -> bool:
+    """Cancellation probe for the orchestrator (never raises)."""
+
+    try:
+        checkpoint()
+    except TaskCancelled:
+        return True
+    return False
+
+
+def _public_ai_section(result: AIOrchestrationResult) -> dict[str, Any]:
+    """The AI section embedded in report.json / the API response.
+
+    Contains no API key, no raw model request/response, and no reasoning text.
+    """
+
+    return {
+        "schema_version": "ai-report-v1",
+        "status": result.status,
+        "plan": result.plan.model_dump(mode="json"),
+        "report": result.report.model_dump(mode="json"),
+        "usage": result.usage.model_dump(mode="json"),
+        "trace": result.trace.model_dump(mode="json"),
+        "evidence_digest_hash": result.digest.digest_hash,
+        "error_code": result.error_code,
+        "unavailable_reason": result.unavailable_reason,
+    }
 
 
 task_service.set_runner(_run_persisted_task)
@@ -2839,7 +3029,7 @@ def list_tasks(
     sort: str = Query(default="-created_at"),
 ):
     allowed_statuses = {"queued", "running", "completed", "failed", "cancelled"}
-    allowed_types = {"static", "dynamic", "comparison"}
+    allowed_types = {"static", "dynamic", "comparison", "ai_orchestrated"}
     if status and status not in allowed_statuses:
         raise HTTPException(
             status_code=422,
@@ -2871,6 +3061,82 @@ def task_system_status():
         queued_tasks=queued,
         occupied_devices=task_service.occupied_devices(),
     )
+
+
+@app.get("/ai/status", response_model=AIStatusResponse)
+def ai_status(probe: bool = Query(default=False)):
+    """Public AI availability.
+
+    Never returns the API key (or any derivative of it). ``reachable`` is only
+    evaluated when ``probe=true`` so a page load never calls the external
+    model; otherwise it stays ``null`` ("not probed").
+    """
+
+    provider = build_ai_provider()
+    configuration_error = provider.configuration_error()
+    configured = configuration_error is None
+    reachable: bool | None = None
+    last_error_code: str | None = (
+        str(configuration_error.get("error_code"))
+        if configuration_error is not None
+        else None
+    )
+    if probe and AI_ENABLED and configured:
+        try:
+            reachable, reason = provider.reachable()
+            if not reachable:
+                last_error_code = f"ai_provider_{reason or 'unreachable'}"
+        except Exception:
+            reachable = False
+            last_error_code = "ai_provider_unreachable"
+    return AIStatusResponse(
+        enabled=AI_ENABLED,
+        provider=AI_PROVIDER,
+        model=getattr(provider, "model", ""),
+        configured=configured,
+        reachable=reachable,
+        last_error_code=last_error_code,
+        default_token_budget=6000,
+        max_rounds=AI_MAX_ROUNDS,
+        max_tool_calls=AI_MAX_TOOL_CALLS,
+        report_language=AI_REPORT_LANGUAGE,
+        allow_dynamic_tools=AI_ALLOW_DYNAMIC_TOOLS,
+    )
+
+
+def _read_task_ai_artifact(task_id: str, filename: str) -> TaskAIArtifactResponse:
+    task = task_service.get(task_id)
+    if task is None:
+        raise _task_not_found(task_id)
+    payload: dict[str, Any] | None = None
+    if task.report_json_path:
+        candidate = Path(task.report_json_path).resolve(strict=False).parent / filename
+        allowed = (Path(OUTPUT_DIR).resolve(strict=False) / "runs").resolve(
+            strict=False
+        )
+        if candidate.is_relative_to(allowed) and candidate.is_file():
+            try:
+                loaded = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                loaded = None
+            if isinstance(loaded, dict):
+                payload = loaded
+    return TaskAIArtifactResponse(
+        task_id=task_id,
+        status=task.status,
+        available=payload is not None,
+        payload=payload,
+    )
+
+
+@app.get("/tasks/{task_id}/ai-plan", response_model=TaskAIArtifactResponse)
+def get_task_ai_plan(task_id: str):
+    return _read_task_ai_artifact(task_id, "ai-plan.json")
+
+
+@app.get("/tasks/{task_id}/ai-report", response_model=TaskAIArtifactResponse)
+def get_task_ai_report(task_id: str):
+    return _read_task_ai_artifact(task_id, "ai-report.json")
 
 
 @app.get("/tasks/{task_id}", response_model=TaskRecord)
