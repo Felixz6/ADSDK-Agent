@@ -11,8 +11,11 @@ import {
   createComparison,
   createTask,
   deleteTask,
+  getAIStatus,
   getComparison,
   getTask,
+  getTaskAIPlan,
+  getTaskAIReport,
   getTaskReport,
   getTaskSystemStatus,
   listComparisons,
@@ -21,9 +24,11 @@ import {
   taskWebSocketUrl,
 } from '@/api/taskCenter'
 import type {
+  AIStatusResponse,
   ComparisonCreateRequest,
   ComparisonResult,
   TaskActionResponse,
+  TaskAIArtifactResponse,
   TaskCreateRequest,
   TaskFilters,
   TaskListResponse,
@@ -178,5 +183,38 @@ export function useComparison(comparisonId: string | undefined) {
     queryFn: ({ signal }) => getComparison(comparisonId ?? '', signal),
     enabled: Boolean(comparisonId),
     staleTime: Infinity,
+  })
+}
+
+/**
+ * AI 可用性。默认不探测外部模型:reachable 为 null 表示「未探测」。
+ * 只有显式传 probe 才会按需调用一次外部模型可达性检查。
+ */
+export function useAIStatus(options: { probe?: boolean } = {}) {
+  return useQuery<AIStatusResponse, ApiError>({
+    queryKey: ['ai', 'status', options.probe ?? false],
+    queryFn: ({ signal }) => getAIStatus(options, signal),
+    staleTime: 60_000,
+    retry: false,
+  })
+}
+
+export function useTaskAIPlan(taskId: string | undefined, enabled = true) {
+  return useQuery<TaskAIArtifactResponse, ApiError>({
+    queryKey: ['tasks', 'ai-plan', taskId],
+    queryFn: ({ signal }) => getTaskAIPlan(taskId ?? '', signal),
+    enabled: Boolean(taskId) && enabled,
+    staleTime: 15_000,
+    retry: false,
+  })
+}
+
+export function useTaskAIReport(taskId: string | undefined, enabled = true) {
+  return useQuery<TaskAIArtifactResponse, ApiError>({
+    queryKey: ['tasks', 'ai-report', taskId],
+    queryFn: ({ signal }) => getTaskAIReport(taskId ?? '', signal),
+    enabled: Boolean(taskId) && enabled,
+    staleTime: 15_000,
+    retry: false,
   })
 }
