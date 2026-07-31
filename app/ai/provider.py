@@ -199,6 +199,19 @@ class OpenAICompatibleProvider:
             return self._transport  # type: ignore[return-value]
         return httpx.Client(timeout=self._timeout)
 
+    def _make_client(self) -> httpx.Client:
+        """Build a fresh client for a single request scope.
+
+        When a transport is injected (tests), we wrap it in a throwaway
+        :class:`httpx.Client` so each probe attempt gets its own close-able
+        scope (``with`` can only be entered once per instance). When no
+        transport is injected, this is identical to :meth:`_client`.
+        """
+
+        if self._transport is not None:
+            return httpx.Client(transport=self._transport, timeout=self._timeout)
+        return httpx.Client(timeout=self._timeout)
+
     def _chat_url(self) -> str:
         base = self._base_url.rstrip("/")
         return f"{base}/chat/completions"
@@ -306,6 +319,135 @@ class OpenAICompatibleProvider:
         except httpx.HTTPError:
             return False, "unreachable"
         return True, None
+
+    # ------------------------------------------------------------------
+    # Structured reachability probe used by POST /ai/settings/test.
+    #
+    # Strategy (per M6B): do not depend on ``/models`` alone. Some OpenAI-
+    # compatible gateways return 404/405 for ``/models`` while still serving
+    # ``/chat/completions``. So:
+    #
+    #   1. Try ``GET /models`` — a 2xx means reachable.
+    #   2. On 404/405 (or any non-2xx that is not an auth failure), fall back
+    #      to a minimal chat completion with ``max_tokens=1`` and a fixed
+    #      short prompt. No tools, no response_format, no report/cache.
+    #   3. 401/403 from either probe → ``authentication_failed``.
+    #   4. Any timeout → ``timeout``. Other transport errors → unreachable.
+    #
+    # The probe names which path it took via ``models_endpoint_supported``.
+    # The returned message is safe (no key, no host echo beyond what the
+    # caller already supplied).
+    # ------------------------------------------------------------------
+    _PROBE_PROMPT = "ping"
+
+    def probe_reachable(self, *, timeout_seconds: float | None = None) -> dict[str, Any]:
+        """Return a structured reachability dict; never raises, never logs key."""
+
+        if not self.is_configured():
+            return {
+                "status": "invalid_configuration",
+                "provider": self.name,
+                "model": self._model,
+                "latency_ms": 0,
+                "safe_message": "缺少 base_url / api_key / model",
+                "models_endpoint_supported": False,
+            }
+        timeout = float(timeout_seconds if timeout_seconds is not None else self._timeout)
+        started = time.perf_counter()
+
+        # Step 1: /models.
+        try:
+            with self._make_client() as client:
+                models_resp = client.get(
+                    f"{self._base_url.rstrip('/')}/models",
+                    headers=self._auth_headers(),
+                    timeout=min(timeout, 10.0),
+                )
+        except httpx.TimeoutException:
+            return self._probe_failure("timeout", "探测超时", started)
+        except httpx.HTTPError:
+            return self._probe_failure("unreachable", "网关不可达", started)
+
+        if models_resp.status_code in (401, 403):
+            return self._probe_failure(
+                "authentication_failed", "鉴权失败", started
+            )
+        if 200 <= models_resp.status_code < 300:
+            return {
+                "status": "reachable",
+                "provider": self.name,
+                "model": self._model,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "safe_message": "通过 /models 探测成功",
+                "models_endpoint_supported": True,
+            }
+
+        # Step 2: minimal chat fallback (e.g. /models returned 404/405).
+        chat_payload = {
+            "model": self._model,
+            "messages": [{"role": "user", "content": self._PROBE_PROMPT}],
+            "max_tokens": 1,
+            "temperature": 0,
+        }
+        try:
+            with self._make_client() as client:
+                chat_resp = client.post(
+                    self._chat_url(),
+                    json=chat_payload,
+                    headers=self._auth_headers(),
+                    timeout=timeout,
+                )
+        except httpx.TimeoutException:
+            return self._probe_failure(
+                "timeout", "探测超时（最小聊天探测）", started,
+                models_supported=False,
+            )
+        except httpx.HTTPError:
+            return self._probe_failure(
+                "unreachable", "网关不可达（最小聊天探测）", started,
+                models_supported=False,
+            )
+
+        if chat_resp.status_code in (401, 403):
+            return self._probe_failure(
+                "authentication_failed", "鉴权失败", started, models_supported=False
+            )
+        if 200 <= chat_resp.status_code < 300:
+            return {
+                "status": "reachable",
+                "provider": self.name,
+                "model": self._model,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "safe_message": "通过最小聊天探测成功（/models 不可用）",
+                "models_endpoint_supported": False,
+            }
+        if chat_resp.status_code >= 400:
+            return self._probe_failure(
+                "invalid_configuration",
+                f"网关返回 HTTP {chat_resp.status_code}",
+                started,
+                models_supported=False,
+            )
+        return self._probe_failure(
+            "unreachable", "网关响应异常", started, models_supported=False
+        )
+
+    def _probe_failure(
+        self,
+        status: str,
+        safe_message: str,
+        started: float,
+        *,
+        models_supported: bool | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": status,
+            "provider": self.name,
+            "model": self._model,
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+            "safe_message": safe_message,
+            "models_endpoint_supported": bool(models_supported),
+        }
 
 
 def _parse_chat_completion(body: dict[str, Any], latency_ms: int) -> ProviderResponse:
