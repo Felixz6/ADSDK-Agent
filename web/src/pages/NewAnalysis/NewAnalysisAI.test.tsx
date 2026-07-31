@@ -31,6 +31,38 @@ const AI_STATUS_DISABLED = {
   last_error_code: 'ai_not_configured',
 }
 
+/**
+ * M6B：Settings 的 AI 卡片由只读展示改为可编辑表单,数据源从 /ai/status
+ * 换成脱敏的 /ai/settings。此 fixture 与后端 `AISettingsResponse` 一致,
+ * 结构上就**不含** api_key —— 前端无从取得密钥原值。
+ */
+const AI_SETTINGS_CONFIGURED = {
+  schema_version: 'ai-settings-v1',
+  enabled: true,
+  provider: 'openai_compatible',
+  base_url: 'https://example.com/v1',
+  model: 'gpt-4o-mini',
+  api_key_configured: true,
+  api_key_source: 'local_store',
+  default_token_budget: 6000,
+  max_rounds: 2,
+  max_tool_calls: 6,
+  timeout_seconds: 60,
+  max_input_tokens: 6000,
+  max_output_tokens: 1800,
+  cache_enabled: true,
+  cache_ttl_seconds: 86400,
+  allow_dynamic_tools: false,
+  report_language: 'zh-CN',
+  field_sources: {
+    enabled: 'local_store',
+    provider: 'default',
+    base_url: 'local_store',
+    model: 'local_store',
+  },
+  locked_fields: [],
+}
+
 beforeEach(() => {
   localStorage.clear()
   server.use(
@@ -41,6 +73,7 @@ beforeEach(() => {
       HttpResponse.json({ checks: {}, details: { device: { devices: [], online_count: 0 } } }),
     ),
     http.get(`${API}/ai/status`, () => HttpResponse.json(AI_STATUS_ENABLED)),
+    http.get(`${API}/ai/settings`, () => HttpResponse.json(AI_SETTINGS_CONFIGURED)),
     http.get(`${API}/tasks/system/status`, () =>
       HttpResponse.json({
         database_ok: true,
@@ -151,27 +184,34 @@ describe('Settings — AI 配置展示', () => {
   it('展示 AI 启用状态、Provider、Model 与预算限制', async () => {
     renderWithProviders(<Settings />)
 
-    expect(await screen.findByText('已启用')).toBeInTheDocument()
-    expect(screen.getByText('openai_compatible')).toBeInTheDocument()
-    expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument()
-    expect(screen.getByText('默认 Token 预算')).toBeInTheDocument()
-    expect(screen.getByText('最大模型轮数')).toBeInTheDocument()
-    expect(screen.getByText('最大工具调用数')).toBeInTheDocument()
+    // M6B：状态摘要 + 可编辑表单(取代原只读 KV 列表)。
+    expect(await screen.findByText('AI 已启用')).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Provider/)).toHaveValue('openai_compatible')
+    expect(screen.getByLabelText(/^Model/)).toHaveValue('gpt-4o-mini')
+    expect(screen.getByLabelText(/默认 Token 预算/)).toHaveValue(6000)
+    expect(screen.getByLabelText(/最大模型轮数/)).toHaveValue(2)
+    expect(screen.getByLabelText(/最大工具调用数/)).toHaveValue(6)
   })
 
   it('绝不展示 API Key', async () => {
     const secret = 'sk-should-never-render'
     server.use(
+      // 即使后端异常回传了额外字段,前端也只渲染已知的白名单字段。
+      http.get(`${API}/ai/settings`, () =>
+        HttpResponse.json({ ...AI_SETTINGS_CONFIGURED, api_key: secret }),
+      ),
       http.get(`${API}/ai/status`, () =>
-        // 即使后端异常回传了额外字段,前端也只渲染已知的白名单字段。
         HttpResponse.json({ ...AI_STATUS_ENABLED, api_key: secret }),
       ),
     )
     const { container } = renderWithProviders(<Settings />)
-    await screen.findByText('已启用')
+    await screen.findByText('AI 已启用')
 
     expect(container.textContent).not.toContain(secret)
-    expect(container.textContent).not.toContain('API Key：')
-    expect(screen.getByText(/仅从后端环境变量读取/)).toBeInTheDocument()
+    // Key 输入框存在但为空,且绝不回填已保存的密钥。
+    const keyInput = screen.getByLabelText(/API Key/) as HTMLInputElement
+    expect(keyInput.value).toBe('')
+    expect(keyInput.placeholder).toMatch(/留空表示保持不变/)
+    expect(screen.getByText(/仅提交到本机后端/)).toBeInTheDocument()
   })
 })
