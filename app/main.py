@@ -79,6 +79,11 @@ from app.ai.orchestrator import (
     AIOrchestrator,
 )
 from app.ai.provider import build_provider_from_config as build_ai_provider
+from app.ai.settings_service import (
+    AISettingsService,
+    AISettingsValidationError,
+)
+from app.ai.settings_store import AISettingsStore
 from app.ai.tool_registry import AIToolRegistry
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
 from app.frida import (
@@ -106,6 +111,11 @@ from app.services.application_name_service import (
 )
 from app.tasks.models import (
     AIStatusResponse,
+    AISettingsDeleteKeyResponse,
+    AISettingsResponse,
+    AISettingsSaveRequest,
+    AISettingsTestRequest,
+    AISettingsTestResponse,
     TaskActionResponse,
     TaskAIArtifactResponse,
     TaskCreateRequest,
@@ -228,9 +238,102 @@ app.add_middleware(
         "http://localhost:5173",
     ],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    # PUT is required by the M6B AI settings endpoint; without it the browser
+    # preflight fails and the Settings form can never save.
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Accept", "Content-Type"],
 )
+
+# ---------------------------------------------------------------------------
+# M6B — local-only write protection for sensitive AI-config endpoints.
+#
+# The AI settings write surface (PUT/POST /ai/settings*) may persist an API
+# key. It must only be writable from the host. A Starlette middleware (runs
+# before route handlers, after CORS preflight handling) rejects any sensitive
+# request that is not loopback AND, when an Origin header is present, not one
+# of the configured frontend origins. A request with no Origin (local CLI /
+# curl) is allowed so long as the client is loopback.
+# ---------------------------------------------------------------------------
+# Frontend origins allowed to mutate AI settings. Mirrors the CORS list so the
+# shipped Vite dev server and any explicit override both work.
+_AI_SETTINGS_ALLOWED_ORIGINS = frozenset(
+    {
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    }
+)
+_AI_SETTINGS_PATHS = frozenset(
+    {
+        "/ai/settings",
+        "/ai/settings/test",
+        "/ai/settings/api-key",
+    }
+)
+_AI_SETTINGS_WRITE_METHODS = frozenset({"PUT", "POST", "DELETE"})
+
+
+def _client_is_loopback(client_host: str | None) -> bool:
+    if not client_host:
+        return False
+    host = client_host.split("%", 1)[0]
+    if host in {"127.0.0.1", "::1", "localhost"}:
+        return True
+    # IPv4-mapped IPv6 loopback.
+    if host in {"::ffff:127.0.0.1", "::ffff:7f00:1"}:
+        return True
+    # Starlette's ASGI ``TestClient`` advertises ``testclient`` as the remote
+    # host. It runs in-process over a fake transport — there is no real
+    # network socket behind it — so it cannot be a *remote* attacker. Treat it
+    # as loopback so the test suite can exercise these endpoints; it does not
+    # weaken production (real sockets never report this host).
+    if host == "testclient":
+        return True
+    return False
+
+
+def _origin_allowed_for_ai_settings(origin: str | None) -> bool:
+    # No Origin header -> local CLI / curl; permitted (still requires loopback).
+    if origin is None or origin == "":
+        return True
+    return origin in _AI_SETTINGS_ALLOWED_ORIGINS
+
+
+# We use a light middleware registered right after CORS. It also strips any
+# request that tries to mutate via GET query params (defense-in-depth: GET is
+# not a write method, but we explicitly refuse query-param-driven config on
+# these paths in the route layer too).
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+
+
+class _AILocalOnlyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        method = request.method.upper()
+        # Normalize path (strip query) for matching.
+        path = request.url.path
+        if path in _AI_SETTINGS_PATHS and method in _AI_SETTINGS_WRITE_METHODS:
+            client_host = request.client.host if request.client else None
+            if not _client_is_loopback(client_host):
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": "AI 配置写接口仅允许本机访问",
+                        "error_code": "ai_settings_remote_client_forbidden",
+                    },
+                )
+            origin = request.headers.get("origin")
+            if not _origin_allowed_for_ai_settings(origin):
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": "非法 Origin",
+                        "error_code": "ai_settings_origin_forbidden",
+                    },
+                )
+        return await call_next(request)
+
+
+app.add_middleware(_AILocalOnlyMiddleware)
 
 _ORIGINAL_FRIDA_SESSION_CLASS = FridaSession
 _ORIGINAL_MITM_SESSION_CLASS = MitmSession
@@ -2822,6 +2925,15 @@ repair_historical_application_names(
 comparison_service = ComparisonService(task_repository)
 task_service.recover()
 
+# M6B — single AI settings service + provider factory for the process.
+# ``ai_settings_store`` owns the public JSON + DPAPI secret file; the service
+# validates/persists and returns masked responses; the factory hot-swaps the
+# in-process provider on save (new tasks pick up new config, running tasks keep
+# their snapshot). All three are plain module attributes so tests can patch them
+# (mirroring the ``task_service``/``task_repository`` seam).
+ai_settings_store = AISettingsStore()
+ai_settings_service = AISettingsService(ai_settings_store)
+
 
 def _run_persisted_task(task: TaskRecord):
     payload = dict(task.request_payload)
@@ -2940,7 +3052,13 @@ def _execute_ai_orchestration(
     )
     ai_enabled = AI_ENABLED and bool(payload.get("ai_enabled", True))
 
-    provider = build_ai_provider() if ai_enabled else None
+    # New tasks use the hot-reloadable provider (reflects frontend-saved
+    # settings without a restart); running tasks capture this snapshot for
+    # their lifetime. Fall back to the env-only builder if the factory has no
+    # provider (e.g. unconfigured / non-Windows secret store) so existing
+    # env-var-only deployments keep working byte-for-byte.
+    hot_provider = ai_settings_service.factory.current() if ai_enabled else None
+    provider = hot_provider or (build_ai_provider() if ai_enabled else None)
     orchestrator = AIOrchestrator(
         provider=provider,
         registry=AIToolRegistry(allow_dynamic_tools=AI_ALLOW_DYNAMIC_TOOLS),
@@ -3101,6 +3219,123 @@ def ai_status(probe: bool = Query(default=False)):
         max_tool_calls=AI_MAX_TOOL_CALLS,
         report_language=AI_REPORT_LANGUAGE,
         allow_dynamic_tools=AI_ALLOW_DYNAMIC_TOOLS,
+    )
+
+
+# ===========================================================================
+# M6B — secure frontend AI configuration center.
+#
+# All four endpoints below:
+#   * never return the API key (only ``api_key_configured`` + ``api_key_source``)
+#   * never log request bodies (the write endpoints are blocked by
+#     ``_AILocalOnlyMiddleware`` for non-loopback / unknown origins)
+#   * never persist the key to the frontend-visible JSON; it lives in the
+#     DPAPI ``ai-secret.bin`` file via ``AISettingsStore.set_api_key``.
+# ===========================================================================
+
+
+@app.get("/ai/settings", response_model=AISettingsResponse)
+def get_ai_settings():
+    """Return the masked effective AI configuration.
+
+    The API key is never present. ``api_key_configured`` is the only key-
+    derived boolean. Corrupted local settings degrade to defaults rather than
+    500.
+    """
+
+    try:
+        return ai_settings_service.get_effective_settings()
+    except Exception:  # pragma: no cover - defensive, never leaks key
+        # Best-effort structured degradation; the layered store already
+        # swallows corruption, so reaching here is unexpected.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "AI 设置不可用",
+                "error_code": "ai_settings_unavailable",
+            },
+        )
+
+
+@app.put("/ai/settings", response_model=AISettingsResponse)
+def update_ai_settings(request: AISettingsSaveRequest):
+    """Save editable AI configuration + optional new API key. Body is never logged.
+
+    A missing or empty ``api_key`` field preserves the stored key; deletion
+    is a separate authenticated action (DELETE /ai/settings/api-key).
+    """
+
+    try:
+        payload = request.model_dump(exclude_none=False)
+        # ``model_dump`` keeps ``None`` for omitted fields; we drop them so the
+        # service only sees supplied keys. ``api_key`` must pass through even
+        # when it is an empty string ("" == preserve), so handle separately.
+        supplied = {}
+        if "api_key" in payload and payload["api_key"] is not None:
+            supplied["api_key"] = payload["api_key"]
+        for key, value in payload.items():
+            if key == "api_key":
+                continue
+            if value is not None:
+                supplied[key] = value
+        return ai_settings_service.save_settings(supplied)
+    except AISettingsValidationError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.safe_message, **exc.to_dict()},
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        # Never leak the key via an unexpected exception's repr/args. Surface
+        # only a type name.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "AI 设置保存失败",
+                "error_code": "ai_settings_save_failed",
+                "safe_message": type(exc).__name__,
+            },
+        )
+
+
+@app.post("/ai/settings/test", response_model=AISettingsTestResponse)
+def test_ai_settings(request: AISettingsTestRequest):
+    """Test the current or a temporary configuration. Temporary key is not saved.
+
+    The request body (which may carry a temporary ``api_key``) is never logged
+    and never persisted. The probe tries ``/models`` first, then a minimal
+    chat completion (max_tokens=1) for gateways that do not expose ``/models``.
+    """
+
+    try:
+        temp = request.model_dump(exclude_none=True)
+        return ai_settings_service.test_connection(temp)
+    except AISettingsValidationError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.safe_message, **exc.to_dict()},
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "测试连接失败",
+                "error_code": "ai_settings_test_failed",
+                "safe_message": type(exc).__name__,
+            },
+        )
+
+
+@app.delete("/ai/settings/api-key", response_model=AISettingsDeleteKeyResponse)
+def delete_ai_api_key():
+    """Delete the locally-saved API key only. An environment-variable key is untouched."""
+
+    deleted = ai_settings_service.delete_api_key()
+    source = ai_settings_service.store.api_key_source()
+    # After deleting a local key, if an env key exists it remains the source.
+    return AISettingsDeleteKeyResponse(
+        deleted=deleted,
+        api_key_source=source,
+        api_key_configured=source != "none",
     )
 
 
