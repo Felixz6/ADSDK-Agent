@@ -9,6 +9,7 @@ import {
   Info,
   Github,
   Database,
+  Bot,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -17,7 +18,7 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { useUIStore, applyTheme, type Theme } from '@/stores/uiStore'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useServiceHealth } from '@/hooks/useApi'
-import { useTaskSystemStatus } from '@/hooks/useTasks'
+import { useTaskSystemStatus, useAIStatus } from '@/hooks/useTasks'
 import { clearLocalTasks, listLocalTasks } from '@/api/tasks'
 import { API_BASE_URL } from '@/api/client'
 import { cn } from '@/utils'
@@ -31,6 +32,7 @@ export default function Settings() {
   const pushToast = useUIStore((s) => s.pushToast)
   const health = useServiceHealth()
   const taskSystem = useTaskSystemStatus()
+  const aiStatus = useAIStatus()
   const [confirmClearTasks, setConfirmClearTasks] = useState(false)
   const [, force] = useState(0)
 
@@ -85,6 +87,28 @@ export default function Settings() {
           <KV k="设备资源占用" v={taskSystem.data?.occupied_devices.length ? taskSystem.data.occupied_devices.join('、') : '无'} mono />
         </dl>
         <p className="text-[11px] text-[var(--text-tertiary)] mt-2">设备标识仅显示稳定脱敏令牌；原始 serial 不进入前端任务记录。</p>
+      </GlassCard>
+
+      <GlassCard padding="md" highlight>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-1.5">
+          <Bot size={15} /> AI 编排
+        </h3>
+        <dl className="flex flex-col gap-1">
+          <KV
+            k="是否启用"
+            v={aiStatus.data ? (aiStatus.data.enabled ? '已启用' : '未启用') : aiStatus.isError ? '不可达' : '检测中'}
+          />
+          <KV k="Provider" v={aiStatus.data?.provider ?? '—'} mono />
+          <KV k="Model" v={aiStatus.data?.model || '未配置'} mono />
+          <KV k="是否已配置" v={aiStatus.data ? (aiStatus.data.configured ? '已配置' : '未配置') : '—'} />
+          <KV k="默认 Token 预算" v={String(aiStatus.data?.default_token_budget ?? '—')} />
+          <KV k="最大模型轮数" v={String(aiStatus.data?.max_rounds ?? '—')} />
+          <KV k="最大工具调用数" v={String(aiStatus.data?.max_tool_calls ?? '—')} />
+        </dl>
+        <p className="text-[11px] text-[var(--text-tertiary)] mt-2">
+          API Key 仅从后端环境变量读取，不会出现在接口响应、报告、日志或本页面。
+          AI 不可用时，确定性分析与报告仍照常生成。
+        </p>
       </GlassCard>
 
       <GlassCard padding="md" highlight>
