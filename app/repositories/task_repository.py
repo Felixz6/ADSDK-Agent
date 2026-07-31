@@ -73,7 +73,7 @@ class TaskRepository:
                 """
                 CREATE TABLE IF NOT EXISTS tasks (
                     id TEXT PRIMARY KEY,
-                    task_type TEXT NOT NULL CHECK(task_type IN ('static','dynamic','comparison')),
+                    task_type TEXT NOT NULL CHECK(task_type IN ('static','dynamic','comparison','ai_orchestrated')),
                     status TEXT NOT NULL CHECK(status IN ('queued','running','completed','failed','cancelled')),
                     apk_path TEXT,
                     apk_snapshot_path TEXT,
@@ -138,6 +138,7 @@ class TaskRepository:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN cancelled_at_stage TEXT"
                 )
+            self._migrate_task_type_check(connection)
             connection.execute(
                 """
                 UPDATE tasks
@@ -152,6 +153,64 @@ class TaskRepository:
                   AND cancelled_at_stage IS NULL
                 """
             )
+
+    @staticmethod
+    def _migrate_task_type_check(connection: sqlite3.Connection) -> None:
+        """Widen the legacy ``task_type`` CHECK constraint for AI tasks.
+
+        SQLite cannot alter a CHECK constraint in place, so a database created
+        before ``ai_orchestrated`` existed is rebuilt table-wise. Databases
+        already carrying the new constraint are left untouched.
+        """
+
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'"
+        ).fetchone()
+        if row is None:
+            return
+        definition = str(row["sql"] or "")
+        if "ai_orchestrated" in definition:
+            return
+        migrated = definition.replace(
+            "CHECK(task_type IN ('static','dynamic','comparison'))",
+            "CHECK(task_type IN ('static','dynamic','comparison','ai_orchestrated'))",
+        )
+        if migrated == definition:
+            # Unexpected legacy shape: leave the database alone rather than
+            # risk destroying rows on a schema we do not recognise.
+            return
+        migrated = migrated.replace(
+            "CREATE TABLE tasks", "CREATE TABLE tasks_migrated", 1
+        ).replace('CREATE TABLE "tasks"', "CREATE TABLE tasks_migrated", 1)
+        columns = [
+            str(item["name"])
+            for item in connection.execute("PRAGMA table_info(tasks)").fetchall()
+        ]
+        column_list = ", ".join(f'"{name}"' for name in columns)
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(migrated)
+            connection.execute(
+                f"INSERT INTO tasks_migrated ({column_list}) "
+                f"SELECT {column_list} FROM tasks"
+            )
+            connection.execute("DROP TABLE tasks")
+            connection.execute("ALTER TABLE tasks_migrated RENAME TO tasks")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tasks_status_created "
+                "ON tasks(status, created_at DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tasks_type_created "
+                "ON tasks(task_type, created_at DESC)"
+            )
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
 
     def create_task(self, payload: dict[str, Any]) -> TaskRecord:
         now = utc_now()
