@@ -16,6 +16,8 @@ export interface GlassCardProps {
   children: ReactNode
   /** 语义化交互用法时允许点击穿透关闭外的默认背景指针事件 */
   as?: 'div' | 'section' | 'aside' | 'article'
+  /** 测试选择器透传(仅用于稳定定位,不影响样式) */
+  'data-testid'?: string
 }
 
 const paddingMap: Record<NonNullable<GlassCardProps['padding']>, string> = {
@@ -32,10 +34,12 @@ export function GlassCard({
   padding = 'md',
   as: Tag = 'div',
   children,
+  'data-testid': testId,
 }: GlassCardProps) {
   const base = strong ? 'glass-strong' : 'glass'
   return (
     <Tag
+      data-testid={testId}
       className={cn(
         base,
         highlight && 'glass-highlight',

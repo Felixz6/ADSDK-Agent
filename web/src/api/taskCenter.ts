@@ -1,9 +1,11 @@
 import api, { API_BASE_URL } from './client'
 import { normalizeAnalyzeResponse } from './analysis'
 import type {
+  AIStatusResponse,
   ComparisonCreateRequest,
   ComparisonResult,
   TaskActionResponse,
+  TaskAIArtifactResponse,
   TaskCreateRequest,
   TaskFilters,
   TaskListResponse,
@@ -76,4 +78,44 @@ export function absoluteApiUrl(path: string | null): string | null {
 
 export function taskWebSocketUrl(taskId: string): string {
   return `${API_BASE_URL.replace(/^http/, 'ws')}/ws/tasks/${encodeURIComponent(taskId)}`
+}
+
+/**
+ * GET /ai/status —— AI 可用性。
+ *
+ * 默认不探测外部模型(reachable 返回 null 表示「未探测」);只有用户显式点击
+ * 检测时才传 probe=true,避免每次页面加载都调用外部模型。
+ * 响应中绝不包含 API Key。
+ */
+export async function getAIStatus(
+  options: { probe?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<AIStatusResponse> {
+  const { data } = await api.get<AIStatusResponse>('/ai/status', {
+    params: options.probe ? { probe: true } : undefined,
+    signal,
+  })
+  return data
+}
+
+export async function getTaskAIPlan(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<TaskAIArtifactResponse> {
+  const { data } = await api.get<TaskAIArtifactResponse>(
+    `/tasks/${encodeURIComponent(taskId)}/ai-plan`,
+    { signal },
+  )
+  return data
+}
+
+export async function getTaskAIReport(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<TaskAIArtifactResponse> {
+  const { data } = await api.get<TaskAIArtifactResponse>(
+    `/tasks/${encodeURIComponent(taskId)}/ai-report`,
+    { signal },
+  )
+  return data
 }

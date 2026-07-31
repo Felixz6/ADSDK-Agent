@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
+import { AIOrchestrationCard } from '@/components/analysis/AIOrchestrationCard'
 import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
 import { EvidenceCorrelationCard } from '@/components/analysis/EvidenceCorrelationCard'
 import { PrivacyFindingsCard } from '@/components/analysis/PrivacyFindingsCard'
@@ -35,7 +36,7 @@ import {
   taskTitle,
   taskTypeLongLabel,
 } from '@/utils/taskPresentation'
-import type { TaskStatus, TaskStepStatus } from '@/types/tasks'
+import type { TaskStatus, TaskStepStatus, AIOrchestrationSection } from '@/types/tasks'
 
 type PendingAction = 'cancel' | 'delete' | null
 
@@ -55,7 +56,8 @@ export default function TaskDetail() {
   const reportQuery = useTaskReport(id, {
     enabled: Boolean(
       id
-      && taskQuery.data?.task_type === 'dynamic'
+      && (taskQuery.data?.task_type === 'dynamic'
+        || taskQuery.data?.task_type === 'ai_orchestrated')
       && taskQuery.data?.report_json_path,
     ),
   })
@@ -100,6 +102,9 @@ export default function TaskDetail() {
       message: item.message ?? (item.status === 'success' ? '执行成功' : '执行失败'),
     }))
   const successfulAttempt = [...reliabilityAttempts].reverse().find((item) => item.status === 'success')
+  // 旧报告没有 ai_orchestration 字段时为 undefined,卡片会展示中性提示。
+  const aiSection = (reportQuery.data?.report as { ai_orchestration?: AIOrchestrationSection } | undefined)
+    ?.ai_orchestration ?? null
   const dynamicExecution: DynamicExecutionSummary | null = task.task_type === 'dynamic' ? {
     policy: (task.request_payload.dynamic_mode_policy as DynamicModePolicy | undefined) ?? 'balanced',
     selected_mode: successfulAttempt?.mode ?? 'none',
@@ -206,6 +211,13 @@ export default function TaskDetail() {
           </dl>
         </GlassCard>
       </div>
+
+      {task.task_type === 'ai_orchestrated' && (
+        <AIOrchestrationCard
+          section={aiSection}
+          loading={reportQuery.isLoading}
+        />
+      )}
 
       {task.task_type === 'dynamic' && (
         <>
@@ -353,6 +365,10 @@ function stageLabel(stage: string | null): string {
     resource_cleanup: '资源清理',
     rule_evaluation: '规则评估',
     report_write: '生成报告',
+    ai_planning: 'AI 编排规划',
+    ai_tool_execution: 'AI 工具执行',
+    ai_evidence_digest: '构建证据摘要',
+    ai_report: 'AI 综合研判',
     completed: '任务完成',
     failed: '任务失败',
     cancelled: '任务已取消',

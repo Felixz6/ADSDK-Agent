@@ -87,6 +87,45 @@ collector_success_requests_observed
 - 任务历史保存在当前浏览器的 `localStorage`；
 - 本地历史不代表后端持久化任务，清理浏览器数据后会丢失。
 
+### AI 编排分析（M6A，默认关闭）
+
+在「新建分析」中选择 **AI 编排分析** 后，可填写分析目标、分析范围、是否允许动态分析与网络采集，以及 Token 预算。
+
+职责边界是硬性的：
+
+- **确定性工具负责事实**：静态分析、动态分析、`correlation-v1`、`privacy-findings-v2` 与全部计数、风险、证据均由既有确定性代码产生，AI 不参与；
+- **AI 只负责调度与叙述**：选择白名单工具、安排顺序，并基于确定性证据摘要生成执行摘要、风险优先级、证据缺口与建议动作。
+
+安全与降级：
+
+- API Key 只从环境变量读取，不进入日志、数据库、接口响应、报告或前端；
+- AI 只能返回**已注册工具名**与结构化参数，无法返回 Shell、adb、frida、mitmproxy 命令或任意路径；
+- 改变设备状态的工具必须显式确认，未确认时状态为 `blocked_confirmation_required` 且不执行；
+- APK 内文本、Manifest、网络字段与应用名称均按不可信数据处理，指令式内容会被中和后仅作为证据展示；
+- AI 输出经确定性 **Evidence Reference Validator** 校验：不存在的证据引用被删除、无证据支撑的结论被降级、严重性与置信度不得高于原始证据、虚构域名/权限/SDK 被拒绝、法律合规结论被移除；
+- AI 关闭、未配置、不可达、超预算或输出不合法时，一律降级为确定性报告模板，**不会**让静态或动态分析任务失败。
+
+产物（写入 `output/runs/<run_id>/`）：
+
+```text
+ai-plan.json          # ai-plan-v1     模型生成的执行计划（或确定性默认计划）
+evidence-digest.json  # evidence-digest-v1  代码生成的证据摘要（非 AI 生成）
+ai-tool-trace.json    # 工具执行轨迹（仅安全元数据，不含推理过程）
+ai-report.json        # ai-report-v1   经证据校验后的 AI 综合研判
+```
+
+只读接口：
+
+```text
+GET /ai/status                    # AI 可用性（绝不返回 API Key）
+GET /tasks/{task_id}/ai-plan      # 该任务的 ai-plan.json
+GET /tasks/{task_id}/ai-report    # 该任务的 ai-report.json
+```
+
+`/ai/status` 默认不探测外部模型（`reachable` 为 `null` 表示「未探测」）；只有显式传 `?probe=true` 才会按需检查一次可达性。
+
+低 Token 设计：正常路径最多两次模型调用（一次规划、一次报告）；候选工具由确定性 capability router 按分析范围筛选（默认不超过 6 个）；发送给模型的始终是压缩后的工具结果与证据摘要，绝不发送完整 `report.json`、Hook 日志、logcat、`requests.jsonl`、请求/响应正文或完整 Manifest。相同输入命中缓存时模型调用为 0 次。
+
 ------
 
 ## 技术架构
@@ -331,6 +370,14 @@ adsdk-agent/
 │  ├─ config.py                 # 环境与脱敏配置
 │  ├─ core/                     # 任务编排、运行目录、设备上下文
 │  ├─ analyzers/                # Manifest、SDK 和规则分析
+│  ├─ ai/                       # AI 编排（默认关闭）
+│  │  ├─ provider.py            # Provider 抽象 + OpenAI 兼容 / Mock 实现
+│  │  ├─ tool_registry.py       # 白名单工具与确定性候选工具筛选
+│  │  ├─ context_builder.py     # evidence-digest-v1 与 Prompt 注入防护
+│  │  ├─ orchestrator.py        # 两阶段低 Token 编排、预算与降级
+│  │  ├─ report_composer.py     # Evidence Reference 校验与确定性模板
+│  │  └─ cache.py               # 响应缓存（含 TTL 与损坏隔离）
+│  ├─ services/                 # 任务服务与 AI 任务适配
 │  ├─ tools/                    # apktool、ADB、Frida、mitmproxy 封装
 │  └─ frida_hooks/              # Frida Hook 脚本
 ├─ tests/                       # 后端 pytest
@@ -395,6 +442,28 @@ Web 提交分析请求
 | `MITM_STOP_TIMEOUT_SECONDS`   |         `5` | mitmproxy 进程树清理超时                          |
 | `EVIDENCE_CORRELATION_WINDOW_MS` | `2500` | 动态事件—请求时间关联窗口，允许 100–10000 ms |
 
+### AI 编排配置（全部默认关闭）
+
+| 变量                       | 默认值               | 说明                                                   |
+| -------------------------- | -------------------- | ------------------------------------------------------ |
+| `AI_ENABLED`               | `false`              | 总开关；关闭时确定性分析与报告行为完全不变             |
+| `AI_PROVIDER`              | `openai_compatible`  | Provider 实现；业务代码不绑定任何单一厂商              |
+| `AI_BASE_URL`              |         空           | OpenAI 兼容端点根地址                                  |
+| `AI_API_KEY`               |         空           | **只从环境变量读取**；不进入日志、库、响应、报告与前端 |
+| `AI_MODEL`                 |         空           | 模型名                                                 |
+| `AI_TIMEOUT_SECONDS`       | `60`                 | 单次模型调用超时                                       |
+| `AI_MAX_ROUNDS`            | `2`                  | 模型调用轮数上限（正常路径：规划 1 次 + 报告 1 次）    |
+| `AI_MAX_TOOL_CALLS`        | `6`                  | 工具调用次数上限；超出按固定优先级裁剪                 |
+| `AI_MAX_INPUT_TOKENS`      | `6000`               | 单次请求输入上限                                       |
+| `AI_MAX_OUTPUT_TOKENS`     | `1800`               | 单次请求输出上限                                       |
+| `AI_MAX_TOOL_RESULT_CHARS` | `8000`               | 单个工具结果发送给模型前的字符上限                     |
+| `AI_CACHE_ENABLED`         | `true`               | 相同输入复用结果；缓存中不保存 API Key                 |
+| `AI_CACHE_TTL_SECONDS`     | `86400`              | 缓存过期时间；缓存损坏按未命中处理，不中断分析         |
+| `AI_REPORT_LANGUAGE`       | `zh-CN`              | AI 报告语言                                            |
+| `AI_ALLOW_DYNAMIC_TOOLS`   | `false`              | 为 false 时设备状态变更类工具永不进入候选列表          |
+
+Token 与调用预算被超过时，系统停止继续调用模型、保留已有工具结果、生成确定性报告，并将 AI 状态标记为 `budget_exhausted`——**不会**让整个任务失败。
+
 ### `MITM_LISTEN_HOST` 安全说明
 
 默认值 `127.0.0.1` 只监听宿主机 loopback。
@@ -416,6 +485,9 @@ Web 提交分析请求
 | `GET`  | `/traffic/check`   | 流量采集环境自检 |
 | `POST` | `/analyze`         | 静态分析         |
 | `POST` | `/dynamic/analyze` | 动态分析         |
+| `GET`  | `/ai/status`       | AI 可用性（不返回 API Key） |
+| `GET`  | `/tasks/{id}/ai-plan`   | 该任务的 `ai-plan.json`   |
+| `GET`  | `/tasks/{id}/ai-report` | 该任务的 `ai-report.json` |
 
 ### 静态分析请求
 

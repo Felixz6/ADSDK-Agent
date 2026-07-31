@@ -56,11 +56,23 @@ export function shortDeviceLabel(value: string | null | undefined): string {
 }
 
 export function taskTypeLabel(type: TaskType): string {
-  return type === 'static' ? '静态' : type === 'dynamic' ? '动态' : '对比'
+  const labels: Record<TaskType, string> = {
+    static: '静态',
+    dynamic: '动态',
+    comparison: '对比',
+    ai_orchestrated: 'AI 编排',
+  }
+  return labels[type] ?? '未知'
 }
 
 export function taskTypeLongLabel(type: TaskType): string {
-  return type === 'static' ? '静态分析' : type === 'dynamic' ? '动态分析' : '版本对比'
+  const labels: Record<TaskType, string> = {
+    static: '静态分析',
+    dynamic: '动态分析',
+    comparison: '版本对比',
+    ai_orchestrated: 'AI 编排分析',
+  }
+  return labels[type] ?? '未知类型'
 }
 
 export function riskLevelLabel(value: string | null | undefined): string {
