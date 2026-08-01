@@ -112,6 +112,7 @@ ai-plan.json          # ai-plan-v1     模型生成的执行计划（或确定�
 evidence-digest.json  # evidence-digest-v1  代码生成的证据摘要（非 AI 生成）
 ai-tool-trace.json    # 工具执行轨迹（仅安全元数据，不含推理过程）
 ai-report.json        # ai-report-v1   经证据校验后的 AI 综合研判
+ai-runtime-diagnostics.json  # ai-runtime-diagnostics-v1  运行时可观测事实（M6C）
 ```
 
 只读接口：
@@ -120,7 +121,16 @@ ai-report.json        # ai-report-v1   经证据校验后的 AI 综合研判
 GET /ai/status                    # AI 可用性（绝不返回 API Key）
 GET /tasks/{task_id}/ai-plan      # 该任务的 ai-plan.json
 GET /tasks/{task_id}/ai-report    # 该任务的 ai-report.json
+GET /tasks/{task_id}/ai-runtime-diagnostics   # 该任务的运行时诊断（M6C）
 ```
+
+重建接口（M6C，复用磁盘上已有的确定性产物，**绝不重跑**静态/动态/网络分析）：
+
+```text
+POST /tasks/{task_id}/ai-report/regenerate[?use_cache=true|false]
+```
+
+省略 `use_cache` 时沿用后端保存的缓存设置；`true` 强制走缓存（命中后真实模型调用为 0 次），`false` 强制真实调用。
 
 `/ai/status` 默认不探测外部模型（`reachable` 为 `null` 表示「未探测」）；只有显式传 `?probe=true` 才会按需检查一次可达性。
 
@@ -134,6 +144,23 @@ DELETE /ai/settings/api-key       # 仅删除本机保存的 Key（环境变量 
 ```
 
 低 Token 设计：正常路径最多两次模型调用（一次规划、一次报告）；候选工具由确定性 capability router 按分析范围筛选（默认不超过 6 个）；发送给模型的始终是压缩后的工具结果与证据摘要，绝不发送完整 `report.json`、Hook 日志、logcat、`requests.jsonl`、请求/响应正文或完整 Manifest。相同输入命中缓存时模型调用为 0 次。
+
+#### DeepSeek 运行时兼容与可观测性（M6C）
+
+**兼容性 profile**：由 `AI_PROVIDER_PROFILE` 显式指定，或按 `AI_BASE_URL` 的主机名自动判定（`api.deepseek.com` → `deepseek`，其余 → `generic_openai`）。profile 只是非密钥的兼容元数据，绝不包含 API Key。
+
+**显式非思考模式**：默认 `AI_THINKING_MODE=disabled`，请求携带 `{"thinking": {"type": "disabled"}}`，使 DeepSeek 不产生 `reasoning_content`、保持确定性；`auto` 仅对 DeepSeek profile 注入，`off` 完全不注入。
+
+**逐阶段输出上限**：规划、报告、修复三个阶段各有独立上限，并同时受全局 `AI_MAX_OUTPUT_TOKENS` 与剩余 Token 预算收敛，取三者最小值（下限为 1，绝不下发 0 或负数）。
+
+**真实 Token 与估算 Token 严格区分**：供应商返回 `usage` 时记为 `provider`（真实），累加进 `real_tokens`；未返回时按提示词长度估算，记为 `estimated` 并累加进 `estimated_total_tokens`。两者永不混入同一个合计值，前端也分别列示，估算值明确标注。
+
+**错误分类**：超时、不可达、鉴权失败、模型不存在、限流、无效 JSON、无效响应等分别归类到稳定的错误码，并记录 HTTP 状态、是否可重试、所属阶段与是否为终态；一次结构化修复失败后确定性降级，不连续重试消耗额度。
+
+**reasoning_content 隔离**：全链路只记录布尔量 `reasoning_content_present`，其**内容**不写入数据库、日志、报告、trace、缓存正文，也不展示到前端。本轮不实现思维链展示。
+
+`ai-runtime-diagnostics.json` 只包含可观测运行时事实（每轮 Token 来源、分类错误、延迟、重试与缓存状态、`outcome`、是否降级为确定性模板），不含密钥、提示词、模型响应正文或推理内容。
+
 
 ------
 
@@ -474,6 +501,20 @@ Web 提交分析请求
 | `AI_REPORT_LANGUAGE`       | `zh-CN`              | AI 报告语言                                            |
 | `AI_ALLOW_DYNAMIC_TOOLS`   | `false`              | 为 false 时设备状态变更类工具永不进入候选列表          |
 
+M6C 新增（DeepSeek 真实运行时兼容与可观测性）：
+
+| 环境变量                        | 默认值      | 说明                                                        |
+| ------------------------------- | ----------- | ----------------------------------------------------------- |
+| `AI_PROVIDER_PROFILE`           | `auto`      | `auto` / `generic_openai` / `deepseek`；`auto` 按主机名判定  |
+| `AI_THINKING_MODE`              | `disabled`  | `disabled` 显式关闭思考模式；`auto` 仅 DeepSeek 注入；`off` 不注入 |
+| `AI_PLANNER_MAX_OUTPUT_TOKENS`  | `500`       | 规划阶段输出上限（同时受全局上限与剩余预算收敛）            |
+| `AI_REPORT_MAX_OUTPUT_TOKENS`   | `1000`      | 报告阶段输出上限                                            |
+| `AI_REPAIR_MAX_OUTPUT_TOKENS`   | `300`       | 结构化修复阶段输出上限（最紧）                              |
+| `AI_REQUEST_RETRIES`            | `1`         | 单次调用的最大重试次数；仅对可重试错误生效                  |
+| `AI_RETRY_BASE_DELAY_MS`        | `200`       | 重试退避基准；优先遵循响应的 `Retry-After`                  |
+| `AI_MAX_RETRY_AFTER_SECONDS`    | `30`        | `Retry-After` 的采纳上限，避免被超长等待拖住                |
+| `AI_STORE_RESPONSE_EXCERPTS`    | `false`     | 保持 false：不留存模型响应摘录                              |
+
 Token 与调用预算被超过时，系统停止继续调用模型、保留已有工具结果、生成确定性报告，并将 AI 状态标记为 `budget_exhausted`——**不会**让整个任务失败。
 
 ### 前端 AI 配置中心（M6B）
@@ -559,6 +600,8 @@ Token 与调用预算被超过时，系统停止继续调用模型、保留已�
 | `GET`  | `/ai/status`       | AI 可用性（不返回 API Key） |
 | `GET`  | `/tasks/{id}/ai-plan`   | 该任务的 `ai-plan.json`   |
 | `GET`  | `/tasks/{id}/ai-report` | 该任务的 `ai-report.json` |
+| `GET`  | `/tasks/{id}/ai-runtime-diagnostics` | 该任务的运行时诊断（M6C） |
+| `POST` | `/tasks/{id}/ai-report/regenerate`   | 复用确定性产物重建 AI 报告段（M6C） |
 
 ### 静态分析请求
 
