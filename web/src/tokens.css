@@ -4,11 +4,17 @@
  * ========================================================================== */
 
 :root {
+  /* 浏览器原生控件(number spinner、select 弹出菜单、滚动条)跟随深色 */
+  color-scheme: dark;
+
   /* 基底背景 */
   --bg-deep: #071126;
   --bg-panel: rgba(10, 22, 48, 0.62);
   --bg-panel-strong: rgba(8, 17, 38, 0.82);
   --bg-panel-elevated: rgba(12, 26, 56, 0.72);
+  /* 原生下拉菜单必须使用不透明色:操作系统弹出层不继承页面背景 */
+  --bg-menu: #101f3f;
+  --bg-menu-hover: #1a2e57;
 
   /* 边框 */
   --border-soft: rgba(157, 192, 255, 0.18);
@@ -64,6 +70,7 @@
 
 /* 浅色主题(可选切换,保持低对比柔和) */
 html[data-theme='light'] {
+  color-scheme: light;
   --bg-deep: #eef2fb;
   --bg-overlay: linear-gradient(90deg, rgba(238, 242, 251, 0.94) 0%, rgba(238, 242, 251, 0.7) 60%, rgba(238, 242, 251, 0.4) 100%);
   --text-primary: #0d1530;
@@ -74,4 +81,6 @@ html[data-theme='light'] {
   --shadow-glass: 0 8px 32px rgba(20, 40, 90, 0.12);
   --border-soft: rgba(40, 70, 140, 0.16);
   --border-active: rgba(40, 110, 200, 0.5);
+  --bg-menu: #ffffff;
+  --bg-menu-hover: #dce6fa;
 }
