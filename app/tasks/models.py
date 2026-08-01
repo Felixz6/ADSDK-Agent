@@ -148,6 +148,19 @@ class TaskAIArtifactResponse(BaseModel):
     payload: dict[str, Any] | None = None
 
 
+class TaskAIArtifactSummary(BaseModel):
+    """Identifying summary of the regenerated AI section, returned by the
+    ``regenerate`` route so the client can immediately poll the artifact
+    endpoints. Carries no secrets and no model text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    status: TaskStatus
+    ai_status: str
+    ai_section: dict[str, Any]
+
+
 # ---------------------------------------------------------------------------
 # M6B — secure frontend AI configuration center.
 #

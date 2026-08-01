@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import (
     AI_ALLOW_DYNAMIC_TOOLS,
+    AI_CACHE_ENABLED,
     AI_ENABLED,
     AI_MAX_ROUNDS,
     AI_MAX_TOOL_CALLS,
@@ -84,6 +85,7 @@ from app.ai.settings_service import (
     AISettingsValidationError,
 )
 from app.ai.settings_store import AISettingsStore
+from app.ai.cache import AIResponseCache
 from app.ai.tool_registry import AIToolRegistry
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
 from app.frida import (
@@ -118,6 +120,7 @@ from app.tasks.models import (
     AISettingsTestResponse,
     TaskActionResponse,
     TaskAIArtifactResponse,
+    TaskAIArtifactSummary,
     TaskCreateRequest,
     TaskListResponse,
     TaskRecord,
@@ -3119,6 +3122,10 @@ def _public_ai_section(result: AIOrchestrationResult) -> dict[str, Any]:
         "evidence_digest_hash": result.digest.digest_hash,
         "error_code": result.error_code,
         "unavailable_reason": result.unavailable_reason,
+        # M6C — observable runtime diagnostics (per-round token provenance,
+        # classified errors, latency/cache/retry status). No API key, no prompt
+        # or response text, no reasoning_content content — only a presence bool.
+        "diagnostic": result.diagnostic_payload(),
     }
 
 
@@ -3372,6 +3379,168 @@ def get_task_ai_plan(task_id: str):
 @app.get("/tasks/{task_id}/ai-report", response_model=TaskAIArtifactResponse)
 def get_task_ai_report(task_id: str):
     return _read_task_ai_artifact(task_id, "ai-report.json")
+
+
+@app.get(
+    "/tasks/{task_id}/ai-runtime-diagnostics",
+    response_model=TaskAIArtifactResponse,
+)
+def get_task_ai_runtime_diagnostics(task_id: str):
+    """The ``ai-runtime-diagnostics-v1`` artifact.
+
+    Observable runtime facts only (per-round token provenance, classified
+    errors, latency, retry/cache status). No API key, no prompt or response
+    text, no reasoning_content content — the artifact simply never carries it.
+    """
+
+    return _read_task_ai_artifact(task_id, "ai-runtime-diagnostics.json")
+
+
+@app.post(
+    "/tasks/{task_id}/ai-report/regenerate",
+    response_model=TaskAIArtifactSummary,
+)
+def regenerate_task_ai_report(
+    task_id: str,
+    use_cache: bool | None = None,
+):
+    """Re-run only the AI orchestration against the task's *existing* deterministic
+    artifacts. Never re-runs static / dynamic / traffic analysis (must-complete:
+    the deterministic evidence on disk is the source of truth).
+
+    ``use_cache`` overrides the configured cache for this regeneration:
+
+    * ``None``  -> honour the saved effective cache setting (default behaviour).
+    * ``True``  -> force the response cache on (a cache hit avoids a real model
+      call entirely — zero tokens). Used for the cache-acceptance scenario.
+    * ``False`` -> force the response cache off (always a real model call).
+
+    The API key, full prompts, full model responses, and reasoning_content
+    content are never written or returned. The body carries no secrets, so it
+    is read from the query string; no key is echoed in the summary.
+    """
+
+    task = task_service.get(task_id)
+    if task is None:
+        raise _task_not_found(task_id)
+
+    # Resolve the persisted run directory from the deterministic report path.
+    if not task.report_json_path:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "ai_regenerate_no_report",
+                "message": "任务尚无可复用的确定性报告，无法仅重跑 AI 编排",
+            },
+        )
+    run_dir = Path(task.report_json_path).resolve(strict=False).parent
+    allowed_root = (Path(OUTPUT_DIR).resolve(strict=False) / "runs").resolve(
+        strict=False
+    )
+    if not run_dir.is_relative_to(allowed_root) or not (run_dir / "report.json").is_file():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "ai_regenerate_no_report",
+                "message": "任务尚无可复用的确定性报告，无法仅重跑 AI 编排",
+            },
+        )
+
+    payload = dict(task.request_payload or {})
+    try:
+        base_report = json.loads(
+            (run_dir / "report.json").read_text(encoding="utf-8")
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "ai_regenerate_no_report",
+                "message": "确定性报告读取失败，无法仅重跑 AI 编排",
+            },
+        )
+    if not isinstance(base_report, dict):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "ai_regenerate_no_report",
+                "message": "确定性报告格式异常，无法仅重跑 AI 编排",
+            },
+        )
+
+    scope = str(payload.get("analysis_scope") or "static_only")
+    allow_dynamic = bool(payload.get("allow_dynamic"))
+    confirmed = frozenset(
+        str(item) for item in (payload.get("confirmed_tools") or [])
+    )
+    ai_enabled = AI_ENABLED and bool(payload.get("ai_enabled", True))
+
+    # Effective cache setting for the "honour saved config" branch.
+    try:
+        effective = ai_settings_service.get_effective_settings()
+        cache_enabled_default = bool(effective.get("cache_enabled", AI_CACHE_ENABLED))
+    except Exception:
+        cache_enabled_default = bool(AI_CACHE_ENABLED)
+    cache_enabled = (
+        cache_enabled_default if use_cache is None else bool(use_cache)
+    )
+
+    hot_provider = ai_settings_service.factory.current() if ai_enabled else None
+    provider = hot_provider or (build_ai_provider() if ai_enabled else None)
+    orchestrator = AIOrchestrator(
+        provider=provider,
+        registry=AIToolRegistry(allow_dynamic_tools=AI_ALLOW_DYNAMIC_TOOLS),
+        cache=AIResponseCache(enabled=cache_enabled),
+        enabled=ai_enabled,
+        cancelled=_ai_cancelled,
+    )
+    service = AITaskService(
+        orchestrator=orchestrator,
+        run_dir=run_dir,
+        static_runner=lambda: base_report,
+        dynamic_runner=lambda: base_report,
+        environment_probe=lambda: env_check(payload.get("device_id")),
+    )
+    request = AIOrchestrationRequest(
+        objective=str(payload.get("objective") or "分析本次 APK 的隐私风险"),
+        analysis_scope=scope,
+        task_id=task.id,
+        allow_dynamic=allow_dynamic,
+        allow_network=bool(payload.get("allow_network")),
+        confirmed_tools=confirmed,
+        token_budget=int(payload.get("token_budget") or 0) or None,
+        report_language=str(payload.get("report_language") or AI_REPORT_LANGUAGE),
+        run_dir=run_dir,
+    )
+    try:
+        result = service.run(request)
+        ai_section = _public_ai_section(result)
+    except TaskCancelled:
+        raise
+    except Exception as exc:
+        ai_section = {
+            "schema_version": "ai-report-v1",
+            "status": "failed",
+            "error_code": "ai_orchestration_failed",
+            "limitations": [f"AI 编排执行异常：{type(exc).__name__}"],
+        }
+
+    # Re-publish report.json so the regenerated AI section replaces the prior
+    # one without touching any deterministic field.
+    base_report["ai_orchestration"] = ai_section
+    try:
+        atomic_write_json(run_dir / "report.json", base_report)
+    except Exception:
+        base_report.setdefault("limitations", []).append(
+            "AI 综合研判重跑未能写入 report.json，确定性证据不受影响"
+        )
+
+    return TaskAIArtifactSummary(
+        task_id=task_id,
+        status=task.status,
+        ai_status=str(ai_section.get("status")),
+        ai_section=ai_section,
+    )
 
 
 @app.get("/tasks/{task_id}", response_model=TaskRecord)

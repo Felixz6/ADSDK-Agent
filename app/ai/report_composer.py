@@ -38,6 +38,29 @@ FIXED_DISCLAIMER = (
 _SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2, "info": 3}
 _CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
 
+# Commands the model must never be able to recommend as a "next action". The AI
+# capability surface is read-only by default and never includes a native shell,
+# adb, frida, or mitmproxy invocation; a narrative recommendation naming those
+# is treated as an attempt to widen the capability surface and is dropped.
+_FORBIDDEN_ACTION_PATTERN = re.compile(
+    r"(?i)(^|\s|[（(])("
+    r"\b(?:adb|fastboot|shell|sh|bash|cmd|powershell)\b[/:.\s]"
+    r"|frida[-_ ]?(?:server|trace|ps|inject|kill)"
+    r"|mitm(?:proxy|dump|web)"
+    r"|rm\s+-rf"
+    r"|\bsu\b\s+-c"
+    r"|\bpip\s+install"
+    r"|execute\s+shell"
+    r"|run\s+command"
+    r")"
+)
+
+
+def _is_forbidden_action(text: str) -> bool:
+    """True if a recommended action names a shell/adb/frida/mitm command."""
+
+    return bool(_FORBIDDEN_ACTION_PATTERN.search(text or ""))
+
 # Legal / regulatory conclusion markers. The AI may describe technical risk;
 # it may never assert legality, compliance status, or violation of a statute.
 _LEGAL_MARKERS = re.compile(
@@ -164,6 +187,24 @@ class AIReportComposer:
         if rejected:
             limitations.append("部分 AI 结论未通过证据校验，已移除")
 
+        # Defense-in-depth: filter any recommended action that names a shell,
+        # adb, frida, or mitm command — the capability surface is fixed and
+        # read-only; the model must never widen it via narration. The check
+        # runs against the RAW action text, before sanitize_untrusted_text
+        # neutralises command markers (``adb shell`` -> ``[neutralized]``),
+        # otherwise a forbidden recommendation would survive detection simply
+        # by being rewritten into a neutralised token.
+        raw_recommended = list(report.recommended_actions or [])
+        forbidden_actions = [
+            a for a in raw_recommended if _is_forbidden_action(str(a))
+        ]
+        kept_raw = [
+            a for a in raw_recommended if not _is_forbidden_action(str(a))
+        ]
+        recommended = _bounded_text_list(kept_raw)
+        if forbidden_actions:
+            limitations.append("部分 AI 建议动作包含设备命令，已按只读策略移除")
+
         validated = report.model_copy(
             update={
                 "executive_summary": summary_text,
@@ -171,12 +212,10 @@ class AIReportComposer:
                 "evidence_gaps": _bounded_text_list(report.evidence_gaps)
                 or list(digest.evidence_gaps),
                 "risk_priorities": _bounded_text_list(report.risk_priorities),
-                "recommended_actions": _bounded_text_list(
-                    report.recommended_actions
-                ),
                 "evidence_refs": top_level_refs,
                 "limitations": _dedupe(limitations),
                 "disclaimer": self._disclaimer,
+                "recommended_actions": recommended,
             }
         )
         usable = bool(validated.executive_summary.strip())
