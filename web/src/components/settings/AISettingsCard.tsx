@@ -466,6 +466,7 @@ export function AISettingsCard() {
             id="ai-token-budget"
             label="默认 Token 预算"
             value={form.default_token_budget}
+            range={RANGES.default_token_budget}
             locked={locked.has('default_token_budget')}
             error={errors.default_token_budget}
             onChange={(v) => update('default_token_budget', v)}
@@ -474,6 +475,7 @@ export function AISettingsCard() {
             id="ai-max-rounds"
             label="最大模型轮数"
             value={form.max_rounds}
+            range={RANGES.max_rounds}
             locked={locked.has('max_rounds')}
             error={errors.max_rounds}
             onChange={(v) => update('max_rounds', v)}
@@ -482,6 +484,7 @@ export function AISettingsCard() {
             id="ai-max-tool-calls"
             label="最大工具调用数"
             value={form.max_tool_calls}
+            range={RANGES.max_tool_calls}
             locked={locked.has('max_tool_calls')}
             error={errors.max_tool_calls}
             onChange={(v) => update('max_tool_calls', v)}
@@ -490,6 +493,7 @@ export function AISettingsCard() {
             id="ai-timeout"
             label="请求超时(秒)"
             value={form.timeout_seconds}
+            range={RANGES.timeout_seconds}
             locked={locked.has('timeout_seconds')}
             error={errors.timeout_seconds}
             onChange={(v) => update('timeout_seconds', v)}
@@ -498,6 +502,7 @@ export function AISettingsCard() {
             id="ai-max-input"
             label="最大输入 Token"
             value={form.max_input_tokens}
+            range={RANGES.max_input_tokens}
             locked={locked.has('max_input_tokens')}
             error={errors.max_input_tokens}
             onChange={(v) => update('max_input_tokens', v)}
@@ -506,6 +511,7 @@ export function AISettingsCard() {
             id="ai-max-output"
             label="最大输出 Token"
             value={form.max_output_tokens}
+            range={RANGES.max_output_tokens}
             locked={locked.has('max_output_tokens')}
             error={errors.max_output_tokens}
             onChange={(v) => update('max_output_tokens', v)}
@@ -514,6 +520,7 @@ export function AISettingsCard() {
             id="ai-cache-ttl"
             label="缓存 TTL(秒)"
             value={form.cache_ttl_seconds}
+            range={RANGES.cache_ttl_seconds}
             locked={locked.has('cache_ttl_seconds')}
             error={errors.cache_ttl_seconds}
             onChange={(v) => update('cache_ttl_seconds', v)}
@@ -677,6 +684,7 @@ function NumberField({
   id,
   label,
   value,
+  range,
   locked,
   error,
   onChange,
@@ -684,6 +692,7 @@ function NumberField({
   id: string
   label: string
   value: number
+  range: [number, number]
   locked?: boolean
   error?: string
   onChange: (v: number) => void
@@ -697,6 +706,10 @@ function NumberField({
       <input
         id={id}
         type="number"
+        inputMode="numeric"
+        min={range[0]}
+        max={range[1]}
+        step={1}
         value={Number.isFinite(value) ? value : ''}
         disabled={locked}
         onChange={(e) => onChange(Number(e.target.value))}
@@ -743,7 +756,7 @@ function SelectField({
         )}
       >
         {options.map((opt) => (
-          <option key={opt.value} value={opt.value} className="bg-[var(--bg-elevated)]">
+          <option key={opt.value} value={opt.value}>
             {opt.label}
           </option>
         ))}

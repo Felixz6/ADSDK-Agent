@@ -171,6 +171,45 @@ textarea::placeholder {
   color: var(--text-tertiary);
 }
 
+/* number 输入:隐藏原生增减箭头。
+   Chromium/WebKit 的 spinner 绘制在 UA shadow DOM 中,不继承页面背景,
+   在深色界面上表现为白色色块。键盘上下键与 min/max/step 校验不受影响。 */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* 原生 select 弹出菜单由操作系统绘制,只认 color-scheme 与不透明背景色 */
+select {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background-color: var(--bg-menu);
+  color: var(--text-primary);
+}
+
+select option:disabled {
+  color: var(--text-tertiary);
+}
+
+select option:checked,
+select option:hover {
+  background-color: var(--bg-menu-hover);
+}
+
+html[data-theme='light'] select {
+  color-scheme: light;
+}
+
 /* 自定义滚动条(玻璃感) */
 *::-webkit-scrollbar {
   width: 10px;
