@@ -124,6 +124,15 @@ GET /tasks/{task_id}/ai-report    # 该任务的 ai-report.json
 
 `/ai/status` 默认不探测外部模型（`reachable` 为 `null` 表示「未探测」）；只有显式传 `?probe=true` 才会按需检查一次可达性。
 
+AI 配置接口（M6B，仅本机可写）：
+
+```text
+GET    /ai/settings               # 脱敏后的有效配置（绝不返回 API Key）
+PUT    /ai/settings               # 保存可编辑配置 + 可选新 Key（请求体不记日志）
+POST   /ai/settings/test          # 测试已保存配置或页面临时配置（临时 Key 不落盘）
+DELETE /ai/settings/api-key       # 仅删除本机保存的 Key（环境变量 Key 不受影响）
+```
+
 低 Token 设计：正常路径最多两次模型调用（一次规划、一次报告）；候选工具由确定性 capability router 按分析范围筛选（默认不超过 6 个）；发送给模型的始终是压缩后的工具结果与证据摘要，绝不发送完整 `report.json`、Hook 日志、logcat、`requests.jsonl`、请求/响应正文或完整 Manifest。相同输入命中缓存时模型调用为 0 次。
 
 ------
@@ -376,7 +385,10 @@ adsdk-agent/
 │  │  ├─ context_builder.py     # evidence-digest-v1 与 Prompt 注入防护
 │  │  ├─ orchestrator.py        # 两阶段低 Token 编排、预算与降级
 │  │  ├─ report_composer.py     # Evidence Reference 校验与确定性模板
-│  │  └─ cache.py               # 响应缓存（含 TTL 与损坏隔离）
+│  │  ├─ cache.py               # 响应缓存（含 TTL 与损坏隔离）
+│  │  ├─ settings_store.py      # 本机配置持久化 + 环境变量优先级
+│  │  ├─ settings_service.py    # 配置校验、脱敏响应与 Provider 热更新
+│  │  └─ secret_store.py        # Windows DPAPI 加密的 API Key 存储
 │  ├─ services/                 # 任务服务与 AI 任务适配
 │  ├─ tools/                    # apktool、ADB、Frida、mitmproxy 封装
 │  └─ frida_hooks/              # Frida Hook 脚本
@@ -449,7 +461,7 @@ Web 提交分析请求
 | `AI_ENABLED`               | `false`              | 总开关；关闭时确定性分析与报告行为完全不变             |
 | `AI_PROVIDER`              | `openai_compatible`  | Provider 实现；业务代码不绑定任何单一厂商              |
 | `AI_BASE_URL`              |         空           | OpenAI 兼容端点根地址                                  |
-| `AI_API_KEY`               |         空           | **只从环境变量读取**；不进入日志、库、响应、报告与前端 |
+| `AI_API_KEY`               |         空           | 环境变量方式配置密钥；不进入日志、库、响应、报告与前端 |
 | `AI_MODEL`                 |         空           | 模型名                                                 |
 | `AI_TIMEOUT_SECONDS`       | `60`                 | 单次模型调用超时                                       |
 | `AI_MAX_ROUNDS`            | `2`                  | 模型调用轮数上限（正常路径：规划 1 次 + 报告 1 次）    |
@@ -463,6 +475,65 @@ Web 提交分析请求
 | `AI_ALLOW_DYNAMIC_TOOLS`   | `false`              | 为 false 时设备状态变更类工具永不进入候选列表          |
 
 Token 与调用预算被超过时，系统停止继续调用模型、保留已有工具结果、生成确定性报告，并将 AI 状态标记为 `budget_exhausted`——**不会**让整个任务失败。
+
+### 前端 AI 配置中心（M6B）
+
+除 `.env` 环境变量外，也可在 **设置 → AI 编排** 卡片中直接配置 AI。两种方式并存，既有 `.env` 部署无需任何改动。
+
+**配置优先级（固定）**
+
+```text
+环境变量  >  本机保存配置  >  代码默认值
+```
+
+存在对应环境变量的字段会出现在响应的 `locked_fields` 中，前端输入框禁用并提示「该字段由环境变量管理」；`field_sources` 逐字段给出 `default | environment | local_store`。本机保存**不会**覆盖环境变量，删除本机 Key 也不影响环境变量 Key。
+
+**两份配置文件（分离存储）**
+
+| 文件                            | 内容                     | 说明                                        |
+| ------------------------------- | ------------------------ | ------------------------------------------- |
+| `output/config/ai-settings.json` | 非密钥的可编辑配置       | 明文 JSON；**永不包含 API Key**             |
+| `output/config/ai-secret.bin`    | API Key                  | Windows DPAPI 加密；只有当前 Windows 用户可解密 |
+
+两者均为「临时文件 + `os.replace`」原子写入。配置 JSON 损坏时按默认值降级；密钥文件损坏或由他人复制而来时按「未配置」处理，**不会**导致后端启动失败。
+
+**Windows DPAPI 说明**
+
+密钥通过 `ctypes` 调用 `CryptProtectData` / `CryptUnprotectData` 加密（不引入额外依赖），加密结果与当前 Windows 用户账户绑定：换用户或换机器都无法解密。**非 Windows 平台不支持本机保存密钥**，保存时返回 `secret_persistence_unsupported`——绝不静默退回明文保存；这些平台请继续使用 `AI_API_KEY` 环境变量。
+
+**API Key 保存与删除**
+
+`PUT /ai/settings` 的 `api_key` 字段为只写：
+
+- 字段缺失 → 保留现有 Key；
+- 空字符串 → 保留现有 Key（**不是删除**）；
+- 非空字符串 → 替换 Key。
+
+删除必须调用独立接口 `DELETE /ai/settings/api-key`，前端对应「删除已保存 API Key」按钮并带二次确认。这样普通保存永远不会误删密钥。
+
+**测试连接**
+
+`POST /ai/settings/test` 可测试已保存配置，也可测试页面上尚未保存的临时配置（临时 Key 只存在于该次请求内存，不保存、不缓存、不写库、不写报告、不记日志）。
+
+探测策略不只依赖 `GET /models`：
+
+1. 先尝试 `GET /models`，2xx 即判定可达；
+2. 若返回 404 / 405，改用一次最小聊天请求（`max_tokens=1`、固定短提示、不带工具、不产生报告）验证；
+3. 401 / 403 → `authentication_failed`；超时 → `timeout`；其余传输失败 → `unreachable`。
+
+响应中的 `models_endpoint_supported` 说明本次采用了哪条探测路径，因此**不会**因为网关不支持 `/models` 就误判为不可达。
+
+**Provider 热更新**
+
+保存配置后无需重启后端：进程内 `AIProviderFactory` 以锁保护重建 Provider，**新任务**使用最新配置，**正在运行的任务**继续使用其启动时捕获的快照；重建失败时保留旧 Provider 并返回结构化错误。
+
+**安全边界**
+
+- API Key 永不返回前端：读取接口只暴露 `api_key_configured`（布尔）与 `api_key_source`；
+- Key 不写入 `localStorage` / `sessionStorage` / `IndexedDB` / URL / 前端构建产物 / 全局 Store，只存在于输入组件的局部状态，保存成功即清空、组件卸载即清除；
+- Key 不进入任务 SQLite 库、报告、AI 缓存、日志、异常堆栈与测试快照；
+- 写接口（`PUT` / `POST` / `DELETE`）仅允许 loopback 客户端（`127.0.0.1` / `::1`）；带 `Origin` 时必须属于已配置的前端来源，否则 403；无 `Origin` 的本机 CLI 请求放行；
+- 写接口请求体永不记录日志；配置不可通过 GET 查询参数修改。
 
 ### `MITM_LISTEN_HOST` 安全说明
 
