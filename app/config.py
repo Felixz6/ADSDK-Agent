@@ -180,6 +180,49 @@ AI_MAX_OUTPUT_TOKENS = _env_int_range("AI_MAX_OUTPUT_TOKENS", 1800, 128, 16384)
 AI_MAX_TOOL_RESULT_CHARS = _env_int_range(
     "AI_MAX_TOOL_RESULT_CHARS", 8000, 256, 65536
 )
+
+# M6C — DeepSeek runtime compatibility & low-token orchestration.
+#
+# Compatibility profile selection. ``auto`` detects from base_url host
+# (api.deepseek.com -> deepseek); ``generic_openai`` forces the OpenAI
+# baseline; explicit ``deepseek`` is for diagnostics/overrides.
+AI_PROVIDER_PROFILE = os.getenv("AI_PROVIDER_PROFILE", "auto").strip() or "auto"
+# Thinking mode handling. ``disabled`` always emits
+# ``extra_body={"thinking": {"type": "disabled"}}`` so DeepSeek returns no
+# reasoning_content and behaves deterministically. ``auto`` emits it only for
+# detected DeepSeek hosts; ``off`` never emits it (provider default).
+AI_THINKING_MODE = os.getenv("AI_THINKING_MODE", "disabled").strip() or "disabled"
+# Per-stage output-token caps. The orchestrator takes
+# min(stage_cap, global AI_MAX_OUTPUT_TOKENS, remaining budget) so a stage can
+# never exceed the global ceiling, and each stage has its own bound that keeps
+# planner/report/repair answers tight (low-token acceptance).
+AI_PLANNER_MAX_OUTPUT_TOKENS = _env_int_range(
+    "AI_PLANNER_MAX_OUTPUT_TOKENS", 500, 64, 4000
+)
+AI_REPORT_MAX_OUTPUT_TOKENS = _env_int_range(
+    "AI_REPORT_MAX_OUTPUT_TOKENS", 1000, 128, 8000
+)
+AI_REPAIR_MAX_OUTPUT_TOKENS = _env_int_range(
+    "AI_REPAIR_MAX_OUTPUT_TOKENS", 300, 64, 2000
+)
+# Retry-with-backoff. At most 1 retry by default (capped at 3). Base delay in
+# ms; actual delay respects the server's Retry-After header up to
+# AI_MAX_RETRY_AFTER_SECONDS, then falls back to exponential base-delay jitter
+# derived deterministically from the attempt (no real randomness so tests are
+# reproducible).
+AI_REQUEST_RETRIES = _env_int_range("AI_REQUEST_RETRIES", 1, 0, 3)
+AI_RETRY_BASE_DELAY_MS = _env_int_range(
+    "AI_RETRY_BASE_DELAY_MS", 200, 0, 5000
+)
+AI_MAX_RETRY_AFTER_SECONDS = _env_int_range(
+    "AI_MAX_RETRY_AFTER_SECONDS", 30, 1, 300
+)
+# When True, store a short sanitized excerpt of the model response in the
+# reasoning audit trail. When False (default) no model response text is kept on
+# disk beyond the validated report artifact. Disabled by default per spec.
+AI_STORE_RESPONSE_EXCERPTS = _env_bool(
+    "AI_STORE_RESPONSE_EXCERPTS", default=False
+)
 AI_CACHE_ENABLED = _env_bool("AI_CACHE_ENABLED", default=True)
 AI_CACHE_TTL_SECONDS = _env_int_range("AI_CACHE_TTL_SECONDS", 86400, 60, 604800)
 AI_REPORT_LANGUAGE = os.getenv("AI_REPORT_LANGUAGE", "zh-CN").strip() or "zh-CN"
@@ -189,6 +232,6 @@ AI_ALLOW_DYNAMIC_TOOLS = _env_bool("AI_ALLOW_DYNAMIC_TOOLS", default=False)
 # Tagged version of the system prompt / tool definitions. Bump it when the
 # prompt or tool schemas change; it is part of the cache key so cached answers
 # are not reused against a different prompt surface.
-AI_PROMPT_VERSION = os.getenv("AI_PROMPT_VERSION", "ai-plan-v1.0").strip() or (
-    "ai-plan-v1.0"
+AI_PROMPT_VERSION = os.getenv("AI_PROMPT_VERSION", "ai-plan-v1.1").strip() or (
+    "ai-plan-v1.1"
 )

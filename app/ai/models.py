@@ -28,6 +28,14 @@ AI_REPORT_SCHEMA_VERSION: Literal["ai-report-v1"] = "ai-report-v1"
 EVIDENCE_DIGEST_SCHEMA_VERSION: Literal["evidence-digest-v1"] = (
     "evidence-digest-v1"
 )
+# M6C — runtime diagnostics artifact. Records observable runtime facts about
+# AI execution: per-round token provenance, error classification, latency, cache
+# status, retry counts. Contains NO API key, NO full prompt, NO full model
+# response, NO reasoning_content text, NO chain-of-thought — only a boolean
+# recording whether reasoning_content was present.
+AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION: Literal["ai-runtime-diagnostics-v1"] = (
+    "ai-runtime-diagnostics-v1"
+)
 
 
 def ai_plan_schema_version() -> str:
@@ -40,6 +48,10 @@ def ai_report_schema_version() -> str:
 
 def evidence_digest_schema_version() -> str:
     return EVIDENCE_DIGEST_SCHEMA_VERSION
+
+
+def ai_runtime_diagnostics_schema_version() -> str:
+    return AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +322,55 @@ class AIReport(BaseModel):
 # ---------------------------------------------------------------------------
 # Token / call budget accounting.
 # ---------------------------------------------------------------------------
+# Where a token figure came from. ``provider`` is authoritative real tokens
+# returned by the upstream API usage block; ``estimated`` is a local estimate
+# (e.g. heuristic token count when the provider returned no usage); ``unavailable``
+# means no usage could be determined at all. This lets the diagnostics surface
+# distinguish real-vs-estimated token accounting.
+TokenUsageSource = Literal["provider", "estimated", "unavailable"]
+
+# Which orchestration stage a model round belonged to. Per-stage output-token
+# caps and per-round provenance are tracked against this label.
+AIRoundType = Literal["plan", "report", "repair"]
+
+# Unified error classification produced by the provider retry/classify layer.
+AIErrorCode = Literal[
+    "ai_not_configured",
+    "ai_provider_timeout",
+    "ai_provider_unreachable",
+    "ai_provider_authentication_failed",
+    "ai_provider_model_not_found",
+    "ai_provider_rate_limited",
+    "ai_provider_error",
+    "ai_provider_invalid_json",
+    "ai_provider_invalid_response",
+]
+
+
+class AIPerRoundUsage(BaseModel):
+    """Token accounting for a single model round.
+
+    ``usage_source`` distinguishes real provider tokens from a local estimate.
+    ``reasoning_content_present`` records *only* whether the model returned a
+    reasoning_content field — never the content itself. No prompt text, no
+    response text, no reasoning text is ever stored here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    round_index: int = 0
+    round_type: AIRoundType
+    usage_source: TokenUsageSource = "unavailable"
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    latency_ms: int = 0
+    finish_reason: str | None = None
+    reasoning_content_present: bool = False
+    retry_count: int = 0
+    cache_hit: bool = False
+
+
 class AITokenUsage(BaseModel):
     """Per-AI-task token accounting. Real usage when the provider returns it,
     otherwise an explicitly-marked estimate."""  # noqa: D200
@@ -326,6 +387,84 @@ class AITokenUsage(BaseModel):
     cache_hit: bool = False
     budget_exhausted: bool = False
     usage_is_estimate: bool = True
+    # M6C — provenance & per-stage visibility.
+    usage_source: TokenUsageSource = "unavailable"
+    # Aggregate reasoning presence across rounds: True iff any round carried a
+    # reasoning_content field. The content is never recorded.
+    reasoning_content_present: bool = False
+    # Total real-vs-estimated breakdown (subset of input/output_tokens that came
+    # from the authoritative provider usage block). ``0`` when unavailable.
+    real_tokens: int = 0
+    estimated_total_tokens: int = 0
+    # Per-round provenance, one entry per model round executed.
+    rounds: list[AIPerRoundUsage] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# ai-runtime-diagnostics-v1  (observable runtime facts only; no secrets,
+# no model text, no reasoning_content content, no full prompt/response).
+# ---------------------------------------------------------------------------
+class AIErrorObservation(BaseModel):
+    """One classified error that occurred during a model call/retry.
+
+    Flat error vocabulary shared with the provider layer. ``retry_count`` is the
+    number of retries consumed for this call before the error was finalized
+    (``0`` if the first attempt failed and was not retried). No error body,
+    header, or URL is stored — only the classifier label and timing.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: AIErrorCode
+    retryable: bool = False
+    attempt: int = 1
+    retry_count: int = 0
+    stage: AIRoundType | None = None
+    http_status: int | None = None
+    latency_ms: int = 0
+    finalized: bool = True
+
+
+class AIRuntimeDiagnostic(BaseModel):
+    """The ``ai-runtime-diagnostics-v1`` artifact — observable runtime facts.
+
+    Deliberately minimal and secret-free. Includes: per-round token provenance,
+    aggregate usage, classified errors, retry/latency summaries, cache status,
+    model identity, and the compatibility profile applied. Excludes by design:
+    API key, Authorization, full prompt, full model response, reasoning_content
+    text (only a presence bool per round), ai-secret.bin contents.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["ai-runtime-diagnostics-v1"] = (
+        AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION
+    )
+    task_id: str
+    model: str = ""
+    provider_profile: str = ""
+    thinking_mode: str = ""
+    enabled: bool = False
+    # Aggregate usage (mirrors AITokenUsage totals).
+    usage: AITokenUsage = Field(default_factory=AITokenUsage)
+    # Per-round provenance.
+    rounds: list[AIPerRoundUsage] = Field(default_factory=list)
+    # Classified errors encountered (transient retries + finalized failures).
+    errors: list[AIErrorObservation] = Field(default_factory=list)
+    # Summary counters.
+    total_rounds: int = 0
+    total_retries: int = 0
+    # Cache outcome for this run.
+    cache_hit: bool = False
+    cache_enabled: bool = False
+    # Whether the run degraded to a deterministic fallback (no successful model
+    # call synthesized the artifact).
+    deterministic_fallback: bool = False
+    # Highest severity reached. ``ok`` means a successful model call produced
+    # the artifact; ``degraded`` means retries/estimates/imputed values were
+    # needed; ``failed`` means no model artifact was produced.
+    outcome: Literal["ok", "degraded", "failed", "disabled"] = "ok"
+    generated_at: str = ""
 
 
 # ---------------------------------------------------------------------------
