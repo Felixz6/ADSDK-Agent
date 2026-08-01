@@ -146,3 +146,120 @@ class TaskAIArtifactResponse(BaseModel):
     status: TaskStatus
     available: bool
     payload: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
+# M6B — secure frontend AI configuration center.
+#
+# Models below describe the /ai/settings* surface. The API key is *never*
+# present in any response model. Save requests carry it as an optional write-
+# only field; a missing or empty value preserves the stored key (deletion is
+# a separate authenticated action).
+# ---------------------------------------------------------------------------
+AISettingsFieldSource = Literal["default", "environment", "local_store"]
+AIKeyType = Literal["none", "environment", "local_store"]
+
+
+class AISettingsResponse(BaseModel):
+    """Masked effective AI settings returned by GET /ai/settings.
+
+    ``api_key_configured`` is the *only* key-derived field; the raw key, its
+    length, or any derivative is never included.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    enabled: bool
+    provider: str
+    base_url: str
+    model: str
+    api_key_configured: bool
+    api_key_source: AIKeyType
+    default_token_budget: int
+    max_rounds: int
+    max_tool_calls: int
+    timeout_seconds: int
+    max_input_tokens: int
+    max_output_tokens: int
+    cache_enabled: bool
+    cache_ttl_seconds: int
+    allow_dynamic_tools: bool
+    report_language: str
+    field_sources: dict[str, AISettingsFieldSource]
+    locked_fields: list[str]
+
+
+class AISettingsSaveRequest(BaseModel):
+    """PUT /ai/settings — editable fields + optional write-only API key.
+
+    ``api_key`` semantics:
+      * omitted      -> the stored key is preserved
+      * empty string -> the stored key is preserved (NOT a delete)
+      * non-empty    -> replace the stored key (DPAPI)
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    provider: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    # Write-only: never echoed back. Stored via DPAPI, never in the JSON.
+    api_key: str | None = None
+    default_token_budget: int | None = None
+    max_rounds: int | None = None
+    max_tool_calls: int | None = None
+    timeout_seconds: int | None = None
+    max_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+    cache_enabled: bool | None = None
+    cache_ttl_seconds: int | None = None
+    allow_dynamic_tools: bool | None = None
+    report_language: str | None = None
+
+
+class AISettingsTestRequest(BaseModel):
+    """POST /ai/settings/test — optional temporary config (never persisted).
+
+    A temporary ``api_key`` lives only in this request's memory: it is not
+    written to the store, cache, DB, report, or logs.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    provider: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    api_key: str | None = None
+    timeout_seconds: int | None = None
+
+
+class AISettingsTestResponse(BaseModel):
+    """Result of a connection test. No key, no host echo beyond the request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal[
+        "reachable",
+        "unreachable",
+        "invalid_configuration",
+        "authentication_failed",
+        "timeout",
+    ]
+    provider: str
+    model: str
+    latency_ms: int
+    safe_message: str
+    models_endpoint_supported: bool
+
+
+class AISettingsDeleteKeyResponse(BaseModel):
+    """Result of DELETE /ai/settings/api-key (local key only)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    deleted: bool
+    api_key_source: AIKeyType
+    api_key_configured: bool
