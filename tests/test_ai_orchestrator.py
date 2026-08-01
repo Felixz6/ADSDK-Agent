@@ -988,7 +988,9 @@ def test_cancellation_stops_model_and_tools_but_keeps_artifacts(tmp_path: Path):
     assert provider.call_count == 0  # no model call after cancellation
     assert executed == []  # no tool started
     assert result.error_code == "task_cancelled"
-    assert len(written) == 4  # artifacts already produced are still kept
+    # M6C: 5 artifacts now persisted (the 4 core + ai-runtime-diagnostics.json).
+    assert len(written) == 5  # artifacts already produced are still kept
+    assert "ai-runtime-diagnostics.json" in written
 
 
 # ---------------------------------------------------------------------------

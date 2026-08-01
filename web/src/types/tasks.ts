@@ -196,6 +196,84 @@ export interface AITokenUsage {
   cache_hit: boolean
   budget_exhausted: boolean
   usage_is_estimate: boolean
+  /** M6C — token 来源(provider 真实 / estimated 本地估算 / unavailable 未知)。 */
+  usage_source: TokenUsageSource
+  /** 仅记录模型是否返回 reasoning_content 字段,绝不包含其内容。 */
+  reasoning_content_present: boolean
+  /** 真实 provider usage 中的 token 子集(无 provider 时为 0)。 */
+  real_tokens: number
+  /** 本地估算合计 token(无估算时为 0)。 */
+  estimated_total_tokens: number
+  /** 每轮模型的 token 来源明细。 */
+  rounds: AIPerRoundUsage[]
+}
+
+/** token 来源:provider=真实返回 / estimated=本地估算 / unavailable=未知。 */
+export type TokenUsageSource = 'provider' | 'estimated' | 'unavailable'
+
+/** 模型编排阶段:plan=规划 / report=报告 / repair=修复。 */
+export type AIRoundType = 'plan' | 'report' | 'repair'
+
+/** 统一错误分类(provider 层产出)。仅含分类标签,无错误体/头部/URL。 */
+export type AIErrorCode =
+  | 'ai_not_configured'
+  | 'ai_provider_timeout'
+  | 'ai_provider_unreachable'
+  | 'ai_provider_authentication_failed'
+  | 'ai_provider_model_not_found'
+  | 'ai_provider_rate_limited'
+  | 'ai_provider_error'
+  | 'ai_provider_invalid_json'
+  | 'ai_provider_invalid_response'
+
+/** 单轮 token 来源明细。reasoning_content_present 仅记录是否存在,不含内容。 */
+export interface AIPerRoundUsage {
+  round_index: number
+  round_type: AIRoundType
+  usage_source: TokenUsageSource
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  latency_ms: number
+  finish_reason: string | null
+  reasoning_content_present: boolean
+  retry_count: number
+  cache_hit: boolean
+}
+
+/** 一次被分类的错误(瞬时重试或最终失败)。无错误体/头部/URL,仅标签+时序。 */
+export interface AIErrorObservation {
+  code: AIErrorCode
+  retryable: boolean
+  attempt: number
+  retry_count: number
+  stage: AIRoundType | null
+  http_status: number | null
+  latency_ms: number
+  finalized: boolean
+}
+
+/**
+ * ai-runtime-diagnostics-v1 运行时诊断(仅可观事实,绝不包含秘密/完整 prompt/
+ * 完整模型响应/reasoning_content 内容——每轮仅记录是否存在 presence 布尔)。
+ */
+export interface AIRuntimeDiagnostic {
+  schema_version: 'ai-runtime-diagnostics-v1'
+  task_id: string
+  model: string
+  provider_profile: string
+  thinking_mode: string
+  enabled: boolean
+  usage: AITokenUsage
+  rounds: AIPerRoundUsage[]
+  errors: AIErrorObservation[]
+  total_rounds: number
+  total_retries: number
+  cache_hit: boolean
+  cache_enabled: boolean
+  deterministic_fallback: boolean
+  outcome: 'ok' | 'degraded' | 'failed' | 'disabled'
+  generated_at: string
 }
 
 export interface AIToolTraceStep {
@@ -230,6 +308,8 @@ export interface AIOrchestrationSection {
   evidence_digest_hash: string
   error_code: string | null
   unavailable_reason: string | null
+  /** M6C — 运行时诊断(仅可观事实)。旧报告无此字段。 */
+  diagnostic: AIRuntimeDiagnostic | null
 }
 
 export interface TaskAIArtifactResponse {
@@ -237,6 +317,14 @@ export interface TaskAIArtifactResponse {
   status: TaskStatus
   available: boolean
   payload: Record<string, unknown> | null
+}
+
+/** POST /tasks/{id}/ai-report/regenerate 返回的精简摘要(无秘密/无模型文本)。 */
+export interface TaskAIArtifactSummary {
+  task_id: string
+  status: TaskStatus
+  ai_status: string
+  ai_section: Record<string, unknown>
 }
 
 export interface DifferenceSet {
