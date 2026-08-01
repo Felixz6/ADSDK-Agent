@@ -45,6 +45,14 @@ DEFAULT_MAX_ROUNDS = 2
 DEFAULT_MAX_TOOL_CALLS = 6
 DEFAULT_MAX_INPUT_TOKENS = 6000
 DEFAULT_MAX_OUTPUT_TOKENS = 1800
+DEFAULT_PLANNER_MAX_OUTPUT_TOKENS = 500
+DEFAULT_REPORT_MAX_OUTPUT_TOKENS = 1000
+DEFAULT_REPAIR_MAX_OUTPUT_TOKENS = 300
+DEFAULT_REQUEST_RETRIES = 1
+DEFAULT_RETRY_BASE_DELAY_MS = 200
+DEFAULT_MAX_RETRY_AFTER_SECONDS = 30
+DEFAULT_PROVIDER_PROFILE = "auto"
+DEFAULT_THINKING_MODE = "disabled"
 DEFAULT_CACHE_ENABLED = True
 DEFAULT_CACHE_TTL_SECONDS = 86400
 DEFAULT_ALLOW_DYNAMIC_TOOLS = False
@@ -59,6 +67,10 @@ _ENV_BINDINGS = {
     "provider": "AI_PROVIDER",
     "base_url": "AI_BASE_URL",
     "model": "AI_MODEL",
+    # M6C — non-secret string env bindings. profile/thinking_mode are
+    # compatibility knobs, not credentials; they may be locked by env.
+    "provider_profile": "AI_PROVIDER_PROFILE",
+    "thinking_mode": "AI_THINKING_MODE",
 }
 
 # Numeric/bool env bindings are only consulted to compute locked_fields /
@@ -75,6 +87,12 @@ _ENV_NUMERIC_BINDINGS = {
     "cache_enabled": "AI_CACHE_ENABLED",
     "allow_dynamic_tools": "AI_ALLOW_DYNAMIC_TOOLS",
     "report_language": "AI_REPORT_LANGUAGE",
+    "planner_max_output_tokens": "AI_PLANNER_MAX_OUTPUT_TOKENS",
+    "report_max_output_tokens": "AI_REPORT_MAX_OUTPUT_TOKENS",
+    "repair_max_output_tokens": "AI_REPAIR_MAX_OUTPUT_TOKENS",
+    "request_retries": "AI_REQUEST_RETRIES",
+    "retry_base_delay_ms": "AI_RETRY_BASE_DELAY_MS",
+    "max_retry_after_seconds": "AI_MAX_RETRY_AFTER_SECONDS",
 }
 
 # Fields the frontend should never receive the effective value of once set
@@ -100,6 +118,15 @@ class LocalSettings:
     cache_ttl_seconds: int | None = None
     allow_dynamic_tools: bool | None = None
     report_language: str | None = None
+    # M6C — DeepSeek compatibility & low-token orchestration surface.
+    provider_profile: str | None = None
+    thinking_mode: str | None = None
+    planner_max_output_tokens: int | None = None
+    report_max_output_tokens: int | None = None
+    repair_max_output_tokens: int | None = None
+    request_retries: int | None = None
+    retry_base_delay_ms: int | None = None
+    max_retry_after_seconds: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {f.name: getattr(self, f.name) for f in fields(self) if getattr(self, f.name) is not None}
@@ -127,6 +154,22 @@ class LocalSettings:
             cache_ttl_seconds=_opt_int(filtered.get("cache_ttl_seconds")),
             allow_dynamic_tools=_opt_bool(filtered.get("allow_dynamic_tools")),
             report_language=_opt_str(filtered.get("report_language")),
+            provider_profile=_opt_str(filtered.get("provider_profile")),
+            thinking_mode=_opt_str(filtered.get("thinking_mode")),
+            planner_max_output_tokens=_opt_int(
+                filtered.get("planner_max_output_tokens")
+            ),
+            report_max_output_tokens=_opt_int(
+                filtered.get("report_max_output_tokens")
+            ),
+            repair_max_output_tokens=_opt_int(
+                filtered.get("repair_max_output_tokens")
+            ),
+            request_retries=_opt_int(filtered.get("request_retries")),
+            retry_base_delay_ms=_opt_int(filtered.get("retry_base_delay_ms")),
+            max_retry_after_seconds=_opt_int(
+                filtered.get("max_retry_after_seconds")
+            ),
         )
 
 
@@ -374,6 +417,14 @@ __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
     "DEFAULT_MAX_INPUT_TOKENS",
     "DEFAULT_MAX_OUTPUT_TOKENS",
+    "DEFAULT_PLANNER_MAX_OUTPUT_TOKENS",
+    "DEFAULT_REPORT_MAX_OUTPUT_TOKENS",
+    "DEFAULT_REPAIR_MAX_OUTPUT_TOKENS",
+    "DEFAULT_REQUEST_RETRIES",
+    "DEFAULT_RETRY_BASE_DELAY_MS",
+    "DEFAULT_MAX_RETRY_AFTER_SECONDS",
+    "DEFAULT_PROVIDER_PROFILE",
+    "DEFAULT_THINKING_MODE",
     "DEFAULT_CACHE_ENABLED",
     "DEFAULT_CACHE_TTL_SECONDS",
     "DEFAULT_ALLOW_DYNAMIC_TOOLS",
