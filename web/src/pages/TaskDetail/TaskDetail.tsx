@@ -27,6 +27,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/common/States
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { useCancelTask, useDeleteTask, useLiveTask, useRetryTask, useTaskReport } from '@/hooks/useTasks'
+import { useRegenerateTaskAIReport } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
 import { cn, formatDateTime } from '@/utils'
 import {
@@ -64,6 +65,7 @@ export default function TaskDetail() {
   const cancelMutation = useCancelTask()
   const retryMutation = useRetryTask()
   const deleteMutation = useDeleteTask()
+  const regenerateAIMutation = useRegenerateTaskAIReport(id)
   const [pending, setPending] = useState<PendingAction>(null)
 
   if (taskQuery.isLoading) {
@@ -136,6 +138,17 @@ export default function TaskDetail() {
       navigate(`/tasks/${response.task.id}`)
     } catch (error) {
       pushToast({ kind: 'error', message: (error as { message?: string }).message ?? '重试失败', duration: 5000 })
+    }
+  }
+
+  // 复用磁盘上确定性分析产物重建 AI 报告段(绝不重跑静态/动态/网络分析)。
+  // useCache=true 强制开启缓存(命中后零真实模型调用);false 强制关闭。
+  async function regenerateAI(useCache?: boolean) {
+    try {
+      await regenerateAIMutation.mutateAsync(useCache)
+      pushToast({ kind: 'success', message: 'AI 报告段已基于确定性产物重建。', duration: 2500 })
+    } catch (error) {
+      pushToast({ kind: 'error', message: (error as { message?: string }).message ?? '重建失败', duration: 5000 })
     }
   }
 
@@ -213,10 +226,45 @@ export default function TaskDetail() {
       </div>
 
       {task.task_type === 'ai_orchestrated' && (
-        <AIOrchestrationCard
-          section={aiSection}
-          loading={reportQuery.isLoading}
-        />
+        <>
+          <AIOrchestrationCard
+            section={aiSection}
+            loading={reportQuery.isLoading}
+          />
+          {task.report_json_path && !active && (
+            <div className="flex flex-wrap items-center gap-2" data-testid="ai-regenerate-actions">
+              <button
+                type="button"
+                onClick={() => void regenerateAI(undefined)}
+                disabled={regenerateAIMutation.isPending}
+                className="control-button"
+              >
+                <RefreshCw size={14} className={regenerateAIMutation.isPending ? 'animate-spin' : ''} />
+                重建 AI 报告(沿用缓存设置)
+              </button>
+              <button
+                type="button"
+                onClick={() => void regenerateAI(true)}
+                disabled={regenerateAIMutation.isPending}
+                className="control-button"
+                data-testid="ai-regenerate-cache-on"
+              >
+                <RefreshCw size={14} className={regenerateAIMutation.isPending ? 'animate-spin' : ''} />
+                重建(强制走缓存)
+              </button>
+              <button
+                type="button"
+                onClick={() => void regenerateAI(false)}
+                disabled={regenerateAIMutation.isPending}
+                className="control-button"
+                data-testid="ai-regenerate-cache-off"
+              >
+                <RefreshCw size={14} className={regenerateAIMutation.isPending ? 'animate-spin' : ''} />
+                重建(强制真实调用)
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {task.task_type === 'dynamic' && (
