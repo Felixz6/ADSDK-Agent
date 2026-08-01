@@ -6,6 +6,7 @@ import type {
   ComparisonResult,
   TaskActionResponse,
   TaskAIArtifactResponse,
+  TaskAIArtifactSummary,
   TaskCreateRequest,
   TaskFilters,
   TaskListResponse,
@@ -116,6 +117,40 @@ export async function getTaskAIReport(
   const { data } = await api.get<TaskAIArtifactResponse>(
     `/tasks/${encodeURIComponent(taskId)}/ai-report`,
     { signal },
+  )
+  return data
+}
+
+/**
+ * GET /tasks/{id}/ai-runtime-diagnostics —— 运行时诊断(仅可观事实,无秘密/
+ * 无完整 prompt/无完整模型响应/reasoning_content 仅记录 presence 布尔)。
+ */
+export async function getTaskAIRuntimeDiagnostics(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<TaskAIArtifactResponse> {
+  const { data } = await api.get<TaskAIArtifactResponse>(
+    `/tasks/${encodeURIComponent(taskId)}/ai-runtime-diagnostics`,
+    { signal },
+  )
+  return data
+}
+
+/**
+ * POST /tasks/{id}/ai-report/regenerate —— 复用磁盘上确定性分析产物重建 AI
+ * 报告段(绝不重跑静态/动态/网络分析)。``useCache`` 缺省时使用前端保存的
+ * 缓存设置;传 true 强制开启缓存(命中后零真实模型调用),传 false 强制关闭。
+ */
+export async function regenerateTaskAIReport(
+  taskId: string,
+  useCache?: boolean,
+  signal?: AbortSignal,
+): Promise<TaskAIArtifactSummary> {
+  const params = useCache === undefined ? undefined : { use_cache: useCache }
+  const { data } = await api.post<TaskAIArtifactSummary>(
+    `/tasks/${encodeURIComponent(taskId)}/ai-report/regenerate`,
+    undefined,
+    { params, signal },
   )
   return data
 }

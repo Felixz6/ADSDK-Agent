@@ -16,10 +16,12 @@ import {
   getTask,
   getTaskAIPlan,
   getTaskAIReport,
+  getTaskAIRuntimeDiagnostics,
   getTaskReport,
   getTaskSystemStatus,
   listComparisons,
   listTasks,
+  regenerateTaskAIReport,
   retryTask,
   taskWebSocketUrl,
 } from '@/api/taskCenter'
@@ -29,6 +31,7 @@ import type {
   ComparisonResult,
   TaskActionResponse,
   TaskAIArtifactResponse,
+  TaskAIArtifactSummary,
   TaskCreateRequest,
   TaskFilters,
   TaskListResponse,
@@ -215,6 +218,46 @@ export function useTaskAIReport(taskId: string | undefined, enabled = true) {
     queryFn: ({ signal }) => getTaskAIReport(taskId ?? '', signal),
     enabled: Boolean(taskId) && enabled,
     staleTime: 15_000,
+    retry: false,
+  })
+}
+
+/** 运行时诊断(仅可观事实,无秘密/reasoning_content 内容)。 */
+export function useTaskAIRuntimeDiagnostics(
+  taskId: string | undefined,
+  enabled = true,
+) {
+  return useQuery<TaskAIArtifactResponse, ApiError>({
+    queryKey: ['tasks', 'ai-runtime-diagnostics', taskId],
+    queryFn: ({ signal }) => getTaskAIRuntimeDiagnostics(taskId ?? '', signal),
+    enabled: Boolean(taskId) && enabled,
+    staleTime: 15_000,
+    retry: false,
+  })
+}
+
+/**
+ * 复用磁盘确定性产物重建 AI 报告段(绝不重跑静态/动态/网络分析)。成功后
+ * 失效 ai-report / ai-runtime-diagnostics,使前端立即重新拉取最新产物。
+ *
+ * useCache: undefined=沿用前端保存的缓存设置;true=强制开启(命中→0 真实调用);
+ * false=强制关闭。
+ */
+export function useRegenerateTaskAIReport(
+  taskId: string | undefined,
+  invalidatePrefix: 'ai-report' = 'ai-report',
+) {
+  const queryClient = useQueryClient()
+  return useMutation<TaskAIArtifactSummary, ApiError, boolean | undefined>({
+    mutationFn: (useCache) => regenerateTaskAIReport(taskId ?? '', useCache),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['tasks', invalidatePrefix, taskId],
+      })
+      void queryClient.invalidateQueries({
+        queryKey: ['tasks', 'ai-runtime-diagnostics', taskId],
+      })
+    },
     retry: false,
   })
 }

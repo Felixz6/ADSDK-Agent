@@ -3,7 +3,7 @@ import { screen, within } from '@testing-library/react'
 import { AIOrchestrationCard } from './AIOrchestrationCard'
 import { AISynthesisCard } from './AISynthesisCard'
 import { renderWithProviders } from '@/test/render'
-import type { AIOrchestrationSection } from '@/types/tasks'
+import type { AIOrchestrationSection, AIRuntimeDiagnostic } from '@/types/tasks'
 
 function makeSection(overrides: Partial<AIOrchestrationSection> = {}): AIOrchestrationSection {
   return {
@@ -12,6 +12,7 @@ function makeSection(overrides: Partial<AIOrchestrationSection> = {}): AIOrchest
     evidence_digest_hash: 'abc123',
     error_code: null,
     unavailable_reason: null,
+    diagnostic: null,
     plan: {
       schema_version: 'ai-plan-v1',
       objective: '静态隐私检查',
@@ -72,6 +73,11 @@ function makeSection(overrides: Partial<AIOrchestrationSection> = {}): AIOrchest
       cache_hit: false,
       budget_exhausted: false,
       usage_is_estimate: false,
+      usage_source: 'provider',
+      reasoning_content_present: false,
+      real_tokens: 1600,
+      estimated_total_tokens: 0,
+      rounds: [],
     },
     trace: {
       trace_id: 't1',
@@ -181,6 +187,153 @@ describe('AIOrchestrationCard — 计划与工具状态', () => {
     renderWithProviders(<AIOrchestrationCard section={section} />)
 
     expect(within(screen.getByTestId('ai-orchestration-card')).getByText('确定性默认计划')).toBeInTheDocument()
+  })
+})
+
+describe('AIOrchestrationCard — 运行时诊断', () => {
+  function makeDiagnostic(overrides: Partial<AIRuntimeDiagnostic> = {}): AIRuntimeDiagnostic {
+    return {
+      schema_version: 'ai-runtime-diagnostics-v1' as const,
+      task_id: 't1',
+      model: 'deepseek-v4-flash',
+      provider_profile: 'deepseek',
+      thinking_mode: 'disabled',
+      enabled: true,
+      usage: {
+        input_tokens: 500,
+        output_tokens: 300,
+        cached_tokens: 0,
+        estimated_tokens: 0,
+        tool_call_count: 2,
+        model_round_count: 2,
+        latency_ms: 900,
+        cache_hit: false,
+        budget_exhausted: false,
+        usage_is_estimate: false,
+        usage_source: 'provider' as const,
+        reasoning_content_present: true,
+        real_tokens: 800,
+        estimated_total_tokens: 0,
+        rounds: [
+          {
+            round_index: 0,
+            round_type: 'plan' as const,
+            usage_source: 'provider' as const,
+            input_tokens: 200,
+            output_tokens: 100,
+            cached_tokens: 0,
+            latency_ms: 300,
+            finish_reason: 'stop',
+            reasoning_content_present: true,
+            retry_count: 0,
+            cache_hit: false,
+          },
+          {
+            round_index: 1,
+            round_type: 'report' as const,
+            usage_source: 'estimated' as const,
+            input_tokens: 300,
+            output_tokens: 200,
+            cached_tokens: 0,
+            latency_ms: 600,
+            finish_reason: 'stop',
+            reasoning_content_present: false,
+            retry_count: 1,
+            cache_hit: true,
+          },
+        ],
+      },
+      rounds: [],
+      errors: [
+        {
+          code: 'ai_provider_timeout' as const,
+          retryable: true,
+          attempt: 1,
+          retry_count: 1,
+          stage: 'report' as const,
+          http_status: 408,
+          latency_ms: 5000,
+          finalized: false,
+        },
+      ],
+      total_rounds: 2,
+      total_retries: 1,
+      cache_hit: false,
+      cache_enabled: true,
+      deterministic_fallback: false,
+      outcome: 'degraded' as const,
+      generated_at: '2026-08-01T00:00:00Z',
+      ...overrides,
+    }
+  }
+
+  it('展示真实/估算 token 分别列示与合计来源', () => {
+    const section = makeSection({ diagnostic: makeDiagnostic() })
+    renderWithProviders(<AIOrchestrationCard section={section} />)
+
+    const diag = screen.getByTestId('ai-runtime-diagnostics')
+    expect(within(diag).getByText('真实 Token')).toBeInTheDocument()
+    expect(within(diag).getByText('800')).toBeInTheDocument()
+    expect(within(diag).getByText('估算 Token')).toBeInTheDocument()
+    expect(within(diag).getByText('供应商真实')).toBeInTheDocument()
+  })
+
+  it('展示每轮来源明细(含缓存命中与重试)', () => {
+    const section = makeSection({ diagnostic: makeDiagnostic() })
+    renderWithProviders(<AIOrchestrationCard section={section} />)
+
+    const rounds = screen.getByTestId('ai-diagnostic-rounds')
+    expect(within(rounds).getByText(/规划 #0/)).toBeInTheDocument()
+    expect(within(rounds).getByText(/报告 #1/)).toBeInTheDocument()
+    expect(within(rounds).getByText(/重试 1/)).toBeInTheDocument()
+    expect(within(rounds).getByText('命中缓存')).toBeInTheDocument()
+    expect(within(rounds).getByText('本地估算')).toBeInTheDocument()
+  })
+
+  it('展示分类错误列表与可重试/终结状态', () => {
+    const section = makeSection({ diagnostic: makeDiagnostic() })
+    renderWithProviders(<AIOrchestrationCard section={section} />)
+
+    const errors = screen.getByTestId('ai-diagnostic-errors')
+    expect(within(errors).getByText('超时(408)')).toBeInTheDocument()
+    expect(within(errors).getByText('HTTP 408')).toBeInTheDocument()
+    expect(within(errors).getByText(/可重试/)).toBeInTheDocument()
+    expect(within(errors).getByText(/进行中/)).toBeInTheDocument()
+  })
+
+  it('展示结局徽章与缓存状态', () => {
+    const section = makeSection({ diagnostic: makeDiagnostic() })
+    renderWithProviders(<AIOrchestrationCard section={section} />)
+
+    const diag = screen.getByTestId('ai-runtime-diagnostics')
+    expect(within(diag).getByText('结局: 已降级')).toBeInTheDocument()
+    expect(within(diag).getByText('缓存未命中')).toBeInTheDocument()
+  })
+
+  it('降级为确定性模板时明确提示', () => {
+    const section = makeSection({
+      diagnostic: makeDiagnostic({ deterministic_fallback: true, outcome: 'degraded' }),
+    })
+    renderWithProviders(<AIOrchestrationCard section={section} />)
+
+    expect(within(screen.getByTestId('ai-runtime-diagnostics')).getByText(/最终降级为确定性模板生成/)).toBeInTheDocument()
+  })
+
+  it('无诊断字段时不渲染诊断块', () => {
+    const section = makeSection({ diagnostic: null })
+    renderWithProviders(<AIOrchestrationCard section={section} />)
+
+    expect(screen.queryByTestId('ai-runtime-diagnostics')).not.toBeInTheDocument()
+  })
+
+  it('reasoning_content 仅展示存在性布尔,绝不展示内容', () => {
+    const section = makeSection({ diagnostic: makeDiagnostic() })
+    renderWithProviders(<AIOrchestrationCard section={section} />)
+
+    const diag = screen.getByTestId('ai-runtime-diagnostics')
+    // 诊断块中绝不出现任何"reasoning"内容文本或泄露字段正文;
+    // 每 round 仅含来源/缓存/in-out/延迟等可观事实。
+    expect(diag).not.toHaveTextContent('reasoning_content')
   })
 })
 

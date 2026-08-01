@@ -2,7 +2,13 @@ import { Bot, CheckCircle2, Clock, Coins, Database, Layers, ShieldQuestion, XCir
 import { GlassCard } from '@/components/common/GlassCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cn } from '@/utils'
-import type { AIOrchestrationSection, AIToolStatus } from '@/types/tasks'
+import type {
+  AIErrorObservation,
+  AIOrchestrationSection,
+  AIPerRoundUsage,
+  AIRuntimeDiagnostic,
+  AIToolStatus,
+} from '@/types/tasks'
 
 interface Props {
   section?: AIOrchestrationSection | null
@@ -35,6 +41,37 @@ const TOOL_LABEL: Record<string, string> = {
   deterministic_report: '确定性报告',
   task_status: '任务状态',
   artifact_summary: '产物摘要',
+}
+
+const USAGE_SOURCE_LABEL: Record<string, string> = {
+  provider: '供应商真实',
+  estimated: '本地估算',
+  unavailable: '未知',
+}
+
+const ROUND_TYPE_LABEL: Record<string, string> = {
+  plan: '规划',
+  report: '报告',
+  repair: '修复',
+}
+
+const ERROR_CODE_LABEL: Record<string, string> = {
+  ai_not_configured: '未配置',
+  ai_provider_timeout: '超时(408)',
+  ai_provider_unreachable: '上游不可达(可重试)',
+  ai_provider_authentication_failed: '鉴权失败(401/403,不可重试)',
+  ai_provider_model_not_found: '模型不存在(404)',
+  ai_provider_rate_limited: '限流(429,可重试)',
+  ai_provider_error: '上游错误(其他 4xx)',
+  ai_provider_invalid_json: '响应非法 JSON',
+  ai_provider_invalid_response: '响应无效',
+}
+
+const OUTCOME_LABEL: Record<string, string> = {
+  ok: '正常',
+  degraded: '已降级',
+  failed: '失败',
+  disabled: '未启用',
 }
 
 function statusTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' {
@@ -171,7 +208,163 @@ export function AIOrchestrationCard({ section, loading }: Props) {
           ))}
         </ul>
       ) : null}
+
+      {section.diagnostic ? <DiagnosticsBlock diag={section.diagnostic} /> : null}
     </GlassCard>
+  )
+}
+
+function outcomeTone(outcome: string): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (outcome === 'ok') return 'success'
+  if (outcome === 'failed') return 'danger'
+  if (outcome === 'disabled') return 'neutral'
+  return 'warning'
+}
+
+/**
+ * 运行时诊断块。仅展示可观事实(token 真实/估算来源、每轮来源、分类错误、
+ * 延迟/缓存/重试/降级状态、结局)。绝不展示 reasoning_content 内容——仅每轮
+ * 是否出现该字段的布尔。
+ */
+function DiagnosticsBlock({ diag }: { diag: AIRuntimeDiagnostic }) {
+  const usage = diag.usage
+  const realTotal = usage.real_tokens
+  const estimatedTotal = usage.estimated_total_tokens
+  const aggregateTotal =
+    (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) + (usage.estimated_tokens ?? 0)
+  return (
+    <section
+      className="mt-4 rounded-[10px] border border-[var(--border-soft)] p-3"
+      aria-label="AI 运行时诊断"
+      data-testid="ai-runtime-diagnostics"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-primary)]">
+          <Clock size={13} className="text-[var(--text-tertiary)]" /> 运行时诊断
+        </p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StatusBadge
+            tone={outcomeTone(diag.outcome)}
+            label={`结局: ${OUTCOME_LABEL[diag.outcome] ?? diag.outcome}`}
+          />
+          {diag.cache_enabled && (
+            <StatusBadge
+              tone={diag.cache_hit ? 'success' : 'neutral'}
+              label={diag.cache_hit ? '缓存命中' : '缓存未命中'}
+            />
+          )}
+          {!diag.enabled && <StatusBadge tone="neutral" label="AI 未启用" />}
+        </div>
+      </div>
+
+      {diag.model && (
+        <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">
+          模型 {diag.model}
+          {diag.provider_profile ? ` · 配置 ${diag.provider_profile}` : ''}
+          {diag.thinking_mode ? ` · ${diag.thinking_mode}` : ''}
+        </p>
+      )}
+
+      <dl className="mt-2 grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
+        <Metric icon={<Layers size={14} />} k="总轮数" v={String(diag.total_rounds)} />
+        <Metric icon={<Clock size={14} />} k="总重试" v={String(diag.total_retries)} />
+        <Metric icon={<Coins size={14} />} k="真实 Token" v={String(realTotal)} />
+        <Metric
+          icon={<Coins size={14} />}
+          k="估算 Token"
+          v={String(estimatedTotal)}
+        />
+      </dl>
+      <p className="mt-1.5 text-[11px] text-[var(--text-tertiary)]">
+        Token 合计 {aggregateTotal}（来源:
+        {USAGE_SOURCE_LABEL[usage.usage_source] ?? usage.usage_source}
+        ）。真实与估算分别列示,便于区分实际计费与本地推算。
+      </p>
+
+      {usage.rounds?.length ? (
+        <div className="mt-3" data-testid="ai-diagnostic-rounds">
+          <p className="text-[11px] font-medium text-[var(--text-secondary)]">每轮来源明细</p>
+          <ul className="mt-1.5 space-y-1">
+            {usage.rounds.map((round) => (
+              <RoundRow key={round.round_index} round={round} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {diag.errors?.length ? (
+        <div className="mt-3" data-testid="ai-diagnostic-errors">
+          <p className="text-[11px] font-medium text-[var(--warning)]">
+            分类错误（{diag.errors.length}）
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {diag.errors.map((err, index) => (
+              <ErrorRow key={index} err={err} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {diag.deterministic_fallback && (
+        <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">
+          本次最终降级为确定性模板生成,未由成功模型调用产出该产物。
+        </p>
+      )}
+    </section>
+  )
+}
+
+function RoundRow({ round }: { round: AIPerRoundUsage }) {
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-[var(--text-secondary)]">
+      <span>
+        <span className="text-[var(--text-primary)]">
+          {ROUND_TYPE_LABEL[round.round_type] ?? round.round_type} #{round.round_index}
+        </span>
+        {round.retry_count > 0 && (
+          <span className="ml-1 text-[var(--text-tertiary)]">重试 {round.retry_count}</span>
+        )}
+      </span>
+      <span className="flex flex-wrap items-center gap-1.5">
+        {round.cache_hit && (
+          <span className="rounded-[6px] bg-[rgba(121,224,195,0.14)] px-1.5 py-0.5 text-[10px] text-[var(--success)]">
+            命中缓存
+          </span>
+        )}
+        <span className="text-[10px] text-[var(--text-tertiary)]">
+          {USAGE_SOURCE_LABEL[round.usage_source] ?? round.usage_source}
+        </span>
+        <span className="text-[10px] text-[var(--text-tertiary)]">
+          in/out {round.input_tokens}/{round.output_tokens}
+        </span>
+        <span className="text-[10px] text-[var(--text-tertiary)]">{round.latency_ms}ms</span>
+      </span>
+    </li>
+  )
+}
+
+function ErrorRow({ err }: { err: AIErrorObservation }) {
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-[var(--text-secondary)]">
+      <span>
+        <span className="text-[var(--danger)]">
+          {ERROR_CODE_LABEL[err.code] ?? err.code}
+        </span>
+        {err.stage && (
+          <span className="ml-1 text-[var(--text-tertiary)]">
+            @{ROUND_TYPE_LABEL[err.stage] ?? err.stage}#{err.attempt}
+          </span>
+        )}
+        {err.http_status != null && (
+          <span className="ml-1 text-[var(--text-tertiary)]">HTTP {err.http_status}</span>
+        )}
+      </span>
+      <span className="text-[10px] text-[var(--text-tertiary)]">
+        {err.retryable ? '可重试' : '不可重试'}
+        {err.finalized ? ' · 已终结' : ' · 进行中'}
+        {err.latency_ms ? ` · ${err.latency_ms}ms` : ''}
+      </span>
+    </li>
   )
 }
 
