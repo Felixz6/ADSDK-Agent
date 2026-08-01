@@ -442,3 +442,135 @@ describe('M6B — AI 配置表单', () => {
     expect(screen.getByText('任务系统')).toBeInTheDocument()
   })
 })
+
+/**
+ * M6C 发布前修复 —— 深色主题下的原生控件。
+ *
+ * 白色 spinner / 白色下拉菜单都由浏览器 UA shadow DOM 与操作系统弹出层绘制,
+ * jsdom 不实现这两者,因此这里只断言可由 DOM 验证的部分:
+ * 类型、min/max/step 校验属性、可访问性语义与选项可选性。
+ * 实际配色需在 Windows Chrome 人工验收(见提交说明)。
+ */
+describe('M6C — 原生控件与深色主题对齐', () => {
+  /** 与后端 `_RANGES` 一致的字段区间。 */
+  const NUMBER_FIELDS: [string, number, number][] = [
+    ['ai-token-budget', 100, 100000],
+    ['ai-max-rounds', 1, 3],
+    ['ai-max-tool-calls', 1, 10],
+    ['ai-timeout', 5, 300],
+    ['ai-max-input', 500, 100000],
+    ['ai-max-output', 100, 10000],
+    ['ai-cache-ttl', 60, 604800],
+  ]
+
+  it('全部数值字段保持 type=number', async () => {
+    await renderSettings(CONFIGURED)
+    for (const [id] of NUMBER_FIELDS) {
+      const el = document.getElementById(id) as HTMLInputElement
+      expect(el, id).not.toBeNull()
+      expect(el.type, id).toBe('number')
+    }
+  })
+
+  it('全部数值字段保留 min/max/step 校验属性', async () => {
+    await renderSettings(CONFIGURED)
+    for (const [id, min, max] of NUMBER_FIELDS) {
+      const el = document.getElementById(id) as HTMLInputElement
+      expect(el.getAttribute('min'), id).toBe(String(min))
+      expect(el.getAttribute('max'), id).toBe(String(max))
+      expect(el.getAttribute('step'), id).toBe('1')
+    }
+  })
+
+  it('数值字段不使用逐字段临时样式补丁', async () => {
+    await renderSettings(CONFIGURED)
+    const classes = NUMBER_FIELDS.map(
+      ([id]) => (document.getElementById(id) as HTMLInputElement).className,
+    )
+    // 统一由全局 input[type=number] 规则隐藏原生 spinner,
+    // 所有字段因此共享完全相同的类名,不允许出现单字段补丁类。
+    expect(new Set(classes).size).toBe(1)
+  })
+
+  it('锁定的数值字段仍然禁用', async () => {
+    await renderSettings({
+      ...CONFIGURED,
+      locked_fields: ['max_rounds', 'cache_ttl_seconds'],
+    })
+    expect(document.getElementById('ai-max-rounds')).toBeDisabled()
+    expect(document.getElementById('ai-cache-ttl')).toBeDisabled()
+    // 未锁定字段不受影响。
+    expect(document.getElementById('ai-timeout')).not.toBeDisabled()
+  })
+
+  it('数值字段支持键盘与手动输入', async () => {
+    const user = userEvent.setup()
+    await renderSettings(CONFIGURED)
+    const rounds = screen.getByLabelText(/最大模型轮数/) as HTMLInputElement
+    await user.clear(rounds)
+    await user.type(rounds, '3')
+    expect(rounds.value).toBe('3')
+    // 键盘上下键依赖原生 stepUp/stepDown,隐藏 spinner 按钮不影响其可用性。
+    rounds.stepDown()
+    expect(rounds.value).toBe('2')
+    rounds.stepUp()
+    expect(rounds.value).toBe('3')
+  })
+
+  it('报告语言显示当前值且两种语言都可选', async () => {
+    await renderSettings(CONFIGURED)
+    const select = screen.getByLabelText(/报告语言/) as HTMLSelectElement
+    expect(select.tagName).toBe('SELECT')
+    expect(select.value).toBe('zh-CN')
+    const options = Array.from(select.options)
+    expect(options.map((o) => o.value)).toEqual(['zh-CN', 'en-US'])
+    // 后端 _ALLOWED_LANGUAGES 已包含 en-US,因此不得禁用。
+    expect(options.every((o) => !o.disabled)).toBe(true)
+  })
+
+  it('报告语言选项不使用白色背景内联样式', async () => {
+    await renderSettings(CONFIGURED)
+    const select = screen.getByLabelText(/报告语言/) as HTMLSelectElement
+    // 配色统一由全局 select option 规则提供,选项本身不携带样式类。
+    Array.from(select.options).forEach((o) => {
+      expect(o.className).toBe('')
+      expect(o.style.backgroundColor).toBe('')
+    })
+  })
+
+  it('切换报告语言到 English 后可正常保存并回读', async () => {
+    let body: Record<string, unknown> | null = null
+    server.use(
+      http.put(`${API}/ai/settings`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ ...CONFIGURED, report_language: 'en-US' })
+      }),
+    )
+    const user = userEvent.setup()
+    await renderSettings(CONFIGURED)
+    const select = screen.getByLabelText(/报告语言/) as HTMLSelectElement
+    await user.selectOptions(select, 'en-US')
+    expect(select.value).toBe('en-US')
+
+    await user.click(screen.getByTestId('ai-settings-save'))
+    await screen.findByTestId('ai-settings-saved')
+    expect((body as unknown as Record<string, unknown>).report_language).toBe('en-US')
+    // 保存后回读保持一致,不被重置回 zh-CN。
+    expect((screen.getByLabelText(/报告语言/) as HTMLSelectElement).value).toBe('en-US')
+  })
+
+  it('锁定的报告语言字段禁用', async () => {
+    await renderSettings({ ...CONFIGURED, locked_fields: ['report_language'] })
+    expect(screen.getByLabelText(/报告语言/)).toBeDisabled()
+  })
+
+  it('数值字段与下拉在窄屏下不产生水平溢出', async () => {
+    await renderSettings(CONFIGURED)
+    const ids = [...NUMBER_FIELDS.map(([id]) => id), 'ai-report-language']
+    for (const id of ids) {
+      const el = document.getElementById(id)!
+      expect(el.className, id).toMatch(/min-w-0/)
+      expect(el.className, id).toMatch(/w-full/)
+    }
+  })
+})
