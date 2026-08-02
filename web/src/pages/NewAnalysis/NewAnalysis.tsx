@@ -293,6 +293,36 @@ export default function NewAnalysis() {
                   {allowDynamic && (
                     <DeviceSelector value={deviceId} onChange={setDeviceId} disabled={submitting} />
                   )}
+                  {allowDynamic && (
+                    <div
+                      data-testid="device-change-checklist"
+                      className="rounded-[12px] border border-[rgba(242,203,119,0.45)] bg-[rgba(242,203,119,0.06)] p-3 text-xs leading-relaxed"
+                    >
+                      <p className="font-semibold text-[var(--warning)]">
+                        本次运行将改变设备状态，请确认以下范围
+                      </p>
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-[var(--text-secondary)]">
+                        <li>安装/覆盖安装目标 APK（不会删除你原有的数据）</li>
+                        <li>启动目标应用并附加 Frida 采集</li>
+                        <li>按需设置设备 HTTP 代理，并在结束时恢复为初始值</li>
+                        <li>启动本轮独占的抓包进程，结束时关闭</li>
+                        <li>在 Consent 前后各采集一个观察窗口</li>
+                      </ul>
+                      <p className="mt-2 font-semibold text-[var(--text-primary)]">
+                        平台不会执行的操作
+                      </p>
+                      <ul className="mt-1 list-disc space-y-1 pl-4 text-[var(--text-secondary)]">
+                        <li>不清除应用数据、不卸载应用、不修改其他应用</li>
+                        <li>不自动点击 UI、不自动确认 Consent、不重启设备</li>
+                        <li>不停止非本轮启动的外部 frida-server</li>
+                        <li>不绕过 SSL Pinning</li>
+                      </ul>
+                      <p className="mt-2 text-[var(--text-tertiary)]">
+                        Consent 需要你在真机上人工完成，随后在任务详情页回报结论；
+                        超时不会自动确认。
+                      </p>
+                    </div>
+                  )}
                   <NumberField
                     id="tokenBudget"
                     label="Token 预算"
