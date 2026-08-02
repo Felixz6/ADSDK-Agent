@@ -235,3 +235,19 @@ AI_ALLOW_DYNAMIC_TOOLS = _env_bool("AI_ALLOW_DYNAMIC_TOOLS", default=False)
 AI_PROMPT_VERSION = os.getenv("AI_PROMPT_VERSION", "ai-plan-v1.1").strip() or (
     "ai-plan-v1.1"
 )
+
+# ---------------------------------------------------------------------------
+# M7A — full-analysis orchestration (device lease + consent checkpoint).
+# ---------------------------------------------------------------------------
+# How long a device lease may go without a heartbeat before another run may
+# reclaim it. A lease whose holder is still alive is never stolen regardless of
+# this value; the window only bounds recovery after a crash.
+M7A_LEASE_STALE_SECONDS = _env_int_range(
+    "M7A_LEASE_STALE_SECONDS", 600, 30, 86400
+)
+# Upper bound on how long the orchestrator waits for the operator to resolve a
+# consent checkpoint. Reaching it NEVER auto-confirms consent — the wait exits
+# so cleanup can run and the run is recorded as partial.
+M7A_CONSENT_WAIT_SECONDS = _env_int_range(
+    "M7A_CONSENT_WAIT_SECONDS", 900, 30, 86400
+)
