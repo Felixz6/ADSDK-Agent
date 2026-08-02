@@ -915,6 +915,8 @@ DELETE /tasks/{task_id}
 GET    /tasks/{task_id}/artifacts/json
 GET    /tasks/{task_id}/artifacts/markdown
 GET    /tasks/{task_id}/artifacts/html
+GET    /tasks/{task_id}/consent-checkpoint
+POST   /tasks/{task_id}/consent-checkpoint
 WS     /ws/tasks/{task_id}
 POST   /comparisons
 GET    /comparisons/{comparison_id}
@@ -1083,3 +1085,39 @@ adb -s $device shell settings get global http_proxy
 - `launch_then_attach` 记录 `launch_requested_at`、`pid_observed_at`、`attach_started_at`、`attach_completed_at` 和 `startup_gap_ms`，默认证据等级 C。只有显式验证早期生命周期覆盖时才评为 B，且不自动评为 A。
 - 主动 `application-requested` detach 且 `crash=None` 属于正常清理。完整 Native backtrace 保存在 `dynamic/process-diagnostics.json`，页面和正文默认仅展示摘要。
 - 外部启动的 `frida-server` 不属于任务所有权；任务结束只清理由平台显式启动并记录 ownership 的 server。
+
+## M7A 真机 AI 全链路编排
+
+`app/orchestration/` 在既有确定性工具与 M6A/M6C AI 编排器之上加了一层安全信封，
+使一次完整分析可以在单台真机上跑完并复原设备状态。详见
+[docs/M7A_AI_FULL_ANALYSIS.md](docs/M7A_AI_FULL_ANALYSIS.md)。
+
+要点：
+
+- **事实归确定性工具，AI 只负责受约束的计划选择、风险排序与最终叙述。**
+  AI 不生成也不执行任意 Shell、ADB、Frida、SQL 或 Python：模型只能返回已注册的
+  工具名 + 通过 Pydantic 校验的结构化参数。
+- **`device-session-v1` 设备快照**在任何状态变更前采集，只保存掩码
+  `device_ref`（不保存完整 serial）与初始代理值，供清理时复原。初始代理值每轮
+  真实读取，绝不硬编码。
+- **资源所有权**区分 `external`（运行前就存在，永不停止）与 `owned_by_run`
+  （本轮启动，必须清理）。外部 frida-server 永不被本平台停止。
+- **十条清理规则**在 `try/finally` 中执行，失败与取消同样进入清理。代理复原
+  失败会被记录到 limitations，但不会中断其余清理。应用数据永不清除、其他应用
+  永不修改、设备永不重启、证据永不删除。
+- **可回收的设备租约**：一台设备同时只允许一个会改变状态的任务；静态任务不取
+  租约；Consent 等待期间持有租约并心跳；崩溃后的陈旧租约可回收，但心跳仍活跃的
+  租约永不被抢占。
+- **Consent 人工检查点**：平台不自动点击 UI，由人在真机上完成动作后经
+  `POST /tasks/{task_id}/consent-checkpoint` 回报 `confirmed` / `not_found` /
+  `skipped`。接口幂等且受状态门控；**AI 不得自动确认，任何超时都不会产生
+  `confirmed`**——看门狗只能取消，取消会退出等待并进入清理。
+
+相关环境变量：
+
+```env
+M7A_LEASE_STALE_SECONDS=600
+M7A_CONSENT_WAIT_SECONDS=900
+```
+
+真机验收记录见 [docs/M7A_MUMU_ACCEPTANCE.md](docs/M7A_MUMU_ACCEPTANCE.md)。
