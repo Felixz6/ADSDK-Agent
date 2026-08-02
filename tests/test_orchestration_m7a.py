@@ -188,6 +188,14 @@ def test_snapshot_proxy_normalises_empty_and_colon_zero():
     assert snap.initial_state.http_proxy == ""
 
 
+def test_snapshot_proxy_normalises_mumu_colon_null():
+    # MuMu builds return the literal string ":null" (exit 0) when no proxy is
+    # set. It must normalise to "" so cleanup deletes the proxy rather than
+    # writing back a bogus ":null" value. Surfaced by Phase B preflight.
+    snap = _make_snapshot(device_id="127.0.0.1:16416", http_proxy=":null")
+    assert snap.initial_state.http_proxy == ""
+
+
 def test_snapshot_records_frida_server_present_but_not_owned():
     snap = _make_snapshot(frida_pids=[4321])
     assert snap.initial_state.frida_server_present is True
