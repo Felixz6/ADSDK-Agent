@@ -178,8 +178,15 @@ def build_snapshot(
         )
     except BaseException:
         state.http_proxy = None
-    # Normalise: adb returns "" or ":0" for "no proxy".
-    if state.http_proxy is not None and state.http_proxy.strip() in {"", ":0"}:
+    # Normalise: adb returns "" or ":0" (or, on some MuMu builds, the literal
+    # string ":null") for "no proxy set" with exit code 0. Treat all of these
+    # as empty so cleanup deletes the proxy rather than writing back a bogus
+    # ":null"/":0" value. A genuine proxy URL never looks like these.
+    if state.http_proxy is not None and state.http_proxy.strip() in {
+        "",
+        ":0",
+        ":null",
+    }:
         state.http_proxy = ""
 
     try:
