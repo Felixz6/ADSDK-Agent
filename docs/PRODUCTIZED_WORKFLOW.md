@@ -225,3 +225,54 @@ Consent 阶段做 SHA-256 派生，相同输入得到相同标识与排序。
 下发生。”发现产物只保留安全标识与元数据，不包含 Cookie、Authorization、Token、
 请求体、响应体、完整 query value、原始设备序列号、Android ID、IMEI、OAID、广告 ID
 或未脱敏设备路径。旧报告缺少 `privacy_findings` 时继续正常打开并显示旧版说明。
+
+## M7A 真机 AI 全链路编排工作流
+
+一次完整分析在真机上的推进顺序（`app/orchestration/full_analysis_session.py`）：
+
+```text
+queued → preflight → planning → awaiting_confirmation → preparing_device
+  → static_analysis → starting_capture → dynamic_pre_consent
+  → awaiting_consent_action → dynamic_post_consent → stopping_capture
+  → correlating → privacy_findings → deterministic_report → ai_synthesis
+  → cleanup → completed
+```
+
+失败与取消同样必须进入 `cleanup`。`run()` 与 `_run_body()` 分离：`_run_body`
+只返回早期终态，从不自行清理或定稿；`run()` 在 `finally` 中统一释放租约、
+执行清理、清除检查点，然后才定稿 `SessionTransition`。因此任何退出路径
+（lease busy、取消、Consent 取消、未预期异常）都带有完整的清理结果。
+
+### 操作员在流程中的两个介入点
+
+1. **提交前的设备变更确认**——「新建分析」中开启「允许动态分析」后，会展示
+   本次将执行的设备变更范围与平台明确不做的事（不清数据、不卸载、不改其他应用、
+   不自动点 UI、不自动确认 Consent、不重启设备、不停外部 frida-server、
+   不绕过 SSL Pinning）。
+2. **运行中的 Consent 手动检查点**——任务进入 `awaiting_consent_action` 后，
+   任务详情页出现检查点卡片。请在真机上人工完成动作，再回报
+   `confirmed` / `not_found` / `skipped`。
+
+   ```text
+   GET  /tasks/{task_id}/consent-checkpoint
+   POST /tasks/{task_id}/consent-checkpoint   {"action": "...", "note": "..."}
+   ```
+
+   接口幂等且受状态门控（非等待态返回 409）。**AI 不得自动确认；任何超时都不会
+   产生 `confirmed`**——看门狗只能取消，取消会退出等待并进入清理。
+
+### 设备复原
+
+`device-session-v1` 快照在任何状态变更前采集，记录本轮**真实读取**的初始代理值
+（绝不硬编码历史值）与掩码 `device_ref`（不保存完整 serial）。清理时据此复原：
+初始为空则删除代理，初始有值则设回该值，**无法确定初始值时保持原样不猜**。
+代理复原失败记入 limitations，但不会中断其余清理规则。
+
+### 并发
+
+一台设备同时只允许一个会改变状态的任务；纯静态任务不取租约。Consent 等待期间
+持有租约并持续心跳。崩溃遗留的陈旧租约可被回收，但**心跳仍活跃的租约永不被抢占**。
+重试是新的 `run_id`。
+
+详见 [M7A_AI_FULL_ANALYSIS.md](M7A_AI_FULL_ANALYSIS.md)，真机验收记录见
+[M7A_MUMU_ACCEPTANCE.md](M7A_MUMU_ACCEPTANCE.md)。

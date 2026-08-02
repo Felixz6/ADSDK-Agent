@@ -178,6 +178,101 @@ describe('NewAnalysis — AI 编排分析', () => {
     expect(await screen.findByText(/必须显式选择在线设备/)).toBeInTheDocument()
     expect(posted).toBe(false)
   })
+
+  // -- M7A: explicit device-state-change confirmation checklist ----------
+  it('未开启动态分析时不展示设备变更清单', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    expect(screen.queryByTestId('device-change-checklist')).toBeNull()
+  })
+
+  it('开启动态分析后展示设备状态变更范围清单', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    await user.click(await screen.findByLabelText(/允许动态分析/))
+    const panel = await screen.findByTestId('device-change-checklist')
+    expect(panel).toBeInTheDocument()
+    expect(panel.textContent).toContain('本次运行将改变设备状态')
+  })
+
+  it('清单声明会恢复设备代理为初始值', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    await user.click(await screen.findByLabelText(/允许动态分析/))
+    const panel = await screen.findByTestId('device-change-checklist')
+    expect(panel.textContent).toContain('恢复为初始值')
+  })
+
+  it('清单明确不清除应用数据、不卸载、不修改其他应用', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    await user.click(await screen.findByLabelText(/允许动态分析/))
+    const panel = await screen.findByTestId('device-change-checklist')
+    expect(panel.textContent).toContain('不清除应用数据')
+    expect(panel.textContent).toContain('不卸载应用')
+    expect(panel.textContent).toContain('不修改其他应用')
+  })
+
+  it('清单明确不自动点击 UI、不自动确认 Consent、不重启设备', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    await user.click(await screen.findByLabelText(/允许动态分析/))
+    const panel = await screen.findByTestId('device-change-checklist')
+    expect(panel.textContent).toContain('不自动点击 UI')
+    expect(panel.textContent).toContain('不自动确认 Consent')
+    expect(panel.textContent).toContain('不重启设备')
+  })
+
+  it('清单明确不停止外部 frida-server 且不绕过 SSL Pinning', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    await user.click(await screen.findByLabelText(/允许动态分析/))
+    const panel = await screen.findByTestId('device-change-checklist')
+    expect(panel.textContent).toContain('外部 frida-server')
+    expect(panel.textContent).toContain('不绕过 SSL Pinning')
+  })
+
+  it('清单说明 Consent 需人工完成且超时不会自动确认', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    await user.click(await screen.findByLabelText(/允许动态分析/))
+    const panel = await screen.findByTestId('device-change-checklist')
+    expect(panel.textContent).toContain('人工完成')
+    expect(panel.textContent).toContain('超时不会自动确认')
+  })
+
+  it('清单不包含任何 API Key、完整设备序列号或模型原文', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    await user.click(await screen.findByLabelText(/允许动态分析/))
+    const panel = await screen.findByTestId('device-change-checklist')
+    const text = panel.textContent ?? ''
+    expect(text).not.toContain('sk-')
+    expect(text).not.toContain('127.0.0.1:16416')
+    expect(text.toLowerCase()).not.toContain('api_key')
+    expect(text).not.toContain('reasoning_content')
+  })
+
+  it('关闭动态分析后清单随之隐藏', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewAnalysis />)
+    await reachAIOptions(user)
+    const toggle = await screen.findByLabelText(/允许动态分析/)
+    await user.click(toggle)
+    expect(await screen.findByTestId('device-change-checklist')).toBeInTheDocument()
+    await user.click(toggle)
+    await vi.waitFor(() =>
+      expect(screen.queryByTestId('device-change-checklist')).toBeNull(),
+    )
+  })
 })
 
 describe('Settings — AI 配置展示', () => {

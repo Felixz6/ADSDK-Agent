@@ -39,6 +39,8 @@ from app.config import (
     MITM_DEVICE_PROXY_HOST,
     MITM_READY_TIMEOUT_SECONDS,
     MITM_STOP_TIMEOUT_SECONDS,
+    M7A_CONSENT_WAIT_SECONDS,
+    M7A_LEASE_STALE_SECONDS,
     OUTPUT_DIR,
     REDACTION_HMAC_KEY,
     SCHEMA_VERSION,
@@ -107,6 +109,15 @@ from app.comparisons import (
 )
 from app.reporting import write_html_report
 from app.repositories import TaskRepository
+from app.repositories.task_repository import utc_now as task_utc_now
+from app.orchestration.consent_checkpoint import (
+    ConsentAction,
+    ConsentCheckpointError,
+    ConsentCheckpointRequest,
+    ConsentCheckpointService,
+    ConsentCheckpointState,
+)
+from app.orchestration.device_lease import LeaseRegistry
 from app.services import AITaskService, TaskService
 from app.services.application_name_service import (
     repair_historical_application_names,
@@ -2937,6 +2948,17 @@ task_service.recover()
 ai_settings_store = AISettingsStore()
 ai_settings_service = AISettingsService(ai_settings_store)
 
+# M7A — process-wide consent checkpoint registry and reclaimable device lease.
+# The checkpoint is the authority for ``awaiting_consent_action``: only a human
+# operator resolves it (confirmed / not_found / skipped). The AI can never
+# auto-confirm it and no timer ever flips it to confirmed — a watchdog may only
+# *cancel*, which exits the wait and proceeds to cleanup.
+consent_checkpoint_service = ConsentCheckpointService(clock=task_utc_now)
+device_lease_registry = LeaseRegistry(
+    clock=time.monotonic,
+    stale_after_seconds=M7A_LEASE_STALE_SECONDS,
+)
+
 
 def _run_persisted_task(task: TaskRecord):
     payload = dict(task.request_payload)
@@ -3562,7 +3584,7 @@ def get_task_report(task_id: str):
 @app.post("/tasks/{task_id}/cancel", response_model=TaskActionResponse)
 def cancel_task(task_id: str):
     try:
-        return task_service.cancel(task_id)
+        result = task_service.cancel(task_id)
     except KeyError:
         raise _task_not_found(task_id)
     except ValueError as exc:
@@ -3570,6 +3592,10 @@ def cancel_task(task_id: str):
             status_code=409,
             detail={"code": "task_not_cancellable", "message": str(exc)},
         )
+    # M7A — a task waiting on the manual consent checkpoint must exit that wait
+    # on cancel so cleanup runs. Cancelling never confirms consent.
+    consent_checkpoint_service.cancel(task_id=task_id)
+    return result
 
 
 @app.post("/tasks/{task_id}/retry", response_model=TaskActionResponse, status_code=202)
@@ -3582,6 +3608,60 @@ def retry_task(task_id: str):
         raise HTTPException(
             status_code=409,
             detail={"code": "task_not_retryable", "message": str(exc)},
+        )
+
+
+@app.get(
+    "/tasks/{task_id}/consent-checkpoint",
+    response_model=ConsentCheckpointState,
+)
+def get_consent_checkpoint(task_id: str):
+    """Read the current consent checkpoint for a task.
+
+    Returns 404 when the task has no checkpoint awaiting (either it never
+    reached ``awaiting_consent_action`` or the checkpoint was already cleared
+    by cleanup). The payload carries no UI text, no cookies, no bodies.
+    """
+    if task_service.get(task_id) is None:
+        raise _task_not_found(task_id)
+    state = consent_checkpoint_service.state(task_id)
+    if state is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "checkpoint_not_found",
+                "message": "该任务当前没有等待中的 Consent 检查点",
+            },
+        )
+    return state
+
+
+@app.post(
+    "/tasks/{task_id}/consent-checkpoint",
+    response_model=ConsentCheckpointState,
+)
+def resolve_consent_checkpoint(task_id: str, req: ConsentCheckpointRequest):
+    """Resolve the manual consent checkpoint for a running full-analysis task.
+
+    Only a human operator reaches this route. The action is one of
+    ``confirmed`` / ``not_found`` / ``skipped`` — the AI never calls it and no
+    timer ever produces ``confirmed``. The call is idempotent for a repeat of
+    the same action and state-gated: resolving a task that is not awaiting
+    consent returns 409, and a different action after resolution returns 409.
+    """
+    if task_service.get(task_id) is None:
+        raise _task_not_found(task_id)
+    try:
+        return consent_checkpoint_service.resolve(
+            task_id=task_id,
+            action=req.action,
+            note=req.note,
+        )
+    except ConsentCheckpointError as exc:
+        status_code = 404 if exc.code == "checkpoint_not_found" else 409
+        raise HTTPException(
+            status_code=status_code,
+            detail={"code": exc.code, "message": exc.message},
         )
 
 

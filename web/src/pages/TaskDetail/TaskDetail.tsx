@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { AIOrchestrationCard } from '@/components/analysis/AIOrchestrationCard'
+import { ConsentCheckpointCard } from '@/components/analysis/ConsentCheckpointCard'
 import { DynamicReliabilityCard } from '@/components/analysis/DynamicReliabilityCard'
 import { EvidenceCorrelationCard } from '@/components/analysis/EvidenceCorrelationCard'
 import { PrivacyFindingsCard } from '@/components/analysis/PrivacyFindingsCard'
@@ -27,6 +28,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/common/States
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { useCancelTask, useDeleteTask, useLiveTask, useRetryTask, useTaskReport } from '@/hooks/useTasks'
+import { useConsentCheckpoint, useResolveConsentCheckpoint } from '@/hooks/useTasks'
 import { useRegenerateTaskAIReport } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
 import { cn, formatDateTime } from '@/utils'
@@ -66,6 +68,13 @@ export default function TaskDetail() {
   const retryMutation = useRetryTask()
   const deleteMutation = useDeleteTask()
   const regenerateAIMutation = useRegenerateTaskAIReport(id)
+  // M7A — the consent checkpoint is only polled while the task is still
+  // running; a 404 (no checkpoint awaiting) surfaces as null, not an error.
+  const taskActive =
+    taskQuery.data?.status === 'queued' || taskQuery.data?.status === 'running'
+  const consentQuery = useConsentCheckpoint(id, taskActive)
+  const resolveConsentMutation = useResolveConsentCheckpoint(id)
+  const consentState = consentQuery.data ?? null
   const [pending, setPending] = useState<PendingAction>(null)
 
   if (taskQuery.isLoading) {
@@ -197,6 +206,33 @@ export default function TaskDetail() {
           <span className="block h-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] transition-[width] duration-300" style={{ width: `${task.progress_percent}%` }} />
         </div>
       </GlassCard>
+
+      {consentState ? (
+        <ConsentCheckpointCard
+          state={consentState}
+          isSubmitting={resolveConsentMutation.isPending}
+          errorMessage={resolveConsentMutation.error?.message ?? null}
+          onResolve={(action, note) => {
+            resolveConsentMutation.mutate(
+              { action, note },
+              {
+                onSuccess: (next) =>
+                  pushToast({
+                    kind: 'success',
+                    message: `Consent 结论已记录：${next.status}`,
+                    duration: 4000,
+                  }),
+                onError: (error) =>
+                  pushToast({
+                    kind: 'error',
+                    message: `Consent 结论提交失败：${error.message}`,
+                    duration: 6000,
+                  }),
+              },
+            )
+          }}
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <GlassCard padding="md">

@@ -4,6 +4,8 @@ import type {
   AIStatusResponse,
   ComparisonCreateRequest,
   ComparisonResult,
+  ConsentCheckpointAction,
+  ConsentCheckpointState,
   TaskActionResponse,
   TaskAIArtifactResponse,
   TaskAIArtifactSummary,
@@ -50,6 +52,49 @@ export async function retryTask(taskId: string): Promise<TaskActionResponse> {
 
 export async function deleteTask(taskId: string): Promise<void> {
   await api.delete(`/tasks/${encodeURIComponent(taskId)}`)
+}
+
+/**
+ * M7A — 读取任务当前的 Consent 手动检查点状态。
+ *
+ * 后端在任务未进入 `awaiting_consent_action`(或检查点已被清理)时返回 404,
+ * 这是正常状态而非错误,调用方以 `null` 表示"当前无等待中的检查点"。
+ * 响应体不含任何 API Key、完整设备序列号、Prompt、模型原文或 reasoning_content。
+ */
+export async function getConsentCheckpoint(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<ConsentCheckpointState | null> {
+  try {
+    const { data } = await api.get<ConsentCheckpointState>(
+      `/tasks/${encodeURIComponent(taskId)}/consent-checkpoint`,
+      { signal },
+    )
+    return data
+  } catch (error) {
+    // client.ts 已把 axios 错误规范化成 ApiError,状态码在顶层 `status`。
+    const status = (error as { status?: number | null })?.status ?? null
+    if (status === 404) return null
+    throw error
+  }
+}
+
+/**
+ * M7A — 由人工操作员提交 Consent 检查点结论。
+ *
+ * 只有人可以调用本接口:AI 不得自动确认,任何超时也不会产生 `confirmed`。
+ * 重复提交同一 action 是幂等的;任务未处于等待态或改用不同 action 时后端返回 409。
+ */
+export async function resolveConsentCheckpoint(
+  taskId: string,
+  action: ConsentCheckpointAction,
+  note = '',
+): Promise<ConsentCheckpointState> {
+  const { data } = await api.post<ConsentCheckpointState>(
+    `/tasks/${encodeURIComponent(taskId)}/consent-checkpoint`,
+    { action, note },
+  )
+  return data
 }
 
 export async function getTaskSystemStatus(signal?: AbortSignal): Promise<TaskSystemStatus> {
