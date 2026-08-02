@@ -19,9 +19,11 @@ import {
   getTaskAIRuntimeDiagnostics,
   getTaskReport,
   getTaskSystemStatus,
+  getConsentCheckpoint,
   listComparisons,
   listTasks,
   regenerateTaskAIReport,
+  resolveConsentCheckpoint,
   retryTask,
   taskWebSocketUrl,
 } from '@/api/taskCenter'
@@ -29,6 +31,8 @@ import type {
   AIStatusResponse,
   ComparisonCreateRequest,
   ComparisonResult,
+  ConsentCheckpointAction,
+  ConsentCheckpointState,
   TaskActionResponse,
   TaskAIArtifactResponse,
   TaskAIArtifactSummary,
@@ -142,6 +146,44 @@ function taskActionMutation(mutationFn: (taskId: string) => Promise<TaskActionRe
 
 export const useCancelTask = taskActionMutation(cancelTask)
 export const useRetryTask = taskActionMutation(retryTask)
+
+/**
+ * M7A — 轮询 Consent 手动检查点。
+ *
+ * 仅在任务运行中启用。后端在没有等待中的检查点时返回 404,api 层已转成 `null`,
+ * 因此 `null` 表示"当前无需人工操作",不是错误状态。
+ */
+export function useConsentCheckpoint(
+  taskId: string | undefined,
+  enabled = true,
+) {
+  return useQuery<ConsentCheckpointState | null, ApiError>({
+    queryKey: ['tasks', 'consent-checkpoint', taskId],
+    queryFn: ({ signal }) => getConsentCheckpoint(taskId as string, signal),
+    enabled: Boolean(taskId) && enabled,
+    refetchInterval: enabled ? 3_000 : false,
+    staleTime: 1_000,
+  })
+}
+
+/**
+ * M7A — 由人工提交 Consent 结论。AI 不得调用;超时不会产生 confirmed。
+ */
+export function useResolveConsentCheckpoint(taskId: string | undefined) {
+  const client = useQueryClient()
+  return useMutation<
+    ConsentCheckpointState,
+    ApiError,
+    { action: ConsentCheckpointAction; note?: string }
+  >({
+    mutationFn: ({ action, note }) =>
+      resolveConsentCheckpoint(taskId as string, action, note ?? ''),
+    onSuccess: (state) => {
+      client.setQueryData(['tasks', 'consent-checkpoint', taskId], state)
+      void client.invalidateQueries({ queryKey: ['tasks', 'detail', taskId] })
+    },
+  })
+}
 
 export function useDeleteTask() {
   const client = useQueryClient()

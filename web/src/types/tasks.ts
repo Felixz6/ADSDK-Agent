@@ -5,6 +5,30 @@ export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancel
 export type TaskStepStatus = 'success' | 'partial' | 'failed' | 'skipped' | 'running'
 export type AnalysisScope = 'static_only' | 'dynamic_only' | 'full_analysis' | 'report_only'
 
+/**
+ * M7A — Consent 手动检查点。
+ *
+ * 操作员在真机上人工完成 Consent 动作后回报结论。AI 不得自动确认,
+ * 任何超时都不会产生 `confirmed`;看门狗只能 `cancelled`(退出等待并进入清理)。
+ */
+export type ConsentCheckpointAction = 'confirmed' | 'not_found' | 'skipped'
+export type ConsentCheckpointStatus =
+  | ConsentCheckpointAction
+  | 'awaiting'
+  | 'cancelled'
+  | 'expired'
+
+export interface ConsentCheckpointState {
+  task_id: string
+  run_id: string
+  status: ConsentCheckpointStatus
+  entered_at: string
+  resolved_at: string | null
+  resolved_by_action: ConsentCheckpointAction | null
+  last_heartbeat_at: string | null
+  note: string
+}
+
 export interface TaskCreateRequest {
   task_type: 'static' | 'dynamic' | 'ai_orchestrated'
   apk_path: string
