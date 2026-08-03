@@ -1,71 +1,135 @@
 # AdSDK Agent
 
-> 面向 Android APK 的本地隐私与合规分析平台。通过 Web 控制台完成 APK 提交、环境检测、静态分析、动态行为观测、网络流量采集与合规报告查看。
+> 面向 Android APK 的本地隐私审计与合规分析平台。  
+> 通过 Web 控制台完成任务提交、环境诊断、静态分析、动态行为观测、网络流量采集、证据关联、隐私发现与 AI 辅助研判。
 
 ![AdSDK Agent Web 控制台](./docs/screenshots/01-home.png)
 
 > [!IMPORTANT]
-> 本项目仅用于已获得授权的 APK 测试、隐私审计与合规分析。请勿用于未授权目标。
+> 本项目仅用于**已获得授权**的 APK 测试、隐私审计与合规分析。请勿用于未授权目标。  
+> AI 只负责受约束的计划选择与报告叙述；所有事实、计数、风险和证据均由确定性工具产生。
 
-## 项目简介
+## 核心能力
 
-AdSDK Agent 由 Web 控制台和本地分析引擎共同组成：
+- **任务中心**：SQLite 持久化、后台执行、WebSocket 实时进度、取消、重试、删除与报告下载。
+- **静态分析**：APK 安全快照、Manifest/权限解析、SDK 指纹识别、静态解包缓存与可解释风险摘要。
+- **动态分析**：Frida 分层诊断、`strict / balanced / attach_only` 策略、A/B/C/D 证据等级、Native Bridge 崩溃分类与安全降级。
+- **网络观测**：mitmproxy 独立会话、端口租约、代理恢复、零请求语义和敏感字段最小化。
+- **Consent 时间线**：使用 monotonic 时间划分 `pre_consent / post_consent / unknown`，不依赖不可靠的文本顺序推断。
+- **证据关联**：`correlation-v1` 按可信时间关联动态事件与网络请求，仅表达“时间接近”，不宣称因果。
+- **隐私发现**：`privacy-findings-v2` 生成可追溯的观察事实、疑似风险与证据缺口，不输出法律结论。
+- **AI 编排**：白名单工具、低 Token 两阶段调用、Evidence Digest、缓存、预算、引用校验与确定性降级。
+- **真机安全信封**：设备确认门、租约、资源所有权、Consent 人工检查点、`try/finally` 清理与状态恢复。
 
-- **Web 控制台**：基于 React + TypeScript，提供分析提交、设备选择、任务历史、环境检测、结果浏览和报告展示；
-- **分析引擎**：基于 FastAPI，负责 APK 校验与快照、Manifest 解析、SDK 识别、Frida 动态采集、mitmproxy 流量观测和规则评估。
+最近一次 M7A 自动化验收基线：
 
-用户可以直接在浏览器中完成以下操作：
+```text
+后端：699 passed
+前端：30 test files / 325 tests passed
+TypeScript：通过
+生产构建：通过
+```
 
-1. 输入待分析 APK 的本地绝对路径；
-2. 选择静态分析或动态分析；
-3. 检查 ADB、Frida、mitmproxy 和设备状态；
-4. 配置目标设备、Consent 时间窗口和流量采集参数；
-5. 查看权限、广告 SDK、动态事件、网络请求和规则状态；
-6. 浏览本地任务历史及 JSON / Markdown 报告。
+## 系统架构
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                     React Web Console                        │
+│ Dashboard / New Analysis / Tasks / Reports / Settings       │
+└────────────────────────────┬─────────────────────────────────┘
+                             │ HTTP / JSON / WebSocket
+┌────────────────────────────▼─────────────────────────────────┐
+│                        FastAPI Engine                         │
+│ Task Center / Deterministic Analyzers / AI Orchestrator     │
+│ Device Session / Evidence Pipeline / Report Generation      │
+└───────────────┬──────────────────────┬────────────────────────┘
+                │                      │
+       ┌────────▼────────┐    ┌────────▼──────────────────────┐
+       │ Android Device  │    │ Local State & Artifacts      │
+       │ ADB + Frida     │    │ SQLite / output/runs / cache │
+       └─────────────────┘    └───────────────────────────────┘
+```
+
+### 技术栈
+
+| 前端                         | 后端与工具                      |
+| ---------------------------- | ------------------------------- |
+| React 18、TypeScript、Vite 6 | Python 3.12+、FastAPI、Pydantic |
+| Tailwind CSS、Framer Motion  | apktool、ADB、Frida             |
+| TanStack Query、Zustand      | mitmproxy / mitmdump            |
+| Vitest、Testing Library、MSW | pytest                          |
 
 ------
 
-## Web 控制台
+## 功能说明
 
-### 首页与仪表盘
+### 1. 任务中心与报告
 
-- 展示后端连接状态和核心功能入口；
-- 汇总本地分析历史、任务状态和风险规则；
-- 后端不可达时提供明确的中文错误提示。
+新建分析统一通过 `POST /tasks` 创建。任务由本地线程池后台运行，状态与步骤写入 SQLite：
 
-### 新建分析
+```text
+output/state/adsdk-agent.db
+```
 
-- 输入 APK 绝对路径；
-- 选择静态分析或动态分析；
-- 动态分析支持精确选择 ADB `device_id`；
-- 可配置 Consent 前后采集窗口、流量采集和 UI 刺激；
-- 长耗时请求使用独立超时策略。
+支持：
 
-### 静态分析
+- 任务列表、筛选、分页与关键字查询；
+- WebSocket 实时进度，断开后自动降级为 HTTP 轮询；
+- `queued / running` 任务取消；
+- `completed / failed / cancelled` 任务重试；
+- JSON、Markdown、HTML 报告下载；
+- APK 版本对比；
+- 旧浏览器 `localStorage` 记录只读兼容。
 
-- APK 路径、ZIP 格式、文件大小和允许根目录校验；
-- 原子快照与 SHA-256 二次复核；
-- Android Manifest、应用信息和权限解析；
-- 由本地知识库识别广告、统计、推送、归因、定位和社交 SDK，并展示厂商、分类、风险等级与证据路径；
-- 使用 `risk-v1` 生成 0–100 分的可解释风险摘要；仅有静态证据时明确降低置信度；
-- 结构化规则结果和报告展示。
+进程异常退出后，遗留的运行中任务会在下次启动时标记为失败，不会永久显示为运行中。
 
-### 动态行为
+### 2. 静态分析
 
-- 使用 Frida Python API 精确绑定目标设备；
-- 采用 suspended spawn，确保 Hook 先于应用恢复；
-- 展示完整分析流水线和步骤状态；
-- 将事件划分为 `pre_consent`、`post_consent` 和 `unknown`；
-- 使用 `timeline-v1` 统一编排 Frida 行为与网络请求，并保留来源、时间、同意阶段和摘要；
-- 展示严格规则、事件数量和协议错误；
-- `not_evaluated` 始终表示证据不足，不会展示为“安全”。
+- 校验 APK 路径、允许根目录、ZIP 格式与大小；
+- 创建原子快照并二次复核 SHA-256；
+- 解析应用信息、Manifest、权限与组件；
+- 识别广告、统计、推送、归因、定位和社交 SDK；
+- 使用 `risk-v1` 生成 0–100 分的可解释风险摘要；
+- 使用 SHA-256 静态解包缓存，避免重复运行 apktool；
+- Manifest、SDK 或报告模块失败时按证据维度隔离，不阻断其他可评估部分。
 
-### 网络流量
+静态缓存位置：
 
-- 调用 mitmproxy / mitmdump 采集结构化请求；
-- 区分环境自检与真实任务流量；
-- 默认不保存 query value、认证头、Cookie 或请求正文；
-- 明确区分：
+```text
+output/cache/static-unpack/<APK_SHA256>/
+```
+
+### 3. 动态分析与 Frida 可靠性
+
+动态分析显式绑定 `device_id`，同一设备上的状态变更任务使用排他租约。
+
+策略：
+
+| 策略          | 行为                                                         |
+| ------------- | ------------------------------------------------------------ |
+| `strict`      | 仅接受 `spawn_suspended`；失败后不降级                       |
+| `balanced`    | 优先启动前 Hook；兼容性失败时可清理后回退到 `launch_then_attach` |
+| `attach_only` | 仅附加已有进程，不覆盖早期启动阶段                           |
+
+可靠性能力：
+
+- `frida-diagnostics-v1` 分层检查 host、device、server、transport 与 target；
+- `dynamic-evidence-quality-v1` 使用 A/B/C/D 表达覆盖范围与可信度；
+- resume 后在稳定窗口内崩溃会记录真实 Native crash，不自动解释为反调试；
+- MuMu x86_64 + ARM64 Native Bridge 场景可标记为 `native_bridge_compatibility_suspected`；
+- 外部启动的 `frida-server` 不属于任务所有权，平台不会在任务结束时停止它；
+- 平台不联网下载 `frida-server`，也不会覆盖未知设备文件。
+
+### 4. 网络流量与 Consent
+
+网络采集使用每任务独立的 `MitmSession`：
+
+- 分配唯一端口并记录进程所有权；
+- 任务结束恢复运行前读取到的设备代理值；
+- 默认不保存认证头、Cookie、请求/响应正文或完整 query value；
+- TLS Pinning 或证书问题导致可见性不足时如实记录，不实施绕过。
+
+网络状态明确区分：
 
 ```text
 collector_failed
@@ -73,143 +137,122 @@ collector_success_zero_requests
 collector_success_requests_observed
 ```
 
-### 环境检测
+零请求只表示当前观察窗口未记录到请求，不代表应用不会联网。
 
-- 检查 ADB、apktool、Frida、mitmproxy 和输出目录；
-- 展示在线设备和可用性状态；
-- 缺失数据使用“未提供”或“无法检测”，不会错误显示为“正常”。
-
-### 报告与任务历史
-
-- 展示 `matched`、`not_matched`、`not_evaluated`、`error` 四种规则状态；
-- 展示风险摘要、证据限制和由 `insight-v1` 本地规则生成的合规解读及 P0/P1 整改建议；
-- 查看静态分析和动态分析结果；
-- 任务历史保存在当前浏览器的 `localStorage`；
-- 本地历史不代表后端持久化任务，清理浏览器数据后会丢失。
-
-### AI 编排分析（M6A，默认关闭）
-
-在「新建分析」中选择 **AI 编排分析** 后，可填写分析目标、分析范围、是否允许动态分析与网络采集，以及 Token 预算。
-
-职责边界是硬性的：
-
-- **确定性工具负责事实**：静态分析、动态分析、`correlation-v1`、`privacy-findings-v2` 与全部计数、风险、证据均由既有确定性代码产生，AI 不参与；
-- **AI 只负责调度与叙述**：选择白名单工具、安排顺序，并基于确定性证据摘要生成执行摘要、风险优先级、证据缺口与建议动作。
-
-安全与降级：
-
-- API Key 只从环境变量读取，不进入日志、数据库、接口响应、报告或前端；
-- AI 只能返回**已注册工具名**与结构化参数，无法返回 Shell、adb、frida、mitmproxy 命令或任意路径；
-- 改变设备状态的工具必须显式确认，未确认时状态为 `blocked_confirmation_required` 且不执行；
-- APK 内文本、Manifest、网络字段与应用名称均按不可信数据处理，指令式内容会被中和后仅作为证据展示；
-- AI 输出经确定性 **Evidence Reference Validator** 校验：不存在的证据引用被删除、无证据支撑的结论被降级、严重性与置信度不得高于原始证据、虚构域名/权限/SDK 被拒绝、法律合规结论被移除；
-- AI 关闭、未配置、不可达、超预算或输出不合法时，一律降级为确定性报告模板，**不会**让静态或动态分析任务失败。
-
-产物（写入 `output/runs/<run_id>/`）：
+Consent 使用 monotonic 时间判定：
 
 ```text
-ai-plan.json          # ai-plan-v1     模型生成的执行计划（或确定性默认计划）
-evidence-digest.json  # evidence-digest-v1  代码生成的证据摘要（非 AI 生成）
-ai-tool-trace.json    # 工具执行轨迹（仅安全元数据，不含推理过程）
-ai-report.json        # ai-report-v1   经证据校验后的 AI 综合研判
-ai-runtime-diagnostics.json  # ai-runtime-diagnostics-v1  运行时可观测事实（M6C）
+event.monotonic < consent.monotonic   -> pre_consent
+event.monotonic >= consent.monotonic  -> post_consent
+invalid or missing timing data        -> unknown
 ```
 
-只读接口：
+缺少可信时间时，依赖该证据的规则返回 `not_evaluated`。
+
+### 5. 证据关联与隐私发现
+
+#### `correlation-v1`
+
+- 默认时间窗口 `2500 ms`；
+- 优先使用同任务 monotonic 时间，必要时才降级到可信 UTC；
+- Consent 阶段冲突的候选不关联；
+- 每个事件最多保留时间差最小的 5 个请求；
+- 输出不包含 Cookie、Header、正文、原始 URL 或 query value。
+
+#### `privacy-findings-v2`
+
+将静态、动态、网络、Consent 和关联证据转换为：
+
+- `observed`：已观察到的技术事实；
+- `suspected`：证据支持的风险提示；
+- `evidence_gap`：无法完成评估的证据缺口。
+
+严重性与置信度分开计算；单条规则异常不会中断其他规则或报告生成。
+
+> [!NOTE]
+> “时间接近”不等于“事件触发了请求”；“未观察到”不等于“安全或合规”。
+
+### 6. AI 编排与综合研判
+
+AI 默认关闭。启用后，职责边界保持固定：
 
 ```text
-GET /ai/status                    # AI 可用性（绝不返回 API Key）
-GET /tasks/{task_id}/ai-plan      # 该任务的 ai-plan.json
-GET /tasks/{task_id}/ai-report    # 该任务的 ai-report.json
-GET /tasks/{task_id}/ai-runtime-diagnostics   # 该任务的运行时诊断（M6C）
+确定性工具：产生事实、计数、证据和规则结果
+AI：选择白名单工具、安排固定 DAG 中的步骤、整理风险优先级和最终叙述
 ```
 
-重建接口（M6C，复用磁盘上已有的确定性产物，**绝不重跑**静态/动态/网络分析）：
+AI 不能：
+
+- 生成或执行任意 Shell、ADB、Frida、SQL、Python 命令；
+- 增加未注册工具或越过设备确认门；
+- 修改严重性、置信度或统计数字；
+- 虚构域名、权限、SDK、事件或 Evidence ID；
+- 输出法律合规结论；
+- 保存或展示 reasoning content / Chain of Thought。
+
+低 Token 机制：
+
+- 常规分析最多一次规划调用和一次报告调用；
+- `report_only` 使用确定性计划，跳过无价值的规划轮；
+- capability router 只发送当前范围内的候选工具；
+- 模型只接收 `evidence-digest-v1` 和压缩后的安全工具摘要；
+- 相同输入命中缓存时模型调用为 0；
+- 超预算、Provider 不可达或输出非法时，保留确定性结果并生成降级报告。
+
+主要 AI 产物：
 
 ```text
-POST /tasks/{task_id}/ai-report/regenerate[?use_cache=true|false]
+ai-plan.json
+evidence-digest.json
+ai-tool-trace.json
+ai-report.json
+ai-runtime-diagnostics.json
 ```
 
-省略 `use_cache` 时沿用后端保存的缓存设置；`true` 强制走缓存（命中后真实模型调用为 0 次），`false` 强制真实调用。
+### 7. DeepSeek 与 OpenAI-Compatible 运行时
 
-`/ai/status` 默认不探测外部模型（`reachable` 为 `null` 表示「未探测」）；只有显式传 `?probe=true` 才会按需检查一次可达性。
+Provider 默认使用 OpenAI-Compatible HTTP 接口，并可通过 profile 适配 DeepSeek：
 
-AI 配置接口（M6B，仅本机可写）：
+- `AI_PROVIDER_PROFILE=auto` 可按 Base URL 主机识别；
+- DeepSeek 默认显式发送 `thinking.type=disabled`；
+- 规划、报告、修复使用独立输出 Token 上限；
+- `usage` 明确区分供应商实报、估算与不可用；
+- 兼容纯 JSON、Markdown fenced JSON 和带少量说明文字的 JSON；
+- 401、403、404、408、413、422、429、5xx、超时和连接失败使用稳定错误码；
+- 仅对可重试错误最多重试一次；
+- `reasoning_content` 只记录是否存在，不保存内容。
+
+### 8. M7A 真机 AI 全链路
+
+`app/orchestration/` 为完整设备分析增加安全信封：
 
 ```text
-GET    /ai/settings               # 脱敏后的有效配置（绝不返回 API Key）
-PUT    /ai/settings               # 保存可编辑配置 + 可选新 Key（请求体不记日志）
-POST   /ai/settings/test          # 测试已保存配置或页面临时配置（临时 Key 不落盘）
-DELETE /ai/settings/api-key       # 仅删除本机保存的 Key（环境变量 Key 不受影响）
+environment_check
+→ static_analysis
+→ dynamic_analysis
+→ traffic_analysis
+→ evidence_correlation
+→ privacy_findings
+→ deterministic_report
+→ ai_synthesis
+→ cleanup
+
 ```
 
-低 Token 设计：正常路径最多两次模型调用（一次规划、一次报告）；候选工具由确定性 capability router 按分析范围筛选（默认不超过 6 个）；发送给模型的始终是压缩后的工具结果与证据摘要，绝不发送完整 `report.json`、Hook 日志、logcat、`requests.jsonl`、请求/响应正文或完整 Manifest。相同输入命中缓存时模型调用为 0 次。
+安全约束：
 
-#### DeepSeek 运行时兼容与可观测性（M6C）
+- 任何设备状态变更前采集 `device-session-v1` 快照；
+- 操作前必须经过明确的设备变更确认；
+- 资源区分 `external` 与 `owned_by_run`，只清理本轮拥有的资源；
+- Consent 由用户手动完成，AI 不能自动确认；
+- 取消、失败、超时和预算耗尽均进入 `finally` 清理；
+- 代理恢复值来自本轮初始快照，不硬编码；
+- 应用数据不会被清除，设备不会被重启，SSL Pinning 不会被绕过。
 
-**兼容性 profile**：由 `AI_PROVIDER_PROFILE` 显式指定，或按 `AI_BASE_URL` 的主机名自动判定（`api.deepseek.com` → `deepseek`，其余 → `generic_openai`）。profile 只是非密钥的兼容元数据，绝不包含 API Key。
+MuMu 实机验收与限制见：
 
-**显式非思考模式**：默认 `AI_THINKING_MODE=disabled`，请求携带 `{"thinking": {"type": "disabled"}}`，使 DeepSeek 不产生 `reasoning_content`、保持确定性；`auto` 仅对 DeepSeek profile 注入，`off` 完全不注入。
-
-**逐阶段输出上限**：规划、报告、修复三个阶段各有独立上限，并同时受全局 `AI_MAX_OUTPUT_TOKENS` 与剩余 Token 预算收敛，取三者最小值（下限为 1，绝不下发 0 或负数）。
-
-**真实 Token 与估算 Token 严格区分**：供应商返回 `usage` 时记为 `provider`（真实），累加进 `real_tokens`；未返回时按提示词长度估算，记为 `estimated` 并累加进 `estimated_total_tokens`。两者永不混入同一个合计值，前端也分别列示，估算值明确标注。
-
-**错误分类**：超时、不可达、鉴权失败、模型不存在、限流、无效 JSON、无效响应等分别归类到稳定的错误码，并记录 HTTP 状态、是否可重试、所属阶段与是否为终态；一次结构化修复失败后确定性降级，不连续重试消耗额度。
-
-**reasoning_content 隔离**：全链路只记录布尔量 `reasoning_content_present`，其**内容**不写入数据库、日志、报告、trace、缓存正文，也不展示到前端。本轮不实现思维链展示。
-
-`ai-runtime-diagnostics.json` 只包含可观测运行时事实（每轮 Token 来源、分类错误、延迟、重试与缓存状态、`outcome`、是否降级为确定性模板），不含密钥、提示词、模型响应正文或推理内容。
-
-
-------
-
-## 技术架构
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                      React Web Console                      │
-│  Dashboard / New Analysis / Static / Dynamic / Traffic     │
-│  Reports / Environment / Tasks / Settings                  │
-└───────────────────────────┬─────────────────────────────────┘
-                            │ HTTP / JSON
-┌───────────────────────────▼─────────────────────────────────┐
-│                       FastAPI Engine                        │
-│  Input Validation / Snapshot / Static Analysis / Pipeline  │
-│  DeviceContext / Frida / MitmSession / Rule Evaluation     │
-└───────────────┬───────────────────────┬─────────────────────┘
-                │                       │
-       ┌────────▼────────┐     ┌────────▼────────┐
-       │ Android Device │     │ Local Artifacts │
-       │ ADB + Frida    │     │ output/runs/    │
-       └─────────────────┘     └─────────────────┘
-```
-
-### 前端技术栈
-
-- React 18
-- TypeScript（strict）
-- Vite 6
-- Tailwind CSS 3.4
-- React Router 6
-- TanStack Query 5
-- Axios
-- Zustand
-- Framer Motion 11
-- Lucide React
-- Recharts
-- Vitest + jsdom + Testing Library + MSW
-
-### 后端技术栈
-
-- Python 3.12+（推荐 Python 3.14）
-- FastAPI
-- Pydantic
-- apktool
-- ADB
-- Frida
-- mitmproxy / mitmdump
-- pytest
+- [M7A 全链路设计](docs/M7A_AI_FULL_ANALYSIS.md)
+- [M7A MuMu 验收记录](docs/M7A_MUMU_ACCEPTANCE.md)
 
 ------
 
@@ -220,13 +263,12 @@ DELETE /ai/settings/api-key       # 仅删除本机保存的 Key（环境变量 
 ```powershell
 git clone <your-repository-url>
 cd adsdk-agent
+
 ```
 
 ### 2. 配置 Python 环境
 
-项目统一使用一个 `.venv`，后端、Frida 和 mitmproxy 均安装在该环境中。
-
-推荐使用 Python 3.14：
+项目统一使用根目录 `.venv`：
 
 ```powershell
 py -3.14 -m venv .venv
@@ -236,79 +278,63 @@ $env:PYTHONUTF8 = "1"
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
-```
-
-检查 Python 依赖：
-
-```powershell
 python -m pip check
+
 ```
 
-预期输出：
+> Python 3.12+ 可用；当前 Windows 开发环境推荐 Python 3.14。
 
-```text
-No broken requirements found.
-```
-
-确认项目命令优先来自当前虚拟环境：
+确认命令来自当前虚拟环境：
 
 ```powershell
 Get-Command python, frida, frida-ps, mitmdump |
   Select-Object Name, Source
+
 ```
 
-`python`、`frida`、`frida-ps` 和 `mitmdump` 应优先指向：
-
-```text
-<项目目录>\.venv\Scripts\
-```
-
-并确保外部 Android 工具可用：
+并确保外部工具可用：
 
 ```powershell
 adb version
 apktool --version
 frida --version
 mitmdump --version
+
 ```
 
-正式使用前，请修改 `.env` 中的脱敏密钥：
+部署前必须替换 `.env` 中的开发脱敏密钥：
 
 ```env
 REDACTION_HMAC_KEY=replace-with-a-strong-random-secret
+
 ```
 
 ### 3. 安装前端依赖
-
-首次使用时执行：
 
 ```powershell
 cd web
 npm install
 cd ..
+
 ```
 
-如需自定义前端后端地址，可创建 `web/.env`：
+可选的前端地址配置：
 
 ```env
+# web/.env
 VITE_API_BASE_URL=http://127.0.0.1:8000
 VITE_USE_MOCK=false
+
 ```
 
-### 4. Windows 一键启动
+### 4. 一键启动
 
-完成后端虚拟环境和前端依赖安装后，可直接双击项目根目录中的：
+双击或执行：
 
 ```text
 start-adsdk-agent.bat
+
 ```
-
-脚本会自动：
-
-- 使用 `.venv` 中的 Python 启动 FastAPI 后端，并优先调用同一环境中的 Frida 与 mitmdump；
-- 启动 Vite Web 控制台；
-- 检查 `8000` 和 `5173` 端口，避免重复启动；
-- 服务就绪后自动打开浏览器。
 
 默认地址：
 
@@ -316,592 +342,157 @@ start-adsdk-agent.bat
 Web 控制台：http://127.0.0.1:5173
 后端服务：http://127.0.0.1:8000
 API 文档：http://127.0.0.1:8000/docs
+
 ```
 
-停止前后端时双击：
+停止服务：
 
 ```text
 stop-adsdk-agent.bat
+
 ```
 
-脚本仅停止由当前项目启动的前后端进程，并清理本地 `.run/` 进程记录目录。
+脚本仅停止当前项目启动的前后端进程，并清理 `.run/` 进程记录。
 
 ### 5. 手动启动
 
-需要分别查看或调试前后端时，也可以手动启动。
-
-启动后端：
+后端：
 
 ```powershell
 .venv\Scripts\Activate.ps1
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
 ```
 
-另开一个 PowerShell 启动前端：
+前端：
 
 ```powershell
 cd web
 npm run dev
+
 ```
 
 ------
 
-## 基本使用流程
+## 使用流程
 
 ### 静态分析
 
-1. 将已授权 APK 放入允许目录，例如：
-
-```text
-D:\adsdk-agent\samples\demo.apk
-```
-
-2. 打开 Web 控制台；
-3. 进入“新建分析”；
-4. 输入 APK 的绝对路径；
-5. 选择“静态分析”并提交；
-6. 在静态分析页或报告页查看结果。
+1. 将已授权 APK 放入允许目录，例如 `samples/`；
+2. 打开“新建分析”；
+3. 输入 APK 的绝对路径；
+4. 选择静态分析并提交；
+5. 在任务详情或报告页查看结果。
 
 ### 动态分析
 
-1. 启动 Android 设备或模拟器；
-2. 使用 ADB 确认设备在线：
+1. 启动设备或模拟器；
+2. 确认 ADB 在线：
 
 ```powershell
 adb devices -l
+
 ```
 
-3. 启动与主机 Frida 版本和设备 ABI 匹配的 `frida-server`；
-4. 在 Web 控制台中选择动态分析；
-5. 填写精确的 ADB serial；
-6. 设置 Consent 时间窗口和流量采集参数；
-7. 提交并查看分析流水线、事件和报告。
+3. 在环境页检查 ADB、Frida、目标进程和抓包能力；
+4. 选择精确 `device_id`；
+5. 选择 `strict / balanced / attach_only`；
+6. 配置 Consent 窗口与网络采集；
+7. 提交并观察任务步骤、证据等级和清理结果。
 
-多台设备在线时必须传入精确 `device_id`。ADB 安装、Frida 设备选择和 `MitmSession` 会绑定同一个 `DeviceContext`。
+### AI 全链路分析
+
+1. 在“设置 → AI 编排”配置 Provider、Base URL、模型和 API Key；
+2. 在“新建分析”选择 AI 编排与 `full_analysis`；
+3. 阅读并确认设备状态变更清单；
+4. 任务进入 Consent 检查点时，在设备中手动完成操作；
+5. 查看确定性报告、AI 综合研判、Token 使用和资源清理状态。
 
 ------
 
-## 仓库结构
+## AI 配置与密钥安全
+
+可以通过 `.env` 或前端设置页配置 AI，优先级固定为：
 
 ```text
-adsdk-agent/
-├─ web/                         # Web 控制台
-│  ├─ src/
-│  │  ├─ api/                   # Axios 客户端与接口封装
-│  │  ├─ components/            # 通用、布局、分析、报告、流量组件
-│  │  ├─ hooks/                 # TanStack Query / API Hooks
-│  │  ├─ pages/                 # 各业务页面
-│  │  ├─ router/                # 路由与懒加载
-│  │  ├─ stores/                # Zustand 状态
-│  │  ├─ test/                  # Testing Library / MSW 测试基建
-│  │  ├─ types/                 # 与 Pydantic 对齐的 TS 类型
-│  │  ├─ utils/                 # 工具函数
-│  │  └─ assets/                # 页面背景与静态资源
-│  ├─ package.json
-│  ├─ vite.config.ts
-│  └─ vitest.config.ts
-├─ app/                         # FastAPI 分析引擎
-│  ├─ main.py                   # 应用入口与 API 路由
-│  ├─ models.py                 # Pydantic 请求 / 响应模型
-│  ├─ config.py                 # 环境与脱敏配置
-│  ├─ core/                     # 任务编排、运行目录、设备上下文
-│  ├─ analyzers/                # Manifest、SDK 和规则分析
-│  ├─ ai/                       # AI 编排（默认关闭）
-│  │  ├─ provider.py            # Provider 抽象 + OpenAI 兼容 / Mock 实现
-│  │  ├─ tool_registry.py       # 白名单工具与确定性候选工具筛选
-│  │  ├─ context_builder.py     # evidence-digest-v1 与 Prompt 注入防护
-│  │  ├─ orchestrator.py        # 两阶段低 Token 编排、预算与降级
-│  │  ├─ report_composer.py     # Evidence Reference 校验与确定性模板
-│  │  ├─ cache.py               # 响应缓存（含 TTL 与损坏隔离）
-│  │  ├─ settings_store.py      # 本机配置持久化 + 环境变量优先级
-│  │  ├─ settings_service.py    # 配置校验、脱敏响应与 Provider 热更新
-│  │  └─ secret_store.py        # Windows DPAPI 加密的 API Key 存储
-│  ├─ services/                 # 任务服务与 AI 任务适配
-│  ├─ tools/                    # apktool、ADB、Frida、mitmproxy 封装
-│  └─ frida_hooks/              # Frida Hook 脚本
-├─ tests/                       # 后端 pytest
-├─ scripts/                     # 辅助与联调脚本
-├─ samples/                     # 默认 APK 允许根目录
-├─ docs/
-│  ├─ FRONTEND_COMPLETION_REPORT.md
-│  └─ screenshots/
-├─ output/                      # 本地运行产物，不进入版本控制
-├─ requirements.txt
-├─ pytest.ini
-├─ capture-screenshots.ps1
-├─ start-adsdk-agent.bat        # Windows 一键启动入口
-├─ start-adsdk-agent.ps1        # 前后端启动逻辑
-├─ stop-adsdk-agent.bat         # Windows 一键停止入口
-├─ stop-adsdk-agent.ps1         # 前后端停止与清理逻辑
-└─ README.md
+环境变量 > 本机保存配置 > 代码默认值
+
 ```
+
+本机配置文件：
+
+| 文件                             | 内容                           |
+| -------------------------------- | ------------------------------ |
+| `output/config/ai-settings.json` | 非密钥配置，明文 JSON          |
+| `output/config/ai-secret.bin`    | Windows DPAPI 加密后的 API Key |
+
+安全保证：
+
+- API Key 永不通过读取接口返回前端；
+- 前端不将 Key 写入 `localStorage`、`sessionStorage`、IndexedDB、URL 或全局 Store；
+- Key 不进入任务数据库、报告、缓存、日志或异常堆栈；
+- 保存成功后前端立即清空 Key 输入状态；
+- 非 Windows 平台不支持本机明文降级，请使用 `AI_API_KEY` 环境变量；
+- 写配置接口只允许 loopback 客户端，带 `Origin` 时必须匹配本地前端来源。
+
+测试连接先尝试 `/models`；若兼容服务返回 404/405，再使用一次 `max_tokens=1` 的最小聊天请求。
 
 ------
 
-## 分析流程
-
-```text
-Web 提交分析请求
-  -> 校验 APK 路径、格式和大小
-  -> 创建 output/runs/<run_id>/
-  -> 原子快照 APK 并复核 SHA-256
-  -> 解析 Manifest、权限和广告 SDK
-  -> 选择目标 Android 设备（动态分析）
-  -> 创建 Frida 会话
-  -> 创建 MitmSession（可选）
-  -> spawn suspended
-  -> 加载 Hook 并等待 hook_ready
-  -> 写入 collection_started
-  -> resume App
-  -> 采集 Consent 前事件
-  -> 写入 consent_granted
-  -> 采集 Consent 后事件
-  -> 停止并清理资源
-  -> 汇总事件、流量和规则状态
-  -> 生成 report.json 与 report.md
-  -> Web 控制台展示结果
-```
-
-------
-
-## 配置说明
-
-| 配置项                        |      默认值 | 说明                                              |
-| ----------------------------- | ----------: | ------------------------------------------------- |
-| `APK_ALLOWED_ROOTS`           |   `samples` | 允许访问的 APK 根目录；Windows 多目录使用分号分隔 |
-| `APK_MAX_SIZE_MB`             |      `1024` | APK 校验和快照的大小上限                          |
-| `REDACTION_HMAC_KEY`          |  开发占位值 | 稳定 HMAC 脱敏密钥，部署时必须替换                |
-| `FRIDA_READY_TIMEOUT_SECONDS` |        `15` | Hook-ready 等待超时                               |
-| `FRIDA_SPAWN_STABILITY_SECONDS` | `3` | resume 后进程稳定观察窗口；窗口内结束按任务结果记录 |
-| `FRIDA_STOP_TIMEOUT_SECONDS`  |         `5` | Frida 停止和清理超时                              |
-| `MITM_PORT_START`             |      `8080` | mitmproxy 端口池起点                              |
-| `MITM_PORT_END`               |      `8090` | mitmproxy 端口池终点                              |
-| `MITM_LISTEN_HOST`            | `127.0.0.1` | mitmdump 监听地址                                 |
-| `MITM_READY_TIMEOUT_SECONDS`  |        `10` | mitmproxy addon ready 超时                        |
-| `MITM_STOP_TIMEOUT_SECONDS`   |         `5` | mitmproxy 进程树清理超时                          |
-| `EVIDENCE_CORRELATION_WINDOW_MS` | `2500` | 动态事件—请求时间关联窗口，允许 100–10000 ms |
-
-### AI 编排配置（全部默认关闭）
-
-| 变量                       | 默认值               | 说明                                                   |
-| -------------------------- | -------------------- | ------------------------------------------------------ |
-| `AI_ENABLED`               | `false`              | 总开关；关闭时确定性分析与报告行为完全不变             |
-| `AI_PROVIDER`              | `openai_compatible`  | Provider 实现；业务代码不绑定任何单一厂商              |
-| `AI_BASE_URL`              |         空           | OpenAI 兼容端点根地址                                  |
-| `AI_API_KEY`               |         空           | 环境变量方式配置密钥；不进入日志、库、响应、报告与前端 |
-| `AI_MODEL`                 |         空           | 模型名                                                 |
-| `AI_TIMEOUT_SECONDS`       | `60`                 | 单次模型调用超时                                       |
-| `AI_MAX_ROUNDS`            | `2`                  | 模型调用轮数上限（正常路径：规划 1 次 + 报告 1 次）    |
-| `AI_MAX_TOOL_CALLS`        | `6`                  | 工具调用次数上限；超出按固定优先级裁剪                 |
-| `AI_MAX_INPUT_TOKENS`      | `6000`               | 单次请求输入上限                                       |
-| `AI_MAX_OUTPUT_TOKENS`     | `1800`               | 单次请求输出上限                                       |
-| `AI_MAX_TOOL_RESULT_CHARS` | `8000`               | 单个工具结果发送给模型前的字符上限                     |
-| `AI_CACHE_ENABLED`         | `true`               | 相同输入复用结果；缓存中不保存 API Key                 |
-| `AI_CACHE_TTL_SECONDS`     | `86400`              | 缓存过期时间；缓存损坏按未命中处理，不中断分析         |
-| `AI_REPORT_LANGUAGE`       | `zh-CN`              | AI 报告语言                                            |
-| `AI_ALLOW_DYNAMIC_TOOLS`   | `false`              | 为 false 时设备状态变更类工具永不进入候选列表          |
-
-M6C 新增（DeepSeek 真实运行时兼容与可观测性）：
-
-| 环境变量                        | 默认值      | 说明                                                        |
-| ------------------------------- | ----------- | ----------------------------------------------------------- |
-| `AI_PROVIDER_PROFILE`           | `auto`      | `auto` / `generic_openai` / `deepseek`；`auto` 按主机名判定  |
-| `AI_THINKING_MODE`              | `disabled`  | `disabled` 显式关闭思考模式；`auto` 仅 DeepSeek 注入；`off` 不注入 |
-| `AI_PLANNER_MAX_OUTPUT_TOKENS`  | `500`       | 规划阶段输出上限（同时受全局上限与剩余预算收敛）            |
-| `AI_REPORT_MAX_OUTPUT_TOKENS`   | `1000`      | 报告阶段输出上限                                            |
-| `AI_REPAIR_MAX_OUTPUT_TOKENS`   | `300`       | 结构化修复阶段输出上限（最紧）                              |
-| `AI_REQUEST_RETRIES`            | `1`         | 单次调用的最大重试次数；仅对可重试错误生效                  |
-| `AI_RETRY_BASE_DELAY_MS`        | `200`       | 重试退避基准；优先遵循响应的 `Retry-After`                  |
-| `AI_MAX_RETRY_AFTER_SECONDS`    | `30`        | `Retry-After` 的采纳上限，避免被超长等待拖住                |
-| `AI_STORE_RESPONSE_EXCERPTS`    | `false`     | 保持 false：不留存模型响应摘录                              |
-
-Token 与调用预算被超过时，系统停止继续调用模型、保留已有工具结果、生成确定性报告，并将 AI 状态标记为 `budget_exhausted`——**不会**让整个任务失败。
-
-### 前端 AI 配置中心（M6B）
-
-除 `.env` 环境变量外，也可在 **设置 → AI 编排** 卡片中直接配置 AI。两种方式并存，既有 `.env` 部署无需任何改动。
-
-**配置优先级（固定）**
-
-```text
-环境变量  >  本机保存配置  >  代码默认值
-```
-
-存在对应环境变量的字段会出现在响应的 `locked_fields` 中，前端输入框禁用并提示「该字段由环境变量管理」；`field_sources` 逐字段给出 `default | environment | local_store`。本机保存**不会**覆盖环境变量，删除本机 Key 也不影响环境变量 Key。
-
-**两份配置文件（分离存储）**
-
-| 文件                            | 内容                     | 说明                                        |
-| ------------------------------- | ------------------------ | ------------------------------------------- |
-| `output/config/ai-settings.json` | 非密钥的可编辑配置       | 明文 JSON；**永不包含 API Key**             |
-| `output/config/ai-secret.bin`    | API Key                  | Windows DPAPI 加密；只有当前 Windows 用户可解密 |
-
-两者均为「临时文件 + `os.replace`」原子写入。配置 JSON 损坏时按默认值降级；密钥文件损坏或由他人复制而来时按「未配置」处理，**不会**导致后端启动失败。
-
-**Windows DPAPI 说明**
-
-密钥通过 `ctypes` 调用 `CryptProtectData` / `CryptUnprotectData` 加密（不引入额外依赖），加密结果与当前 Windows 用户账户绑定：换用户或换机器都无法解密。**非 Windows 平台不支持本机保存密钥**，保存时返回 `secret_persistence_unsupported`——绝不静默退回明文保存；这些平台请继续使用 `AI_API_KEY` 环境变量。
-
-**API Key 保存与删除**
-
-`PUT /ai/settings` 的 `api_key` 字段为只写：
-
-- 字段缺失 → 保留现有 Key；
-- 空字符串 → 保留现有 Key（**不是删除**）；
-- 非空字符串 → 替换 Key。
-
-删除必须调用独立接口 `DELETE /ai/settings/api-key`，前端对应「删除已保存 API Key」按钮并带二次确认。这样普通保存永远不会误删密钥。
-
-**测试连接**
-
-`POST /ai/settings/test` 可测试已保存配置，也可测试页面上尚未保存的临时配置（临时 Key 只存在于该次请求内存，不保存、不缓存、不写库、不写报告、不记日志）。
-
-探测策略不只依赖 `GET /models`：
-
-1. 先尝试 `GET /models`，2xx 即判定可达；
-2. 若返回 404 / 405，改用一次最小聊天请求（`max_tokens=1`、固定短提示、不带工具、不产生报告）验证；
-3. 401 / 403 → `authentication_failed`；超时 → `timeout`；其余传输失败 → `unreachable`。
-
-响应中的 `models_endpoint_supported` 说明本次采用了哪条探测路径，因此**不会**因为网关不支持 `/models` 就误判为不可达。
-
-**Provider 热更新**
-
-保存配置后无需重启后端：进程内 `AIProviderFactory` 以锁保护重建 Provider，**新任务**使用最新配置，**正在运行的任务**继续使用其启动时捕获的快照；重建失败时保留旧 Provider 并返回结构化错误。
-
-**安全边界**
-
-- API Key 永不返回前端：读取接口只暴露 `api_key_configured`（布尔）与 `api_key_source`；
-- Key 不写入 `localStorage` / `sessionStorage` / `IndexedDB` / URL / 前端构建产物 / 全局 Store，只存在于输入组件的局部状态，保存成功即清空、组件卸载即清除；
-- Key 不进入任务 SQLite 库、报告、AI 缓存、日志、异常堆栈与测试快照；
-- 写接口（`PUT` / `POST` / `DELETE`）仅允许 loopback 客户端（`127.0.0.1` / `::1`）；带 `Origin` 时必须属于已配置的前端来源，否则 403；无 `Origin` 的本机 CLI 请求放行；
-- 写接口请求体永不记录日志；配置不可通过 GET 查询参数修改。
-
-### `MITM_LISTEN_HOST` 安全说明
-
-默认值 `127.0.0.1` 只监听宿主机 loopback。
-
-将其设为 `0.0.0.0` 会监听所有主机网络接口，仅应在受信任的本地测试网络中使用。模拟器中的 `127.0.0.1` 指向模拟器自身，不是 Windows 宿主机；应将设备代理指向模拟器可访问的宿主机地址，例如部分 QEMU / MuMu 环境中的 `10.0.2.2:<port>`。实际地址应以当前模拟器网络为准。
-
-### 多 Worker 部署
-
-端口租约目前由进程内资源管理器维护。使用多个 Uvicorn worker 时，应为各 worker 配置不同的 mitmproxy 端口段。
-
-------
-
-## API
-
-| 方法   | 路径               | 用途             |
-| ------ | ------------------ | ---------------- |
-| `GET`  | `/`                | 服务状态         |
-| `GET`  | `/env/check`       | 环境和设备检查   |
-| `GET`  | `/traffic/check`   | 流量采集环境自检 |
-| `POST` | `/analyze`         | 静态分析         |
-| `POST` | `/dynamic/analyze` | 动态分析         |
-| `GET`  | `/ai/status`       | AI 可用性（不返回 API Key） |
-| `GET`  | `/tasks/{id}/ai-plan`   | 该任务的 `ai-plan.json`   |
-| `GET`  | `/tasks/{id}/ai-report` | 该任务的 `ai-report.json` |
-| `GET`  | `/tasks/{id}/ai-runtime-diagnostics` | 该任务的运行时诊断（M6C） |
-| `POST` | `/tasks/{id}/ai-report/regenerate`   | 复用确定性产物重建 AI 报告段（M6C） |
-
-### 静态分析请求
-
-```powershell
-curl -X POST http://127.0.0.1:8000/analyze `
-  -H "Content-Type: application/json" `
-  -d '{"apk_path":"D:\\adsdk-agent\\samples\\demo.apk"}'
-```
-
-### 动态分析请求
-
-```powershell
-curl -X POST http://127.0.0.1:8000/dynamic/analyze `
-  -H "Content-Type: application/json" `
-  -d '{
-    "apk_path":"D:\\adsdk-agent\\samples\\demo.apk",
-    "device_id":"emulator-5554",
-    "consent_after_seconds":8,
-    "pre_consent_seconds":10,
-    "post_consent_seconds":10,
-    "enable_traffic":true,
-    "enable_ui_stimulation":false,
-    "collection_timeout_seconds":300
-  }'
-```
-
-### 动态分析参数
-
-| 参数                         | 默认值       | 说明                                       |
-| ---------------------------- | ------------ | ------------------------------------------ |
-| `apk_path`                   | 必填         | APK 绝对路径，且必须位于允许根目录         |
-| `device_id`                  | 多设备时必填 | 精确的 ADB serial                          |
-| `consent_after_seconds`      | 按需设置     | 从 `collection_started` 起计算的同意时间点 |
-| `pre_consent_seconds`        | `10`         | Consent 前采集窗口                         |
-| `post_consent_seconds`       | `10`         | Consent 后采集窗口                         |
-| `enable_traffic`             | `true`       | 是否启用网络采集                           |
-| `enable_ui_stimulation`      | `false`      | 是否启用 UI 刺激                           |
-| `collection_timeout_seconds` | `300`        | 动态分析总超时                             |
-
-------
-
-## Consent 时间语义
-
-项目使用：
-
-- **UTC**：用于报告展示；
-- **monotonic**：用于 Consent 边界判定，避免系统时间变化影响结果。
-
-```text
-event.monotonic < consent.monotonic   -> pre_consent
-event.monotonic >= consent.monotonic  -> post_consent
-invalid or missing timing data        -> unknown
-```
-
-规则：
-
-1. Hook-ready 后，App 仍保持 suspended；
-2. 写入 `collection_started`；
-3. 恢复 App；
-4. 从 `collection_started` 的 monotonic 基准计算 Consent；
-5. 精确落在 Consent 边界的事件归入 `post_consent`；
-6. 缺少合法 monotonic 或控制事件时归入 `unknown`；
-7. 旧自由文本 Hook 日志不会通过文件顺序推断 Consent。
-
-旧日志兼容状态：
-
-```text
-timing_reliable = false
-consent_state = unknown
-```
-
-依赖严格时间证据的规则将返回 `not_evaluated`。
-
-------
-
-## 输出产物
-
-```text
-output/runs/<run_id>/
-├─ input/
-│  └─ app.apk
-├─ unpacked/
-├─ hook.log
-├─ events.raw.jsonl
-├─ events.json
-├─ frida.protocol-errors.jsonl
-├─ traffic/
-│  ├─ flows.mitm
-│  ├─ requests.jsonl
-│  └─ mitm.stderr.log
-├─ traffic_summary.json
-├─ sessions.json
-├─ report.json
-└─ report.md
-```
-
-| 文件                          | 说明                                     |
-| ----------------------------- | ---------------------------------------- |
-| `input/app.apk`               | 经过校验和 SHA-256 复核的任务快照        |
-| `unpacked/`                   | APK 静态解包结果                         |
-| `hook.log`                    | 安全生命周期诊断日志                     |
-| `events.raw.jsonl`            | 通过协议校验的结构化 Frida 事件          |
-| `events.json`                 | 兼容旧消费者的规范化事件数组             |
-| `frida.protocol-errors.jsonl` | 无效消息和协议错误                       |
-| `traffic/flows.mitm`          | mitmproxy 会话文件                       |
-| `traffic/requests.jsonl`      | 脱敏后的结构化请求                       |
-| `traffic_summary.json`        | 网络采集摘要                             |
-| `sessions.json`               | run / session 所有权、状态和脱敏设备信息 |
-| `report.json`                 | 最终机器可读报告及完成标记               |
-| `report.md`                   | 最终人工可读报告                         |
-
-------
-
-## 状态语义
-
-### 步骤状态
-
-| 状态      | 含义           |
-| --------- | -------------- |
-| `success` | 成功完成       |
-| `partial` | 仅获得部分结果 |
-| `failed`  | 执行失败       |
-| `skipped` | 未执行         |
-
-### 规则状态
-
-| 状态            | 含义                   |
-| --------------- | ---------------------- |
-| `matched`       | 证据满足规则           |
-| `not_matched`   | 证据有效，但未满足规则 |
-| `not_evaluated` | 缺少可信证据，无法判断 |
-| `error`         | 规则执行发生错误       |
-
-采集失败、Hook-ready 超时或协议不可信时，依赖相关证据的规则必须为 `not_evaluated`，不能解释为“未发现行为”。
-
-网络采集成功但零请求时：
-
-```text
-coverage = no_observations
-```
-
-这只表示当前采集窗口没有观测结果，不代表应用没有网络行为。
-
-------
-
-## 隐私与安全
-
-- Android ID、OAID 等原值默认不从 Hook 端发送；
-- 正式产物仅保留存在性、长度和脱敏 token；
-- `REDACTION_HMAC_KEY` 用于生成稳定 HMAC 脱敏值；
-- 网络请求默认不保存 query value、认证头、Cookie 或正文；
-- 无效 Frida 消息与正式事件分离；
-- 每次任务使用独立 run、session、端口和输出目录；
-- 报告仅保留脱敏设备 token；
-- Web 页面不会将 `not_evaluated` 展示为“安全”。
-
-------
-
-## 测试
-
-### 后端
-
-```powershell
-pytest
-```
-
-测试覆盖：
-
-- API 契约；
-- APK 输入校验和快照；
-- SHA-256 一致性；
-- 运行目录隔离；
-- 设备选择；
-- Frida 事件协议；
-- 流量状态；
-- 脱敏逻辑；
-- MITM 监听配置；
-- 动态分析错误路径。
-
-### 前端
-
-```powershell
-cd web
-npm run typecheck
-npm run test
-npm run build
-```
-
-测试覆盖：
-
-- API 错误归一化；
-- 动态请求超时；
-- 页面路由；
-- 表单校验；
-- 静态与动态结果展示；
-- Consent 分类；
-- 规则四态；
-- 设备 token 脱敏；
-- 环境状态；
-- 浏览器本地任务历史；
-- `not_evaluated` 风险展示不变量。
-
-完整验收记录：
-
-```text
-docs/FRONTEND_COMPLETION_REPORT.md
-```
-
-页面截图：
-
-```text
-docs/screenshots/
-```
-
-------
-
-## 已知限制
-
-- 后端 API 仍为同步接口；
-- 浏览器任务历史尚未由后端持久化；
-- 尚未提供任务恢复、取消和实时进度接口；
-- 端口租约仅支持进程内管理；
-- SSL Pinning 可能降低 HTTPS 流量可见性；
-- 动态事件与网络请求仅按可信时间信息做轻量关联，不表达因果；
-- 部分 APK 的反调试、兼容性或启动行为可能导致动态采集失败；
-- 当前报告以 JSON 和 Markdown 为主要持久化格式。
-
-------
-
-## 后续规划
-
-1. SQLite 本地任务系统；
-2. 异步、可恢复的分析流水线；
-3. 任务状态、进度和取消接口；
-4. 跨进程端口与设备资源租约；
-5. 扩展事件—请求关联的可观测时间来源；
-6. 更完整的规则库和 SDK 指纹库；
-7. HTML / 可导出可视化报告；
-8. 前端任务实时更新与历史持久化。
-
-------
-
-## 许可证
-
-本项目采用 [Apache License 2.0](LICENSE)。
-
-------
-
-## 静态解包缓存
-
-- 默认位置：`output/cache/static-unpack/<APK_SHA256>/`。
-- 缓存键仅使用 APK SHA-256，与 `output/runs/<run_id>/` 分离。
-- `metadata.json` 记录 apktool 版本和缓存格式版本；版本变化、元数据异常或 Manifest 缺失时自动重建。
-- 发布采用临时目录和原子替换，同 SHA-256 并发请求在进程内串行构建。
-- 清理方式：停止后端后删除 `output/cache/static-unpack/`；下次请求会自动冷启动重建。
-- `output/` 已被 `.gitignore` 排除，缓存和真实分析产物都不进入 Git。
-
-MuMu/QEMU 流量采集需显式配置 `MITM_LISTEN_HOST=0.0.0.0` 和经实测可达的 `MITM_DEVICE_PROXY_HOST`；任务结束时恢复设备原 `http_proxy` 值。
-
----
-
-## 产品化任务工作流（2026-07）
-
-### 任务中心与持久化
-
-新建分析统一通过 `POST /tasks` 创建。接口快速返回任务记录和 `id`，任务由单进程线程池在后台运行；旧的 `POST /analyze` 与 `POST /dynamic/analyze` 继续保留同步语义。
-
-SQLite 默认位置：
-
-```text
-output/state/adsdk-agent.db
-```
-
-可通过环境变量覆盖：
+## 主要配置
+
+完整配置以 [`.env.example`](.env.example) 为准。
+
+### 分析与采集
+
+| 变量                              |        默认值 | 说明                          |
+| --------------------------------- | ------------: | ----------------------------- |
+| `APK_ALLOWED_ROOTS`               |     `samples` | 允许访问的 APK 根目录         |
+| `APK_MAX_SIZE_MB`                 |        `1024` | APK 大小上限                  |
+| `REDACTION_HMAC_KEY`              |    开发占位值 | 部署时必须替换                |
+| `FRIDA_READY_TIMEOUT_SECONDS`     |          `15` | Hook-ready 超时               |
+| `FRIDA_SPAWN_STABILITY_SECONDS`   |           `3` | resume 后稳定观察窗口         |
+| `FRIDA_SERVER_MANAGEMENT_ENABLED` |       `false` | 是否允许显式管理 frida-server |
+| `MITM_PORT_START / END`           | `8080 / 8090` | mitmproxy 端口池              |
+| `MITM_LISTEN_HOST`                |   `127.0.0.1` | mitmdump 监听地址             |
+| `EVIDENCE_CORRELATION_WINDOW_MS`  |        `2500` | 事件—请求关联窗口             |
+
+> 模拟器中的 `127.0.0.1` 指向模拟器自身。需要从模拟器访问宿主机抓包端口时，应按当前模拟器网络配置 `MITM_LISTEN_HOST` 与设备代理地址。
+
+### AI 编排
+
+| 变量                           |              默认值 | 说明                               |
+| ------------------------------ | ------------------: | ---------------------------------- |
+| `AI_ENABLED`                   |             `false` | AI 总开关                          |
+| `AI_PROVIDER`                  | `openai_compatible` | Provider                           |
+| `AI_BASE_URL`                  |                  空 | OpenAI-Compatible 根地址           |
+| `AI_MODEL`                     |                  空 | 模型名                             |
+| `AI_MAX_ROUNDS`                |                 `2` | 模型轮数上限                       |
+| `AI_MAX_TOOL_CALLS`            |                 `6` | 工具调用上限                       |
+| `AI_MAX_INPUT_TOKENS`          |              `6000` | 输入预算                           |
+| `AI_MAX_OUTPUT_TOKENS`         |              `1800` | 全局输出上限                       |
+| `AI_CACHE_ENABLED`             |              `true` | 是否启用缓存                       |
+| `AI_CACHE_TTL_SECONDS`         |             `86400` | 缓存 TTL                           |
+| `AI_PROVIDER_PROFILE`          |              `auto` | `auto / generic_openai / deepseek` |
+| `AI_THINKING_MODE`             |          `disabled` | DeepSeek 思考模式控制              |
+| `AI_PLANNER_MAX_OUTPUT_TOKENS` |               `500` | 规划阶段输出上限                   |
+| `AI_REPORT_MAX_OUTPUT_TOKENS`  |              `1000` | 报告阶段输出上限                   |
+| `AI_REPAIR_MAX_OUTPUT_TOKENS`  |               `300` | 修复阶段输出上限                   |
+| `AI_ALLOW_DYNAMIC_TOOLS`       |             `false` | 是否允许动态工具进入候选集         |
+
+### M7A
 
 ```env
-TASK_DATABASE_PATH=D:\private-state\adsdk-agent.db
+M7A_LEASE_STALE_SECONDS=600
+M7A_CONSENT_WAIT_SECONDS=900
+
 ```
 
-数据库首次使用时自动建表，不需要手工迁移。主要表：
+------
 
-- `tasks`：任务类型、状态、APK 元数据、脱敏设备标识、真实进度、错误、风险和报告索引；
-- `task_steps`：真实流水线步骤、状态、百分比、消息和时间；
-- `comparisons`：`comparison-v1` 确定性对比结果。
+## API 概览
 
-启动时，遗留的 `queued` / `running` 任务会被标记为失败并写明“进程异常中断”，不会错误保留为运行中。新任务进入 SQLite；旧 `localStorage` 历史仅在任务中心的“浏览器旧记录”区域只读展示。
-
-### 异步执行、实时进度与取消
-
-- `/tasks/{task_id}` 页面优先订阅 `ws://127.0.0.1:8000/ws/tasks/{task_id}`；
-- WebSocket 尚未建立或断开时，以 3 秒 HTTP 轮询兜底；
-- 终态 `completed`、`failed`、`cancelled` 停止轮询；
-- 进度来自 APK 校验、快照、解包、Manifest、SDK、动态会话、流量、规则和报告等真实回调；
-- 同一设备的动态任务使用独占锁，运行结束后释放；
-- 仅 `queued` / `running` 可取消。取消先写入信号，在安全点停止，并执行 Frida、mitmdump、设备代理和资源租约清理后写入 `cancelled`；
-- `failed`、`cancelled`、`completed` 可重试，重试会创建新任务，不覆盖原记录。
-
-原始 ADB serial 只存在于 SQLite 的私有执行载荷中；任务 REST 响应、WebSocket 消息和页面均使用脱敏标识。
-
-### 新增 API
+### 分析与任务
 
 ```text
 POST   /tasks
@@ -912,212 +503,242 @@ GET    /tasks/{task_id}/report
 POST   /tasks/{task_id}/cancel
 POST   /tasks/{task_id}/retry
 DELETE /tasks/{task_id}
-GET    /tasks/{task_id}/artifacts/json
-GET    /tasks/{task_id}/artifacts/markdown
-GET    /tasks/{task_id}/artifacts/html
-GET    /tasks/{task_id}/consent-checkpoint
-POST   /tasks/{task_id}/consent-checkpoint
 WS     /ws/tasks/{task_id}
-POST   /comparisons
-GET    /comparisons/{comparison_id}
+
 ```
 
-`GET /tasks` 支持 `status`、`task_type`、`keyword`、`page`、`page_size`、`sort`。所有新请求与响应均有 Pydantic 模型、输入约束、明确状态码和稳定的 `{detail: {code, message}}` 错误结构。
-
-### 专业 HTML 报告与 PDF
-
-每次分析在原有 `report.json`、`report.md` 之外生成：
+### 报告与产物
 
 ```text
-output/runs/<run_id>/report.html
+GET /tasks/{task_id}/artifacts/json
+GET /tasks/{task_id}/artifacts/markdown
+GET /tasks/{task_id}/artifacts/html
+
 ```
 
-HTML 使用转义后的结构化数据、独立打印 CSS、分页控制和高对比打印颜色。报告页提供：
+### Consent 检查点
 
-- 打印 / 导出 PDF（打开 HTML 后使用浏览器打印）；
-- 下载 HTML；
-- 下载 JSON；
-- 下载 Markdown；
-- 复制报告摘要。
+```text
+GET  /tasks/{task_id}/consent-checkpoint
+POST /tasks/{task_id}/consent-checkpoint
 
-HTML 不写入认证头、Cookie、请求正文、原始设备标识或 `REDACTION_HMAC_KEY`。动态证据不足时明确标记“无法评估”，不解释为安全。
+```
 
-### APK 版本对比
+可提交的动作：
 
-“版本对比”从两个具有有效 JSON 报告的已完成任务中选择基准版本和目标版本。后端以确定性集合算法比较：
+```text
+confirmed
+not_found
+skipped
 
-- 版本、SHA-256 与风险分；
-- 权限和高风险权限；
-- SDK、厂商与分类；
-- 规则状态；
-- 域名；
-- 动态敏感行为。
+```
 
-新增、删除、保持不变分别展示；缺少动态证据时该维度标记为不可比较。包名不同默认阻止，用户明确勾选后可进行跨应用对比。同一 APK 的两次任务预期 SHA-256 相同且无版本差异。
+### AI
 
-### 数据库与本地产物清理
+```text
+GET    /ai/status
+GET    /ai/settings
+PUT    /ai/settings
+POST   /ai/settings/test
+DELETE /ai/settings/api-key
 
-先停止前后端，再按需要清理：
+GET  /tasks/{task_id}/ai-plan
+GET  /tasks/{task_id}/ai-report
+GET  /tasks/{task_id}/ai-runtime-diagnostics
+POST /tasks/{task_id}/ai-report/regenerate
+
+```
+
+### 其他
+
+```text
+GET  /env/check
+GET  /traffic/check
+POST /frida/diagnostics
+GET  /frida/status
+POST /frida/server/deploy
+POST /frida/server/start
+POST /frida/server/stop
+POST /comparisons
+GET  /comparisons/{comparison_id}
+
+```
+
+完整接口与模型以运行中的 Swagger 文档为准：
+
+```text
+http://127.0.0.1:8000/docs
+
+```
+
+------
+
+## 输出产物
+
+```text
+output/runs/<run_id>/
+├─ input/app.apk
+├─ unpacked/
+├─ hook.log
+├─ events.raw.jsonl
+├─ events.json
+├─ frida.protocol-errors.jsonl
+├─ traffic/
+│  ├─ flows.mitm
+│  ├─ requests.jsonl
+│  └─ mitm.stderr.log
+├─ traffic_summary.json
+├─ correlations.json
+├─ privacy-findings.json
+├─ sessions.json
+├─ ai-plan.json
+├─ evidence-digest.json
+├─ ai-tool-trace.json
+├─ ai-report.json
+├─ ai-runtime-diagnostics.json
+├─ report.json
+├─ report.md
+└─ report.html
+
+```
+
+M7A 任务还会记录设备会话、资源所有权、清理结果和全链路验收摘要。真实运行产物、SQLite、缓存、日志和 `.env` 均位于忽略目录，不进入 Git。
+
+------
+
+## 状态语义
+
+### 任务与步骤
+
+| 状态                  | 含义                       |
+| --------------------- | -------------------------- |
+| `queued`              | 等待执行                   |
+| `running`             | 正在执行                   |
+| `success / completed` | 成功完成                   |
+| `partial`             | 有有效结果，但存在明确限制 |
+| `failed`              | 核心执行失败               |
+| `cancelled`           | 用户取消且完成必要清理     |
+| `skipped`             | 该步骤未执行               |
+
+### 规则与证据
+
+| 状态              | 含义                           |
+| ----------------- | ------------------------------ |
+| `matched`         | 可信证据满足规则               |
+| `not_matched`     | 证据有效，但未满足规则         |
+| `not_evaluated`   | 缺少可信证据，无法判断         |
+| `no_observations` | 当前观察窗口没有记录到对应数据 |
+| `error`           | 模块或规则执行异常             |
+
+`not_evaluated`、`no_observations` 和零请求都不能解释为“安全”。
+
+------
+
+## 隐私与安全边界
+
+- 原始设备 serial 仅用于私有执行载荷，REST、WebSocket、页面和报告使用脱敏引用；
+- Android ID、OAID、IMEI、广告 ID 等原值不进入正式发现或 AI Digest；
+- 网络请求默认不保存认证头、Cookie、正文或完整 query value；
+- AI 不接收完整 Hook 日志、logcat、`requests.jsonl`、Manifest XML 或 `report.json`；
+- Prompt、模型响应正文和 reasoning content 不写入诊断产物；
+- 每次任务使用独立 run、session、端口和输出目录；
+- 设备状态变更必须确认，取消和异常同样执行资源清理；
+- 删除任务默认删除索引，保留分析目录，避免误删证据；
+- AI 报告不替代确定性证据区，也不构成法律合规结论。
+
+------
+
+## 测试
+
+### 后端
 
 ```powershell
-.\stop-adsdk-agent.ps1
+$baseTemp = Join-Path "D:\pytest-basetemp\adsdk-agent" (
+  "full-" + [guid]::NewGuid().ToString("N")
+)
 
-# 仅重建任务索引；分析产物保留
-Remove-Item -LiteralPath .\output\state\adsdk-agent.db
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe -m pytest -q --basetemp $baseTemp
 
-# 清理静态解包缓存；下次分析自动重建
-Remove-Item -LiteralPath .\output\cache\static-unpack -Recurse
 ```
 
-任务中心删除默认只删除 SQLite 记录与关联报告索引，保留 `output/runs/<run_id>/`，避免误删其他任务产物。`output/`、SQLite WAL/SHM、临时任务目录、日志、样本和 `.env` 均由 `.gitignore` 排除。
-
-### MuMu 本地联调
-
-所有动态命令必须显式绑定设备：
+### 前端
 
 ```powershell
-$device = 'TARGET_DEVICE'
-$apk = 'D:\adsdk-agent\samples\hongguo.apk'
+cd web
+npm run typecheck
+npm test -- --run
+npm run build
 
-adb devices -l
-adb -s $device get-state
-adb -s $device shell getprop ro.product.cpu.abi
-adb -s $device shell getprop ro.build.version.release
-adb -s $device shell settings get global http_proxy
 ```
 
-动态任务请求示例：
+测试覆盖输入校验、任务持久化、设备租约、Frida 可靠性、网络采集、Consent、证据关联、隐私发现、AI 预算/缓存/降级、配置密钥防泄漏、DeepSeek 兼容、M7A 清理与前端交互。
 
-```json
-{
-  "task_type": "dynamic",
-  "apk_path": "D:\\adsdk-agent\\samples\\hongguo.apk",
-  "device_id": "TARGET_DEVICE",
-  "enable_traffic": true,
-  "enable_ui_stimulation": false,
-  "pre_consent_seconds": 5,
-  "post_consent_seconds": 5,
-  "collection_timeout_seconds": 60
-}
+------
+
+## 仓库结构
+
+```text
+adsdk-agent/
+├─ app/
+│  ├─ ai/                 # Provider、工具注册、Digest、编排、缓存与设置
+│  ├─ analyzers/          # Manifest、SDK、关联与隐私发现
+│  ├─ orchestration/      # M7A 设备会话、确认门、租约与清理
+│  ├─ repositories/       # SQLite 数据访问
+│  ├─ services/           # 任务与 AI 服务
+│  ├─ tasks/              # 任务模型与执行
+│  ├─ tools/              # apktool、ADB、Frida、mitmproxy 封装
+│  └─ main.py             # FastAPI 应用装配与路由
+├─ web/src/
+│  ├─ api/                # API 客户端
+│  ├─ components/         # 通用、分析、报告与设置组件
+│  ├─ hooks/              # TanStack Query Hooks
+│  ├─ pages/              # 页面
+│  ├─ stores/             # Zustand 状态
+│  ├─ test/               # 测试基建
+│  ├─ types/              # TypeScript API 类型
+│  └─ utils/
+├─ tests/
+├─ docs/
+├─ samples/
+├─ scripts/
+├─ output/                # 本地状态与产物，不进入版本控制
+├─ .env.example
+├─ requirements.txt
+├─ start-adsdk-agent.bat
+└─ stop-adsdk-agent.bat
+
 ```
 
-验收结束后再次检查 `http_proxy`，并检查是否残留本任务拥有的 `mitmdump`、Frida 会话或设备锁。APK 自终止、反调试、SSL Pinning 或未产生请求都按实际证据记录；不会补造事件或流量。
+------
 
-### 已知限制
+## 文档导航
 
-- 执行器为本地单进程线程池，不是跨机器分布式队列；
-- 进程异常退出时，正在运行的任务在下次启动后标记失败，需要手动重试；
-- 浏览器 PDF 结果依赖用户本机打印设置，后端不生成原生 PDF；
-- 动态分析质量仍取决于应用可运行性、Frida 兼容性、证书信任和 SSL Pinning；
-- 删除任务默认保留完整分析目录，磁盘回收由操作者在停止服务后按目录执行。
+- [产品化工作流](docs/PRODUCTIZED_WORKFLOW.md)
+- [动态分析可靠性](docs/DYNAMIC_RELIABILITY.md)
+- [Frida 分层诊断](docs/FRIDA_DIAGNOSTICS.md)
+- [MuMu 动态验收](docs/MUMU_DYNAMIC_ACCEPTANCE.md)
+- [M7A AI 全链路设计](docs/M7A_AI_FULL_ANALYSIS.md)
+- [M7A MuMu 验收记录](docs/M7A_MUMU_ACCEPTANCE.md)
+- [前端完成报告](docs/FRONTEND_COMPLETION_REPORT.md)
+- [页面截图](docs/screenshots/)
 
-## M4 动态分析可靠性
+------
 
-- `strict` 只接受 `spawn_suspended`，失败后不降级；
-- `balanced` 优先启动前 Hook，失败后只选择具有真实语义的已有进程 attach，并记录每次尝试；
-- `attach_only` 不覆盖启动阶段，报告会明确降低证据等级；
-- `dynamic-evidence-quality-v1` 使用 A/B/C/D 及覆盖、限制、可信/不可信能力解释结果；
-- `frida-diagnostics-v1` 分别检查 host、device、server、transport、target；
-- 诊断保持只读，打开页面不会触发部署、启动或停止；
-- 平台不联网下载 frida-server，不覆盖未知远端文件，不停止用户已有进程；
-- 零请求不等于无网络行为，快速退出也不会直接解释为反调试。
+## 已知限制
 
-新增配置：
+- 执行器是本地单进程线程池，不是跨机器分布式队列；
+- 进程异常退出时，运行中的任务会在下次启动后标记失败，需要手动重试；
+- 端口和部分资源租约为进程内管理，多 Worker 部署需划分独立端口段；
+- 动态分析质量依赖应用可运行性、Frida/Native Bridge 兼容性、证书信任与 SSL Pinning；
+- `attach_only` 和 `launch_then_attach` 无法证明覆盖应用最早启动阶段；
+- 任务清理可恢复代理、租约和本轮拥有的进程，但不保证恢复目标应用原始进程状态；
+- 浏览器 PDF 依赖本机打印设置，后端不生成原生 PDF；
+- 非 Windows 平台不能使用 DPAPI 本机保存 API Key；
+- AI Provider 输出可能不稳定，但确定性报告和证据始终是事实来源。
 
-| 配置项 | 默认值 | 说明 |
-|---|---|---|
-| `FRIDA_SERVER_MANAGEMENT_ENABLED` | `false` | 是否允许用户显式执行本地 server 管理 |
-| `FRIDA_SERVER_LOCAL_PATH` | 空 | 用户配置的本地可信文件；平台不联网下载 |
-| `FRIDA_SERVER_REMOTE_PATH` | `/data/local/tmp/frida-server` | 设备端受控路径 |
-| `FRIDA_SERVER_START_TIMEOUT_SECONDS` | `10` | 受控启动超时 |
-| `FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS` | `10` | transport 握手超时 |
-| `FRIDA_SERVER_STOP_ON_TASK_END` | `false` | 是否停止任务启动且拥有的 server |
+------
 
-新增 API：`POST /frida/diagnostics`、`GET /frida/status`、
-`POST /frida/server/deploy`、`POST /frida/server/start` 和
-`POST /frida/server/stop`。动态请求新增 `dynamic_mode_policy`，默认 `balanced`。
+## 许可证
 
-完整流程见 [动态可靠性](docs/DYNAMIC_RELIABILITY.md)、[Frida 诊断](docs/FRIDA_DIAGNOSTICS.md)
-与 [MuMu 验收](docs/MUMU_DYNAMIC_ACCEPTANCE.md)。
-
-## M5A 动态事件与网络请求证据关联
-
-- `correlation-v1` 对同一任务内已有 Frida 事件和安全网络请求元数据做确定性时间关联；
-- 默认窗口为 `2500 ms`，每个动态事件最多保留时间差最小的 5 个候选；
-- 两侧具有可比单调时钟时优先使用 monotonic；否则仅在 UTC 均可信且 `run_id` 一致时降级；
-- Consent 阶段明确冲突的候选不进入结果；缺少观察、时间不足和模块异常分别使用
-  `no_observations`、`not_evaluated`、`error`；
-- 输出写入 `output/runs/<run_id>/correlations.json`，并嵌入 JSON、Markdown 和 HTML 报告；
-- 关联只表示“时间上接近”或“可能相关”，不表示动态事件触发请求，也不证明数据由某 API 上传；
-- 关联结果仅包含事件标识、事件类型、请求标识、脱敏主机、方法、时间差、Consent、置信度和原因码，
-  不写入 Cookie、Header、正文、原始 URL 或 query value。
-
-## M5B 可解释隐私发现
-
-- `privacy-findings-v2` 把已有静态、动态、网络、Consent 时间线和 `correlation-v1` 证据
-  转换为确定性、可追溯、可解释的隐私发现；
-- 七条规则独立评估：`PF-PRECONSENT-SENSITIVE-EVENT`、`PF-PRECONSENT-NETWORK`、
-  `PF-PRECONSENT-CORRELATED-ACTIVITY`、`PF-CONSENT-STATE-UNKNOWN`、
-  `PF-DYNAMIC-EVIDENCE-GAP`、`PF-NETWORK-EVIDENCE-GAP`、`PF-POSTCONSENT-OBSERVATION`；
-- 每条发现区分 `finding_type`：`observed`（已观察技术事实）、`suspected`（疑似风险提示）、
-  `evidence_gap`（证据缺口）；规则状态区分 `matched`、`not_matched`、`not_evaluated`、`error`；
-- 严重性与置信度独立：动态证据等级 A 支持高置信，B 高到中，C 最高中，D 不形成确定性动态结论；
-  关联置信度、UTC 墙钟降级和未知 Consent 阶段各自独立压低置信度上限；
-- `finding_id` 由 schema 版本、`rule_id`、排序后的证据标识和 Consent 阶段做 SHA-256 派生，
-  相同输入得到相同标识与相同排序；
-- 规则之间故障隔离：Manifest 解析失败不阻塞动态规则，缺少 `correlation-v1` 不阻塞独立规则，
-  单条规则异常只把该规则记为 `error`，其余规则继续评估；
-- 输出写入 `output/runs/<run_id>/privacy-findings.json`，并嵌入 JSON、Markdown 和 HTML 报告；
-  模块异常时报告仍生成，`privacy_findings.status` 为 `error`；
-- 发现只包含事件标识、事件类型、请求标识、脱敏主机、方法、粗粒度路径摘要、时间、Consent 阶段、
-  关联标识和证据等级，不写入 Cookie、Authorization、Token、请求体、响应体、完整 query value、
-  原始设备序列号、Android ID、IMEI、OAID、广告 ID 或未脱敏设备路径；
-- 结果是风险提示，不是法律合规结论。未观察到某项行为不代表该行为不存在，
-  `not_evaluated` 代表证据不足，不代表安全或合规。
-
-
-### M4.2 MuMu suspended-spawn 可靠性边界
-
-- 环境能力与单次任务结果分别建模。目标进程崩溃时，已验证的 transport、进程枚举、Attach 与 spawn 创建能力仍按真实结果保留。
-- `strict` 只运行 `spawn_suspended`。resume 成功后还需通过 `FRIDA_SPAWN_STABILITY_SECONDS` 稳定窗口；窗口内 Native crash 记录为 `process_crashed`，不触发降级。
-- `balanced` 在 suspended-spawn 的稳定窗口内发生运行时崩溃时，保留首次尝试的 Hook、resume、存活时间和崩溃证据，清理该会话后使用正常 Android 启动，再执行 `launch_then_attach`。
-- `attach_only` 保留正在运行的目标，不重新安装 APK，也不 force-stop；目标进程缺席时返回 `package_process_not_found`，默认证据等级 C。
-- `launch_then_attach` 记录 `launch_requested_at`、`pid_observed_at`、`attach_started_at`、`attach_completed_at` 和 `startup_gap_ms`，默认证据等级 C。只有显式验证早期生命周期覆盖时才评为 B，且不自动评为 A。
-- 主动 `application-requested` detach 且 `crash=None` 属于正常清理。完整 Native backtrace 保存在 `dynamic/process-diagnostics.json`，页面和正文默认仅展示摘要。
-- 外部启动的 `frida-server` 不属于任务所有权；任务结束只清理由平台显式启动并记录 ownership 的 server。
-
-## M7A 真机 AI 全链路编排
-
-`app/orchestration/` 在既有确定性工具与 M6A/M6C AI 编排器之上加了一层安全信封，
-使一次完整分析可以在单台真机上跑完并复原设备状态。详见
-[docs/M7A_AI_FULL_ANALYSIS.md](docs/M7A_AI_FULL_ANALYSIS.md)。
-
-要点：
-
-- **事实归确定性工具，AI 只负责受约束的计划选择、风险排序与最终叙述。**
-  AI 不生成也不执行任意 Shell、ADB、Frida、SQL 或 Python：模型只能返回已注册的
-  工具名 + 通过 Pydantic 校验的结构化参数。
-- **`device-session-v1` 设备快照**在任何状态变更前采集，只保存掩码
-  `device_ref`（不保存完整 serial）与初始代理值，供清理时复原。初始代理值每轮
-  真实读取，绝不硬编码。
-- **资源所有权**区分 `external`（运行前就存在，永不停止）与 `owned_by_run`
-  （本轮启动，必须清理）。外部 frida-server 永不被本平台停止。
-- **十条清理规则**在 `try/finally` 中执行，失败与取消同样进入清理。代理复原
-  失败会被记录到 limitations，但不会中断其余清理。应用数据永不清除、其他应用
-  永不修改、设备永不重启、证据永不删除。
-- **可回收的设备租约**：一台设备同时只允许一个会改变状态的任务；静态任务不取
-  租约；Consent 等待期间持有租约并心跳；崩溃后的陈旧租约可回收，但心跳仍活跃的
-  租约永不被抢占。
-- **Consent 人工检查点**：平台不自动点击 UI，由人在真机上完成动作后经
-  `POST /tasks/{task_id}/consent-checkpoint` 回报 `confirmed` / `not_found` /
-  `skipped`。接口幂等且受状态门控；**AI 不得自动确认，任何超时都不会产生
-  `confirmed`**——看门狗只能取消，取消会退出等待并进入清理。
-
-相关环境变量：
-
-```env
-M7A_LEASE_STALE_SECONDS=600
-M7A_CONSENT_WAIT_SECONDS=900
-```
-
-真机验收记录见 [docs/M7A_MUMU_ACCEPTANCE.md](docs/M7A_MUMU_ACCEPTANCE.md)。
+本项目采用 [Apache License 2.0](LICENSE)。
