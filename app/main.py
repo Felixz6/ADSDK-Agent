@@ -15,12 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import (
-    AI_ALLOW_DYNAMIC_TOOLS,
     AI_CACHE_ENABLED,
-    AI_ENABLED,
     AI_MAX_ROUNDS,
     AI_MAX_TOOL_CALLS,
-    AI_PROVIDER,
     AI_REPORT_LANGUAGE,
     ALLOW_UNC_APK_PATHS,
     APK_ALLOWED_ROOTS,
@@ -81,10 +78,10 @@ from app.ai.orchestrator import (
     AIOrchestrationResult,
     AIOrchestrator,
 )
-from app.ai.provider import build_provider_from_config as build_ai_provider
 from app.ai.settings_service import (
     AISettingsService,
     AISettingsValidationError,
+    resolve_effective_ai_settings,
 )
 from app.ai.settings_store import AISettingsStore
 from app.ai.cache import AIResponseCache
@@ -3075,18 +3072,16 @@ def _execute_ai_orchestration(
     confirmed = frozenset(
         str(item) for item in (payload.get("confirmed_tools") or [])
     )
-    ai_enabled = AI_ENABLED and bool(payload.get("ai_enabled", True))
+    effective = resolve_effective_ai_settings(ai_settings_service.store)
+    ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
 
-    # New tasks use the hot-reloadable provider (reflects frontend-saved
-    # settings without a restart); running tasks capture this snapshot for
-    # their lifetime. Fall back to the env-only builder if the factory has no
-    # provider (e.g. unconfigured / non-Windows secret store) so existing
-    # env-var-only deployments keep working byte-for-byte.
-    hot_provider = ai_settings_service.factory.current() if ai_enabled else None
-    provider = hot_provider or (build_ai_provider() if ai_enabled else None)
+    # Every new task captures the provider built from the same live effective
+    # settings as /ai/settings and /ai/status.  It never falls back to the
+    # import-time env-only builder, which could select stale empty settings.
+    provider = ai_settings_service.factory.current() if ai_enabled else None
     orchestrator = AIOrchestrator(
         provider=provider,
-        registry=AIToolRegistry(allow_dynamic_tools=AI_ALLOW_DYNAMIC_TOOLS),
+        registry=AIToolRegistry(allow_dynamic_tools=bool(effective["allow_dynamic_tools"])),
         enabled=ai_enabled,
         cancelled=_ai_cancelled,
     )
@@ -3105,7 +3100,7 @@ def _execute_ai_orchestration(
         allow_network=bool(payload.get("allow_network")),
         confirmed_tools=confirmed,
         token_budget=int(payload.get("token_budget") or 0) or None,
-        report_language=str(payload.get("report_language") or AI_REPORT_LANGUAGE),
+        report_language=str(payload.get("report_language") or effective["report_language"]),
         run_dir=run_dir,
     )
     report_step("ai_evidence_digest", "running", "正在构建证据摘要")
@@ -3219,35 +3214,34 @@ def ai_status(probe: bool = Query(default=False)):
     model; otherwise it stays ``null`` ("not probed").
     """
 
-    provider = build_ai_provider()
-    configuration_error = provider.configuration_error()
-    configured = configuration_error is None
+    effective = resolve_effective_ai_settings(ai_settings_service.store)
+    configured = bool(effective["configured"])
     reachable: bool | None = None
-    last_error_code: str | None = (
-        str(configuration_error.get("error_code"))
-        if configuration_error is not None
-        else None
-    )
-    if probe and AI_ENABLED and configured:
-        try:
-            reachable, reason = provider.reachable()
-            if not reachable:
-                last_error_code = f"ai_provider_{reason or 'unreachable'}"
-        except Exception:
-            reachable = False
-            last_error_code = "ai_provider_unreachable"
+    last_error_code: str | None = None
+    if probe and effective["enabled"] and configured:
+        provider = ai_settings_service.factory.current()
+        if provider is None:
+            last_error_code = "ai_provider_build_failed"
+        else:
+            try:
+                reachable, reason = provider.reachable()
+                if not reachable:
+                    last_error_code = f"ai_provider_{reason or 'unreachable'}"
+            except Exception:
+                reachable = False
+                last_error_code = "ai_provider_unreachable"
     return AIStatusResponse(
-        enabled=AI_ENABLED,
-        provider=AI_PROVIDER,
-        model=getattr(provider, "model", ""),
+        enabled=bool(effective["enabled"]),
+        provider=str(effective["provider"] or ""),
+        model=str(effective["model"] or ""),
         configured=configured,
         reachable=reachable,
         last_error_code=last_error_code,
-        default_token_budget=6000,
-        max_rounds=AI_MAX_ROUNDS,
-        max_tool_calls=AI_MAX_TOOL_CALLS,
-        report_language=AI_REPORT_LANGUAGE,
-        allow_dynamic_tools=AI_ALLOW_DYNAMIC_TOOLS,
+        default_token_budget=int(effective["default_token_budget"]),
+        max_rounds=int(effective["max_rounds"]),
+        max_tool_calls=int(effective["max_tool_calls"]),
+        report_language=str(effective["report_language"]),
+        allow_dynamic_tools=bool(effective["allow_dynamic_tools"]),
     )
 
 
@@ -3495,23 +3489,19 @@ def regenerate_task_ai_report(
     confirmed = frozenset(
         str(item) for item in (payload.get("confirmed_tools") or [])
     )
-    ai_enabled = AI_ENABLED and bool(payload.get("ai_enabled", True))
+    effective = resolve_effective_ai_settings(ai_settings_service.store)
+    ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
 
-    # Effective cache setting for the "honour saved config" branch.
-    try:
-        effective = ai_settings_service.get_effective_settings()
-        cache_enabled_default = bool(effective.get("cache_enabled", AI_CACHE_ENABLED))
-    except Exception:
-        cache_enabled_default = bool(AI_CACHE_ENABLED)
+    # Regeneration uses the same effective snapshot as new tasks and status.
+    cache_enabled_default = bool(effective["cache_enabled"])
     cache_enabled = (
         cache_enabled_default if use_cache is None else bool(use_cache)
     )
 
-    hot_provider = ai_settings_service.factory.current() if ai_enabled else None
-    provider = hot_provider or (build_ai_provider() if ai_enabled else None)
+    provider = ai_settings_service.factory.current() if ai_enabled else None
     orchestrator = AIOrchestrator(
         provider=provider,
-        registry=AIToolRegistry(allow_dynamic_tools=AI_ALLOW_DYNAMIC_TOOLS),
+        registry=AIToolRegistry(allow_dynamic_tools=bool(effective["allow_dynamic_tools"])),
         cache=AIResponseCache(enabled=cache_enabled),
         enabled=ai_enabled,
         cancelled=_ai_cancelled,
@@ -3531,7 +3521,7 @@ def regenerate_task_ai_report(
         allow_network=bool(payload.get("allow_network")),
         confirmed_tools=confirmed,
         token_budget=int(payload.get("token_budget") or 0) or None,
-        report_language=str(payload.get("report_language") or AI_REPORT_LANGUAGE),
+        report_language=str(payload.get("report_language") or effective["report_language"]),
         run_dir=run_dir,
     )
     try:
