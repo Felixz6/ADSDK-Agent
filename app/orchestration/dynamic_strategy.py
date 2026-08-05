@@ -89,6 +89,9 @@ class DynamicStrategyDecision:
     reason_code: str | None
     target_running: bool
     application_launch_allowed: bool
+    requested_scope: str | None = None
+    effective_scope: str | None = None
+    blocked: bool = False
 
     def as_diagnostics(self) -> dict[str, object]:
         """Secret-free projection for the ``ai-runtime-diagnostics``/``ai-plan``
@@ -103,6 +106,9 @@ class DynamicStrategyDecision:
             "reason_code": self.reason_code,
             "target_running": self.target_running,
             "application_launch_allowed": self.application_launch_allowed,
+            "requested_scope": self.requested_scope,
+            "effective_scope": self.effective_scope,
+            "blocked": self.blocked,
         }
 
 
@@ -115,6 +121,9 @@ def normalize_dynamic_strategy(
     target_running: bool,
     dynamic_mode_policy: str = "balanced",
     plan_references_traffic: bool | None = None,
+    requested_scope: str | None = None,
+    application_launch_allowed: bool | None = None,
+    native_bridge_detected: bool = False,
 ) -> DynamicStrategyDecision:
     """Apply Rules A–F and return the :class:`DynamicStrategyDecision`.
 
@@ -130,6 +139,102 @@ def normalize_dynamic_strategy(
         confirmed_tools, Mapping
     ) else frozenset(confirmed_tools)
     dynamic_confirmed = _DEVICE_STATE_TOOL in confirmed
+
+    # Production full-analysis calls use the dynamic execution strategy as
+    # ``requested_strategy`` and carry the analysis scope separately.  Keep
+    # the legacy four-scope form below for compatibility callers.
+    if requested_strategy in {"strict", "balanced", "attach_only"}:
+        scope = requested_scope or "full_analysis"
+        launch_allowed = (
+            bool(application_launch_allowed)
+            if application_launch_allowed is not None
+            else requested_strategy != "attach_only"
+        )
+        common = {
+            "requested_strategy": requested_strategy,
+            "target_running": target_running,
+            "requested_scope": scope,
+        }
+        if scope in _READONLY_STRATEGIES:
+            return DynamicStrategyDecision(
+                **common,
+                effective_strategy=requested_strategy,
+                normalized=False,
+                reason_code=None,
+                application_launch_allowed=False,
+                effective_scope=scope,
+            )
+        if not allow_dynamic:
+            return DynamicStrategyDecision(
+                **common,
+                effective_strategy=requested_strategy,
+                normalized=True,
+                reason_code="dynamic_not_allowed",
+                application_launch_allowed=False,
+                effective_scope="static_only",
+            )
+        if not dynamic_confirmed:
+            return DynamicStrategyDecision(
+                **common,
+                effective_strategy=requested_strategy,
+                normalized=True,
+                reason_code="dynamic_not_confirmed",
+                application_launch_allowed=False,
+                effective_scope="static_only",
+            )
+        if requested_strategy == "strict":
+            return DynamicStrategyDecision(
+                **common,
+                effective_strategy="strict",
+                normalized=False,
+                reason_code=None,
+                application_launch_allowed=True,
+                effective_scope=scope,
+            )
+        if requested_strategy == "attach_only" and target_running:
+            return DynamicStrategyDecision(
+                **common,
+                effective_strategy="attach_only",
+                normalized=False,
+                reason_code=None,
+                application_launch_allowed=False,
+                effective_scope=scope,
+            )
+        if requested_strategy == "attach_only" and not target_running:
+            if launch_allowed:
+                return DynamicStrategyDecision(
+                    **common,
+                    effective_strategy="balanced",
+                    normalized=True,
+                    reason_code="attach_only_target_missing_launch_allowed",
+                    application_launch_allowed=True,
+                    effective_scope=scope,
+                )
+            return DynamicStrategyDecision(
+                **common,
+                effective_strategy="attach_only",
+                normalized=False,
+                reason_code="attach_only_target_missing_launch_forbidden",
+                application_launch_allowed=False,
+                effective_scope=scope,
+                blocked=True,
+            )
+        reason = None
+        normalized = False
+        effective = "balanced"
+        if native_bridge_detected:
+            reason = "native_bridge_risk_balanced_recommended"
+        elif not allow_network and plan_references_traffic:
+            reason = "network_capture_disabled"
+            normalized = True
+        return DynamicStrategyDecision(
+            **common,
+            effective_strategy=effective,
+            normalized=normalized,
+            reason_code=reason,
+            application_launch_allowed=True,
+            effective_scope=scope,
+        )
 
     # --- Rule A: unknown requested strategy -------------------------------
     if requested_strategy not in _VALID_REQUESTED_STRATEGIES:

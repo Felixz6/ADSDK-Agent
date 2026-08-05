@@ -37,7 +37,8 @@ from app.ai.models import AIPlan
 from .consent_checkpoint import ConsentCheckpointState
 from .device_lease import DeviceLease
 from .device_session import DeviceSessionSnapshot
-from .full_analysis_session import _DEVICE_STATE_TOOLS
+
+_DEVICE_STATE_TOOLS: frozenset[str] = frozenset({"dynamic_analysis"})
 
 # ---------------------------------------------------------------------------
 # Stable error codes — runtime layer (Section 十一). One stable code per
@@ -127,6 +128,10 @@ class RuntimePlanValidationResult:
 
     @property
     def first_code(self) -> str | None:
+        advisory_codes = {RT_FOREGROUND_NOT_TARGET, RT_NATIVE_BRIDGE_RISK}
+        for issue in self.issues:
+            if issue.code not in advisory_codes:
+                return issue.code
         return self.issues[0].code if self.issues else None
 
 
@@ -169,6 +174,8 @@ def validate_plan_against_runtime_state(
     package_name: str | None = None,
     max_steps: int = 6,
     application_launch_allowed: bool = False,
+    require_consent_checkpoint: bool = True,
+    current_run_id: str | None = None,
 ) -> RuntimePlanValidationResult:
     """Run the runtime-semantic checks (≥17).
 
@@ -221,7 +228,7 @@ def validate_plan_against_runtime_state(
 
     # --- target process running, when a dynamic plan touches it (5) ---
     if has_dynamic:
-        if not caps.target_pids:
+        if not caps.target_pids and not application_launch_allowed:
             issues.append(RuntimePlanValidationIssue(
                 code=RT_TARGET_PID_NOT_FOUND, json_path="/steps",
                 expected="target_process_running", received_type="no_pid"
@@ -235,14 +242,23 @@ def validate_plan_against_runtime_state(
         ))
 
     # --- frida readiness (7) ---
-    if has_dynamic and caps.frida_server_present is False:
+    if (
+        has_dynamic
+        and caps.frida_server_present is False
+        and not application_launch_allowed
+    ):
         issues.append(RuntimePlanValidationIssue(
             code=RT_FRIDA_NOT_READY, json_path="/steps",
             expected="frida_server_present"
         ))
 
     # --- frida owned elsewhere (8) ---
-    if has_dynamic and caps.frida_server_present and not caps.frida_server_owned:
+    if (
+        has_dynamic
+        and caps.frida_server_present
+        and not caps.frida_server_owned
+        and not application_launch_allowed
+    ):
         issues.append(RuntimePlanValidationIssue(
             code=RT_FRIDA_OWNED_ELSEWHERE, json_path="/steps"
         ))
@@ -254,14 +270,18 @@ def validate_plan_against_runtime_state(
         ))
 
     # --- lease availability (10/11/12) ---
-    if has_dynamic or requested_strategy in {"dynamic_only", "full_analysis"}:
+    if has_dynamic or effective_strategy in {"dynamic_only", "full_analysis"}:
         if lease_state is None:
             issues.append(RuntimePlanValidationIssue(
                 code=RT_LEASE_REQUIRED_BUT_NONE, json_path="/steps"
             ))
         else:
             ls = lease_state.state
-            if ls == "held" and lease_state.owner_run_id is not None:
+            if (
+                ls == "held"
+                and lease_state.owner_run_id is not None
+                and lease_state.owner_run_id != current_run_id
+            ):
                 # Owner is never persisted to artifacts, so this branch is
                 # information-only — the lease layer gates the actual acquire.
                 issues.append(RuntimePlanValidationIssue(
@@ -273,7 +293,7 @@ def validate_plan_against_runtime_state(
                 ))
 
     # --- consent gate consistency (13/14) ---
-    if has_dynamic:
+    if has_dynamic and require_consent_checkpoint:
         if confirmation is None:
             issues.append(RuntimePlanValidationIssue(
                 code=RT_CONSENT_GATE_MISMATCH, json_path="/steps",
@@ -295,7 +315,7 @@ def validate_plan_against_runtime_state(
             issues.append(RuntimePlanValidationIssue(
                 code=RT_CONSENT_GATE_MISMATCH, json_path="/steps"
             ))
-    else:
+    elif not has_dynamic:
         # A non-dynamic plan must NOT have an awaiting checkpoint dragging
         # the run into a consent wait it will never resolve.
         if confirmation is not None and confirmation.status == "awaiting":
@@ -374,7 +394,8 @@ def validate_plan_against_runtime_state(
             expected=requested_strategy, received_type=effective_strategy
         ))
 
-    ok = not issues
+    advisory_codes = {RT_FOREGROUND_NOT_TARGET, RT_NATIVE_BRIDGE_RISK}
+    ok = not any(issue.code not in advisory_codes for issue in issues)
     return RuntimePlanValidationResult(ok=ok, issues=issues)
 
 

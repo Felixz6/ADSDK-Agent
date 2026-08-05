@@ -552,6 +552,26 @@ class AIToolTrace(BaseModel):
     budget_exhausted: bool = False
 
 
+class PreparedPlan(BaseModel):
+    """Side-effect-free output of the AI planning phase.
+
+    The model deliberately contains only the validated/fallback plan and the
+    accounting state required to resume the same orchestration run.  Tool
+    execution is performed exclusively by ``execute_prepared_plan`` after the
+    caller has applied its runtime gates and supplied an effective plan.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["ai-prepared-plan-v1"] = "ai-prepared-plan-v1"
+    plan: AIPlan
+    usage: AITokenUsage = Field(default_factory=AITokenUsage)
+    trace: AIToolTrace = Field(default_factory=AIToolTrace)
+    plan_error: str | None = None
+    unavailable_reason: str | None = None
+    started_monotonic: float = Field(default=0.0, exclude=True)
+
+
 # ---------------------------------------------------------------------------
 # ai-plan-validation-v2  (Section 九 / 十 / 二十一).
 #

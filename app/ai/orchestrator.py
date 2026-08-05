@@ -77,6 +77,7 @@ from .models import (
     AIPerRoundUsage,
     EvidenceDigest,
     PlanStep,
+    PreparedPlan,
     PlanValidationIssue,
     PlanValidationRound,
     ToolCompactResult,
@@ -250,6 +251,17 @@ class AIOrchestrator:
         execute_tool: ToolExecutor,
         build_digest: Callable[[list[ToolCompactResult]], EvidenceDigest],
     ) -> AIOrchestrationResult:
+        """Compatibility wrapper for callers that do not need an outer gate."""
+        prepared = self.prepare_plan(request)
+        return self.execute_prepared_plan(
+            prepared,
+            request=request,
+            execute_tool=execute_tool,
+            build_digest=build_digest,
+        )
+
+    def prepare_plan(self, request: AIOrchestrationRequest) -> PreparedPlan:
+        """Build and validate a plan without executing any tool or side effect."""
         usage = AITokenUsage()
         trace = AIToolTrace()
         started = time.perf_counter()
@@ -264,13 +276,46 @@ class AIOrchestrator:
         self._deterministic_plan_fallback = True
         self._repair_attempted = False
         self._plan_validation_rounds = []
-        model_attempted = False
-        deterministic_fallback = False
-
-        # 1. Availability gate. AI unavailable is a degradation, never a failure.
+        # Availability is represented in the prepared value; execution keeps
+        # the legacy deterministic degradation behavior.
         unavailable = self._unavailable_reason()
         if unavailable is not None:
             plan = self._default_plan(request, reason=unavailable)
+            return PreparedPlan(
+                plan=plan,
+                usage=usage,
+                trace=trace,
+                unavailable_reason=unavailable,
+                started_monotonic=started,
+            )
+
+        plan, plan_error = self._plan(request, usage)
+        return PreparedPlan(
+            plan=plan,
+            usage=usage,
+            trace=trace,
+            plan_error=plan_error,
+            started_monotonic=started,
+        )
+
+    def execute_prepared_plan(
+        self,
+        prepared: PreparedPlan,
+        *,
+        request: AIOrchestrationRequest,
+        execute_tool: ToolExecutor,
+        build_digest: Callable[[list[ToolCompactResult]], EvidenceDigest],
+        effective_plan: AIPlan | None = None,
+        strategy_decision: DynamicStrategyDecision | None = None,
+    ) -> AIOrchestrationResult:
+        """Execute the externally-gated effective plan and compose its report."""
+        usage = prepared.usage.model_copy(deep=True)
+        trace = prepared.trace.model_copy(deep=True)
+        started = prepared.started_monotonic or time.perf_counter()
+        plan = effective_plan or prepared.plan
+        unavailable = prepared.unavailable_reason
+
+        if unavailable is not None:
             results, trace = self._execute_plan(
                 plan, request, execute_tool, trace, usage
             )
@@ -310,10 +355,8 @@ class AIOrchestrator:
                 diagnostic=diagnostic,
             )
 
-        # 2. Planning phase (model round 1, with at most one structured repair).
-        plan, plan_error = self._plan(request, usage)
-
-        # 3. Tool execution against the whitelist only.
+        # Tool execution begins only in this second phase.  FullAnalysisSession
+        # supplies ``effective_plan`` after freshness/runtime/strategy gates.
         results, trace = self._execute_plan(plan, request, execute_tool, trace, usage)
 
         # 4. Deterministic digest — code-built, never AI-authored.
@@ -321,7 +364,7 @@ class AIOrchestrator:
 
         # 5. Reporting phase (model round 2), unless budget/cancel stop us.
         report, status, error_code = self._compose_report(
-            request, digest, usage, plan_error
+            request, digest, usage, prepared.plan_error
         )
 
         # Track whether we ever attempted a model call vs degrading immediately.
@@ -343,15 +386,16 @@ class AIOrchestrator:
         # default ``False`` only matters under attach_only policy (Rule E), which
         # the static_only default path never reaches, so it is safe here.
         # Lazy import: see the ``TYPE_CHECKING`` note near the top of file.
-        from app.orchestration.dynamic_strategy import normalize_dynamic_strategy
+        if strategy_decision is None:
+            from app.orchestration.dynamic_strategy import normalize_dynamic_strategy
 
-        strategy_decision = normalize_dynamic_strategy(
-            requested_strategy=_normalize_strategy(request.analysis_scope),
-            allow_dynamic=request.allow_dynamic,
-            allow_network=request.allow_network,
-            confirmed_tools=request.confirmed_tools,
-            target_running=False,
-        )
+            strategy_decision = normalize_dynamic_strategy(
+                requested_strategy=_normalize_strategy(request.analysis_scope),
+                allow_dynamic=request.allow_dynamic,
+                allow_network=request.allow_network,
+                confirmed_tools=request.confirmed_tools,
+                target_running=False,
+            )
         report_source = report.report_source
 
         usage = usage.model_copy(
