@@ -20,8 +20,23 @@ from typing import Any, Callable, Literal
 
 import pytest
 
-from app.ai.models import AIPlan, AITokenUsage, AIReport, EvidenceDigest, PlanStep
-from app.ai.orchestrator import AIOrchestrationRequest, AIOrchestrationResult
+from app.ai.cache import AIResponseCache
+from app.ai.context_builder import AIContextBuilder
+from app.ai.models import (
+    AIPlan,
+    AITokenUsage,
+    AIReport,
+    EvidenceDigest,
+    PlanStep,
+    PreparedPlan,
+    ToolCompactResult,
+)
+from app.ai.orchestrator import (
+    AIOrchestrationRequest,
+    AIOrchestrationResult,
+    AIOrchestrator,
+)
+from app.ai.provider import MockAIProvider
 from app.orchestration.cleanup_manager import (
     CleanupManager,
     CleanupOutcome,
@@ -973,6 +988,11 @@ class _FakeEffects:
         self.plan_built_seen: list[tuple] = []
         self.snapshots: list[tuple] = []
         self.consent_svc: ConsentCheckpointService | None = None
+        self.prepare_count = 0
+        self.execute_count = 0
+        self.phase_log: list[str] = []
+        self.effective_plan_seen: AIPlan | None = None
+        self.strategy_decision_seen = None
 
     # clock / cancel / report_step ---------------------------------
     def clock(self) -> str:
@@ -1000,6 +1020,25 @@ class _FakeEffects:
     def run_orchestration(self, request):
         if self._orch_raises is not None:
             raise self._orch_raises
+        return self._orch_result
+
+    def prepare_orchestration(self, request):
+        self.prepare_count += 1
+        self.phase_log.append("prepare")
+        result = self._orch_result or _make_orch_result(plan_uses_dynamic=True)
+        return PreparedPlan(plan=result.plan)
+
+    def execute_prepared_orchestration(
+        self, prepared, request, effective_plan, strategy_decision
+    ):
+        self.execute_count += 1
+        self.phase_log.append("execute")
+        self.effective_plan_seen = effective_plan
+        self.strategy_decision_seen = strategy_decision
+        if self._orch_raises is not None:
+            raise self._orch_raises
+        assert self._orch_result is not None
+        self._orch_result.plan = effective_plan
         return self._orch_result
 
     def notify_plan_built(self, plan, path):
@@ -1062,7 +1101,11 @@ def _build_session(
         strategy=strategy,  # type: ignore[arg-type]
         allow_dynamic=allow_dynamic,
         allow_network=True,
-        confirmed_tools=confirmed_tools or frozenset({"dynamic_analysis"}),
+        confirmed_tools=(
+            confirmed_tools
+            if confirmed_tools is not None
+            else frozenset({"dynamic_analysis"})
+        ),
         token_budget=6000,
         report_language="zh-CN",
         lease=lease,
@@ -1499,4 +1542,204 @@ def test_session_offline_freshness_blocks_and_still_cleans_up():
     assert transition.final_state == "failed"
     assert transition.cleanup is not None and transition.cleanup.ran
     assert any(item.error_code == "device_disconnected_since_preflight" for item in transition.events)
+
+
+class _RealTwoPhaseEffects(_FakeEffects):
+    """Runs the production AIOrchestrator interfaces with synthetic effects."""
+
+    def __init__(self, *, execution_snapshot: DeviceSessionSnapshot | None = None):
+        plan = {
+            "schema_version": "ai-plan-v1",
+            "objective": "two phase full analysis",
+            "strategy": "full_analysis",
+            "steps": [
+                {
+                    "step_id": "dynamic",
+                    "tool_name": "dynamic_analysis",
+                    "reason": "collect dynamic evidence",
+                    "arguments": {},
+                    "depends_on": [],
+                    "requires_confirmation": True,
+                }
+            ],
+            "expected_outputs": ["dynamic_summary"],
+            "stop_conditions": [],
+            "limitations": [],
+        }
+        self.provider = MockAIProvider(plan=plan)
+        self.orchestrator = AIOrchestrator(
+            provider=self.provider,
+            enabled=True,
+            cache=AIResponseCache(enabled=False),
+        )
+        super().__init__(orch_result=_make_orch_result(plan_uses_dynamic=True))
+        self.execution_snapshot = execution_snapshot
+        self.tool_calls: list[str] = []
+        self.prepared_seen: PreparedPlan | None = None
+
+    def capture_snapshot(self, device_id, package_name):
+        self.snapshots.append((device_id, package_name))
+        self.phase_log.append(
+            "planning_preflight" if len(self.snapshots) == 1 else "execution_preflight"
+        )
+        if len(self.snapshots) > 1 and self.execution_snapshot is not None:
+            return self.execution_snapshot
+        return _make_snapshot(device_id=device_id)
+
+    def prepare_orchestration(self, request):
+        self.prepare_count += 1
+        self.phase_log.append("prepare")
+        self.prepared_seen = self.orchestrator.prepare_plan(request)
+        return self.prepared_seen
+
+    def execute_prepared_orchestration(
+        self, prepared, request, effective_plan, strategy_decision
+    ):
+        self.execute_count += 1
+        self.phase_log.append("execute")
+        self.effective_plan_seen = effective_plan
+        self.strategy_decision_seen = strategy_decision
+
+        def execute_tool(name, _arguments):
+            self.tool_calls.append(name)
+            return ToolCompactResult(
+                tool_name=name, status="success", summary=f"ran:{name}"
+            )
+
+        builder = AIContextBuilder()
+        result = self.orchestrator.execute_prepared_plan(
+            prepared,
+            request=request,
+            effective_plan=effective_plan,
+            strategy_decision=strategy_decision,
+            execute_tool=execute_tool,
+            build_digest=lambda _results: builder.build(
+                task={"task_id": request.task_id or "", "objective": request.objective}
+            ),
+        )
+        self._orch_result = result
+        return result
+
+
+def test_full_session_real_two_phase_order_and_single_execution():
+    effects = _RealTwoPhaseEffects()
+    session = _build_session(effects)
+    transition = session.run()
+
+    assert transition.final_state == "completed"
+    assert effects.phase_log[:4] == [
+        "planning_preflight", "prepare", "execution_preflight", "execute"
+    ]
+    assert effects.prepare_count == 1
+    assert effects.execute_count == 1
+    assert effects.tool_calls == ["dynamic_analysis"]
+    assert effects.provider.call_count == 2  # plan once + report once
+    assert effects.prepared_seen is not None
+    assert effects.prepared_seen.usage.model_round_count == 1
+    assert effects._orch_result is not None
+    assert effects._orch_result.usage.model_round_count == 2
+    assert effects._orch_result.trace.model_round_count == 2
+
+
+@pytest.mark.parametrize(
+    ("state_update", "expected_code"),
+    [
+        ({"online": False}, "device_disconnected_since_preflight"),
+        ({"boot_id": "boot-changed"}, "device_rebooted_since_preflight"),
+        ({"package_installed": False}, "package_not_installed"),
+    ],
+)
+def test_runtime_gate_blocks_before_tools_consent_and_second_model_round(
+    state_update, expected_code
+):
+    snapshot = _make_snapshot().model_copy(
+        update={
+            "initial_state": _make_snapshot().initial_state.model_copy(
+                update=state_update
+            )
+        }
+    )
+    effects = _RealTwoPhaseEffects(execution_snapshot=snapshot)
+    transition = _build_session(effects).run()
+
+    assert transition.final_state == "failed"
+    assert transition.runtime_validation_error_code == expected_code
+    assert transition.preflight_changed is True
+    assert effects.prepare_count == 1
+    assert effects.execute_count == 0
+    assert effects.tool_calls == []
+    assert effects.consent_entered == []
+    assert effects.provider.call_count == 1
+    assert transition.cleanup is not None and transition.cleanup.ran
+
+
+def test_missing_confirmation_blocks_before_execution():
+    effects = _FakeEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
+    session = _build_session(effects, confirmed_tools=frozenset())
+    transition = session.run()
+
+    assert transition.final_state == "failed"
+    assert effects.execute_count == 0
+    assert transition.runtime_validation_error_code == "dynamic_not_allowed_effective"
+    assert effects.consent_entered == []
+
+
+def test_lease_conflict_never_executes_or_creates_consent_checkpoint():
+    clock = _FakeClock()
+    lease = LeaseRegistry(clock=clock, stale_after_seconds=600)
+    lease.acquire(
+        device_key=_make_snapshot().device_ref,
+        run_id="other-run",
+        task_id="other-task",
+    )
+    effects = _FakeEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
+    session = _build_session(effects)
+    session.lease = lease
+    transition = session.run()
+
+    assert transition.final_state == "failed"
+    assert transition.runtime_validation_error_code == "lease_held_by_other_run"
+    assert effects.execute_count == 0
+    assert effects.consent_entered == []
+
+
+@pytest.mark.parametrize(
+    ("requested", "launch_allowed", "expected", "normalized"),
+    [
+        ("attach_only", True, "balanced", True),
+        ("strict", True, "strict", False),
+    ],
+)
+def test_requested_dynamic_strategy_is_preserved_and_effective_mode_is_executed(
+    requested, launch_allowed, expected, normalized
+):
+    effects = _RealTwoPhaseEffects()
+    session = _build_session(effects)
+    session.dynamic_mode_policy = requested
+    session.application_launch_allowed = launch_allowed
+    transition = session.run()
+
+    assert transition.final_state == "completed"
+    assert transition.requested_strategy == requested
+    assert transition.effective_strategy == expected
+    assert transition.normalized is normalized
+    assert effects.strategy_decision_seen.requested_strategy == requested
+    assert effects.strategy_decision_seen.effective_strategy == expected
+    assert effects.execute_count == 1
+
+
+def test_attach_only_missing_target_and_launch_forbidden_blocks_cleanly():
+    effects = _RealTwoPhaseEffects()
+    session = _build_session(effects)
+    session.dynamic_mode_policy = "attach_only"
+    session.application_launch_allowed = False
+    transition = session.run()
+
+    assert transition.final_state == "failed"
+    assert transition.requested_strategy == "attach_only"
+    assert transition.effective_strategy == "attach_only"
+    assert transition.runtime_validation_error_code == "target_process_not_found"
+    assert effects.execute_count == 0
+    assert effects.tool_calls == []
+    assert effects.consent_entered == []
 
