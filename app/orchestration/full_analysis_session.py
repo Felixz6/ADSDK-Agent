@@ -574,6 +574,8 @@ class FullAnalysisSession:
         request = AIOrchestrationRequest(
             objective=self.objective,
             analysis_scope=self.strategy,
+            analysis_mode=self.strategy,
+            dynamic_mode_policy=self.dynamic_mode_policy,
             task_id=self.task_id,
             allow_dynamic=self.allow_dynamic,
             allow_network=self.allow_network,
@@ -666,27 +668,8 @@ class FullAnalysisSession:
             http_proxy=state.http_proxy,
         )
 
-        # 4. Runtime semantic validation sees the prepared plan and current
-        # facts. It never creates a consent checkpoint or dispatches a tool.
-        runtime_validation = validate_plan_against_runtime_state(
-            self._plan,
-            preflight=self._snapshot,
-            capabilities=capabilities,
-            confirmation=None,
-            lease_state=prospective_lease,
-            requested_strategy=self.strategy,
-            effective_strategy=self.strategy,
-            allow_dynamic=self.allow_dynamic,
-            allow_network=self.allow_network,
-            confirmed_tools=self.confirmed_tools,
-            package_name=self.package_name,
-            application_launch_allowed=self.application_launch_allowed,
-            require_consent_checkpoint=False,
-            current_run_id=self.run_id,
-        )
-
-        # 5. Normalize only after runtime validation; requested mode remains
-        # immutable even when the effective mode/scope is narrowed.
+        # 4. Normalize the dynamic policy before runtime validation. Analysis
+        # mode chooses the plan route; it is never a requested/effective policy.
         self._strategy_decision = normalize_dynamic_strategy(
             requested_strategy=self.dynamic_mode_policy,
             requested_scope=self.strategy,
@@ -698,6 +681,24 @@ class FullAnalysisSession:
             plan_references_traffic=plan_references_traffic,
             native_bridge_detected=native_bridge_detected,
         )
+        # Runtime semantic validation sees the normalized execution policy.
+        runtime_validation = validate_plan_against_runtime_state(
+            self._plan,
+            preflight=self._snapshot,
+            capabilities=capabilities,
+            confirmation=None,
+            lease_state=prospective_lease,
+            requested_strategy=self._strategy_decision.requested_strategy,
+            effective_strategy=self._strategy_decision.effective_strategy,
+            allow_dynamic=self.allow_dynamic,
+            allow_network=self.allow_network,
+            confirmed_tools=self.confirmed_tools,
+            package_name=self.package_name,
+            application_launch_allowed=self.application_launch_allowed,
+            require_consent_checkpoint=False,
+            current_run_id=self.run_id,
+        )
+
         if not runtime_validation.ok:
             self._runtime_validation_code = runtime_validation.first_code
             failure_prefix = (

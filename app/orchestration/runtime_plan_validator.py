@@ -326,7 +326,7 @@ def validate_plan_against_runtime_state(
 
     # --- effective-strategy dynamic gate (15) ---
     effective_has_dynamic = (
-        effective_strategy in {"dynamic_only", "full_analysis"}
+        effective_strategy in {"dynamic_only", "full_analysis", "strict", "balanced", "attach_only"}
         and allow_dynamic
         and "dynamic_analysis" in confirmed_tools
     )
@@ -366,7 +366,8 @@ def validate_plan_against_runtime_state(
             code=RT_REPORT_ONLY_WITH_DYNAMIC, json_path="/steps"
         ))
     if requested_strategy not in {
-        "static_only", "dynamic_only", "full_analysis", "report_only"
+        "static_only", "dynamic_only", "full_analysis", "report_only",
+        "strict", "balanced", "attach_only",
     }:
         issues.append(RuntimePlanValidationIssue(
             code=RT_UNKNOWN_RUNTIME_STATE, json_path="/steps"
@@ -421,7 +422,9 @@ def _steps_fit_strategy(plan: AIPlan, strategy: str) -> bool:
         ),
         "report_only": frozenset({"deterministic_report", "privacy_findings"}),
     }
-    bag = allowed.get(strategy, frozenset())
+    # Dynamic policies govern execution mechanics, not analysis routing.
+    # Their allowed tool envelope is the full-analysis envelope.
+    bag = allowed.get(strategy, allowed["full_analysis"] if strategy in {"strict", "balanced", "attach_only"} else frozenset())
     return all(step.tool_name in bag for step in plan.steps)
 
 
