@@ -708,6 +708,12 @@ class TestDiagnosticsArtifact:
             "repair_succeeded", "fallback_used", "validation_error_code",
             "validation_json_path", "normalized", "normalization_reason",
             "target_running", "preflight_changed", "report_source",
+            "analysis_mode", "orchestration_entrypoint", "session_engine",
+            "execution_pipeline_version", "root_type",
+            "schema_version_present", "steps_present", "steps_type",
+            "normalization_eligible", "normalization_applied",
+            "normalization_reason_code", "safe_wrapper_detected",
+            "top_level_field_count",
         }
 
     def test_the_artifact_records_the_compat_profile_and_thinking_mode(

@@ -13,6 +13,7 @@ import json
 import logging
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -1202,6 +1203,91 @@ def test_ai_orchestrated_task_type_is_accepted_and_persisted(tmp_path: Path):
     assert captured[0]["objective"] == "检查隐私风险"
     assert captured[0]["analysis_scope"] == "static_only"
     assert service.get(created.id).status == "completed"
+    service.shutdown()
+
+
+def test_post_tasks_full_analysis_routes_only_through_m7b_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repository = TaskRepository(tmp_path / "state" / "tasks.db")
+    repository.initialize()
+    service = TaskService(repository, max_workers=1)
+    calls = {"session": 0, "legacy_dynamic": 0}
+    captured: dict[str, Any] = {}
+
+    def run_session(session):
+        calls["session"] += 1
+        captured["session"] = session
+        captured["effects"] = session.effects
+        assert isinstance(
+            session.effects, main_module.ProductionSessionEffects
+        )
+        return SimpleNamespace(
+            final_state="completed",
+            runtime_validation_error_code=None,
+            failures=[],
+            requested_strategy="attach_only",
+            effective_strategy="balanced",
+            normalized=True,
+            normalization_reason="attach_target_missing_launch_allowed",
+            target_running=False,
+            preflight_changed=False,
+            cleanup=None,
+        )
+
+    def legacy_dynamic(_request):
+        calls["legacy_dynamic"] += 1
+        raise AssertionError("legacy direct dynamic path executed")
+
+    monkeypatch.setattr(main_module, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(
+        main_module,
+        "resolve_effective_ai_settings",
+        lambda _store: {
+            "enabled": False,
+            "allow_dynamic_tools": True,
+            "report_language": "zh-CN",
+        },
+    )
+    monkeypatch.setattr(main_module.FullAnalysisSession, "run", run_session)
+    monkeypatch.setattr(main_module, "dynamic_analyze", legacy_dynamic)
+    monkeypatch.setattr(main_module, "task_service", service)
+    monkeypatch.setattr(main_module, "task_repository", repository)
+    service.set_runner(main_module._run_persisted_task)
+    client = TestClient(main_module.app)
+
+    response = client.post(
+        "/tasks",
+        json={
+            "task_type": "ai_orchestrated",
+            "apk_path": "D:/samples/app.apk",
+            "analysis_scope": "full_analysis",
+            "analysis_mode": "full_analysis",
+            "dynamic_mode_policy": "attach_only",
+            "allow_dynamic": True,
+            "allow_network": True,
+            "confirmed_tools": ["dynamic_analysis"],
+        },
+    )
+    assert response.status_code == 202
+    task_id = response.json()["id"]
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        if service.get(task_id).status in {"completed", "failed", "cancelled"}:
+            break
+        time.sleep(0.01)
+
+    assert service.get(task_id).status == "completed"
+    assert calls == {"session": 1, "legacy_dynamic": 0}
+    session = captured["session"]
+    assert session.strategy == "full_analysis"
+    assert session.dynamic_mode_policy == "attach_only"
+    assert session.run_id == task_id
+    assert captured["effects"].run_id == task_id
+    report = json.loads((tmp_path / "runs" / task_id / "report.json").read_text(encoding="utf-8"))
+    assert report["analysis_mode"] == "full_analysis"
+    assert report["requested_strategy"] == "attach_only"
+    assert report["effective_strategy"] == "balanced"
     service.shutdown()
 
 
