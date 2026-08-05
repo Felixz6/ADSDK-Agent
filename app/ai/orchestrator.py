@@ -135,7 +135,10 @@ class AIOrchestrationRequest:
     """Everything the orchestrator needs for one AI task."""
 
     objective: str
-    analysis_scope: str = "static_only"
+    # Analysis routing is independent from the dynamic execution policy.
+    analysis_scope: str = "static_only"  # legacy alias for analysis_mode
+    analysis_mode: str | None = None
+    dynamic_mode_policy: str = "balanced"
     task_id: str | None = None
     allow_dynamic: bool = False
     allow_network: bool = False
@@ -390,7 +393,8 @@ class AIOrchestrator:
             from app.orchestration.dynamic_strategy import normalize_dynamic_strategy
 
             strategy_decision = normalize_dynamic_strategy(
-                requested_strategy=_normalize_strategy(request.analysis_scope),
+                requested_strategy=request.dynamic_mode_policy,
+                requested_scope=_normalize_strategy(request.analysis_mode or request.analysis_scope),
                 allow_dynamic=request.allow_dynamic,
                 allow_network=request.allow_network,
                 confirmed_tools=request.confirmed_tools,
@@ -466,7 +470,7 @@ class AIOrchestrator:
         request: AIOrchestrationRequest,
         usage: AITokenUsage,
     ) -> tuple[AIPlan, str | None]:
-        strategy = _normalize_strategy(request.analysis_scope)
+        strategy = _normalize_strategy(request.analysis_mode or request.analysis_scope)
         allow_dynamic = request.allow_dynamic
         confirmed_tools = frozenset(request.confirmed_tools)
         # report_only has a fixed, fully deterministic tool set: there is nothing
@@ -663,6 +667,11 @@ class AIOrchestrator:
                 payload=parsed.value,
             )
         payload = parsed.value or {}
+        # Deterministic envelope-only repair happens before schema validation.
+        # It can only fill an absent schema marker; steps, arguments, consent,
+        # paths and capability flags are left byte-for-byte untouched.
+        normalization = _normalize_plan_envelope(payload)
+        payload = normalization.payload
         validation = validate_plan(
             payload,
             registry=self._registry,
@@ -802,7 +811,7 @@ class AIOrchestrator:
     ) -> AIPlan:
         """Code-generated fallback plan. Never authored by the model."""
 
-        strategy = _normalize_strategy(request.analysis_scope)
+        strategy = _normalize_strategy(request.analysis_mode or request.analysis_scope)
         names = list(DEFAULT_PLAN_STEPS.get(strategy, DEFAULT_PLAN_STEPS["static_only"]))
         if not request.allow_dynamic:
             names = [
@@ -1372,7 +1381,7 @@ class AIOrchestrator:
     ) -> str | None:
         if not self._cache.enabled or self._provider is None:
             return None
-        strategy = _normalize_strategy(request.analysis_scope)
+        strategy = _normalize_strategy(request.analysis_mode or request.analysis_scope)
         return AIResponseCache.make_key(
             provider=getattr(self._provider, "name", "unknown"),
             model=getattr(self._provider, "model", "unknown"),
@@ -1629,6 +1638,23 @@ def write_ai_artifacts(run_dir: Path, result: AIOrchestrationResult) -> dict[str
             pass
     return written
 
+
+
+@dataclass(frozen=True, slots=True)
+class _EnvelopeNormalization:
+    payload: dict[str, Any]
+    applied: bool
+    fields: tuple[str, ...]
+    reason_codes: tuple[str, ...]
+
+
+def _normalize_plan_envelope(payload: Mapping[str, Any]) -> _EnvelopeNormalization:
+    """Whitelist-only structural normalization before Pydantic validation."""
+    normalized = dict(payload)
+    if "schema_version" not in normalized and isinstance(normalized.get("steps"), list):
+        normalized["schema_version"] = "ai-plan-v1"
+        return _EnvelopeNormalization(normalized, True, ("schema_version",), ("missing_schema_version",))
+    return _EnvelopeNormalization(normalized, False, (), ())
 
 __all__ = [
     "AIOrchestrationRequest",

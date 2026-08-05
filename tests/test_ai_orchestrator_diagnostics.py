@@ -37,6 +37,7 @@ from app.ai.models import (
     ToolCompactResult,
 )
 from app.ai.orchestrator import (
+    _normalize_plan_envelope,
     AIOrchestrationRequest,
     AIOrchestrator,
     write_ai_artifacts,
@@ -766,3 +767,20 @@ def _all_keys(value: Any) -> set[str]:
         for child in value:
             keys |= _all_keys(child)
     return keys
+
+
+def test_m7b_missing_schema_version_is_normalized_without_changing_steps():
+    payload = {"objective": "o", "steps": [{"tool_name": "static_analysis", "arguments": {}}]}
+    normalized = _normalize_plan_envelope(payload)
+    assert normalized.applied is True
+    assert normalized.fields == ("schema_version",)
+    assert normalized.reason_codes == ("missing_schema_version",)
+    assert normalized.payload["schema_version"] == "ai-plan-v1"
+    assert normalized.payload["steps"] == payload["steps"]
+
+
+def test_m7b_envelope_normalizer_does_not_rewrite_invalid_tool_or_arguments():
+    payload = {"steps": [{"tool_name": "not_whitelisted", "arguments": {"device": "x"}}]}
+    normalized = _normalize_plan_envelope(payload)
+    assert normalized.applied is True
+    assert normalized.payload["steps"] == payload["steps"]
