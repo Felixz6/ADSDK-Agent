@@ -386,13 +386,24 @@ class _FakeActions:
     def __init__(self, *, fail_proxy: bool = False) -> None:
         self.fail_proxy = fail_proxy
         self.call_log: list[tuple] = []
+        self.proxy_value = ""
+
+    def resource_present(self, kind: str, detail: dict) -> bool:
+        return False
+
+    def read_proxy(self, device: str) -> str:
+        return self.proxy_value
 
     def set_proxy(self, device: str, value: str) -> bool:
         self.call_log.append(("set_proxy", device, value))
+        if not self.fail_proxy:
+            self.proxy_value = value
         return not self.fail_proxy
 
     def delete_proxy(self, device: str) -> bool:
         self.call_log.append(("delete_proxy", device))
+        if not self.fail_proxy:
+            self.proxy_value = ""
         return not self.fail_proxy
 
     def kill_pid(self, device: str, pid: int) -> bool:
@@ -1080,6 +1091,12 @@ class _FakeEffects:
     def stop_frida_session(self, ref):
         self.actions_log.append(("stop_frida_session", ref))
         return True
+
+    def resource_present(self, kind, detail):
+        return False
+
+    def read_proxy(self, device):
+        return ""
 
 
 def _build_session(
