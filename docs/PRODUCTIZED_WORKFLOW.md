@@ -276,3 +276,7 @@ queued → preflight → planning → awaiting_confirmation → preparing_device
 
 详见 [M7A_AI_FULL_ANALYSIS.md](M7A_AI_FULL_ANALYSIS.md)，真机验收记录见
 [M7A_MUMU_ACCEPTANCE.md](M7A_MUMU_ACCEPTANCE.md)。
+
+## M7B Phase A runtime hardening
+
+AI plan parsing, schema/DAG validation, one structured repair, deterministic fallback, and diagnostics are local and automated. Device evidence is tracked separately in the M7B MuMu acceptance template.
