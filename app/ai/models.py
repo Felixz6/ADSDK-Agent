@@ -36,6 +36,14 @@ EVIDENCE_DIGEST_SCHEMA_VERSION: Literal["evidence-digest-v1"] = (
 AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION: Literal["ai-runtime-diagnostics-v1"] = (
     "ai-runtime-diagnostics-v1"
 )
+# M7B — plan validation diagnostics artifact. Records the stable error code,
+# stage, and bounded location info for each plan validation / repair attempt.
+# Secret-free: never the original prompt, model response, reasoning_content,
+# argument values, or API key. Stored next to ai-plan.json as
+# ai-plan-validation-v2.
+AI_PLAN_VALIDATION_SCHEMA_VERSION: Literal["ai-plan-validation-v2"] = (
+    "ai-plan-validation-v2"
+)
 
 
 def ai_plan_schema_version() -> str:
@@ -52,6 +60,10 @@ def evidence_digest_schema_version() -> str:
 
 def ai_runtime_diagnostics_schema_version() -> str:
     return AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION
+
+
+def ai_plan_validation_schema_version() -> str:
+    return AI_PLAN_VALIDATION_SCHEMA_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +295,15 @@ AISynthesisStatus = Literal[
     "completed", "partial", "failed", "budget_exhausted", "disabled"
 ]
 
+# Section 十六 — provenance tag recorded on every persisted AI report so the
+# acceptance metrics can distinguish a report the model actually authored and
+# the Evidence Validator passed (``ai_validated``) from one that needed a
+# repair-then-validate pass (``ai_repaired``) or fell back to the
+# deterministic template (``deterministic_fallback``). The default is the
+# safest value: a report is treated as deterministic unless the composer /
+# orchestrator explicitly stamps it.
+AIReportSource = Literal["ai_validated", "ai_repaired", "deterministic_fallback"]
+
 
 class AIKeyFinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -306,6 +327,10 @@ class AIReport(BaseModel):
 
     schema_version: Literal["ai-report-v1"] = AI_REPORT_SCHEMA_VERSION
     status: AISynthesisStatus = "partial"
+    # Section 十六 — who authored this report. Defaults to the deterministic
+    # fallback so a report is never mis-attributed as AI-validated on a code
+    # path that forgot to stamp it.
+    report_source: AIReportSource = "deterministic_fallback"
     executive_summary: str = Field(default="", max_length=2400)
     key_findings: list[AIKeyFinding] = Field(
         default_factory=list, max_length=10
@@ -464,6 +489,35 @@ class AIRuntimeDiagnostic(BaseModel):
     # the artifact; ``degraded`` means retries/estimates/imputed values were
     # needed; ``failed`` means no model artifact was produced.
     outcome: Literal["ok", "degraded", "failed", "disabled"] = "ok"
+    # ------------------------------------------------------------------
+    # M7B (Section 八/九) — plan-source + dynamic-strategy provenance stamped
+    # on every run so the acceptance metrics / UI can reconstruct why a run
+    # ended up with the plan and strategy it actually executed. Defaults are
+    # the safest values: a run is treated as deterministic-fallback, planning
+    # failed, no repair tried, and report deterministic unless the orchestrator
+    # explicitly stamps otherwise. Mirrors the parallel fields on
+    # PlanValidationDiagnostics (ai-plan-validation-v2) so consumers can read
+    # the headline outcome off the runtime artifact without crossing schemas.
+    # ``plan_source``/``planning_failed``/``deterministic_plan_fallback``/
+    # ``repair_attempted`` describe the plan leg; ``requested_strategy`` →
+    # ``effective_strategy`` describe the deterministic dynamic-strategy
+    # normalization (Section 十二, Rules A–F); ``report_source`` is the
+    # provenance of the final AI synthesis report (Section 十六).
+    plan_source: Literal["ai", "repaired", "deterministic"] = "deterministic"
+    planning_failed: bool = False
+    deterministic_plan_fallback: bool = True
+    requested_strategy: str = ""
+    effective_strategy: str = ""
+    repair_attempted: bool = False
+    repair_succeeded: bool = False
+    fallback_used: bool = True
+    validation_error_code: str | None = None
+    validation_json_path: str | None = None
+    normalized: bool = False
+    normalization_reason: str | None = None
+    target_running: bool = False
+    preflight_changed: bool = False
+    report_source: AIReportSource = "deterministic_fallback"
     generated_at: str = ""
 
 
@@ -496,3 +550,79 @@ class AIToolTrace(BaseModel):
     model_round_count: int = 0
     cache_hit: bool = False
     budget_exhausted: bool = False
+
+
+# ---------------------------------------------------------------------------
+# ai-plan-validation-v2  (Section 九 / 十 / 二十一).
+#
+# The structured diagnostics artifact produced when the orchestrator parses +
+# validates + repairs a model plan. Records the *stable* error code for each
+# stage, bounded location hints, and the repair/fallback outcome — and nothing
+# else: never the original prompt, never the full model response, never
+# reasoning_content, never argument values, never an API key. The original body
+# stays in memory only for this turn; only the codes travel out.
+# ---------------------------------------------------------------------------
+AIStrategyValue = Literal[
+    "static_only", "dynamic_only", "full_analysis", "report_only"
+]
+DynamicStrategyValue = Literal["strict", "balanced", "attach_only"]
+AnalysisScopeValue = AIStrategyValue
+
+
+class PlanValidationIssue(BaseModel):
+    """One stable, secret-free validation finding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    stage: Literal["parse", "schema", "whitelist", "dag", "runtime", "repair"]
+    # Bounded location hints only; omitted when not computable. The json_path
+    # is a JSON pointer into the parsed object (e.g. "/steps/0"), never the
+    # offending text. tool_name is the registered name the issue pertains to,
+    # not a command or path.
+    json_path: str | None = None
+    tool_name: str | None = None
+    expected: str | None = None
+    received_type: str | None = None
+
+
+class PlanValidationRound(BaseModel):
+    """One plan attempt (initial or repair)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    round_index: int = 0
+    stage: Literal["plan", "repair"] = "plan"
+    parse_code: str | None = None
+    issues: list[PlanValidationIssue] = Field(default_factory=list)
+    succeeded: bool = False
+
+
+class PlanValidationDiagnostics(BaseModel):
+    """The ``ai-plan-validation-v2`` artifact.
+
+    Tracks every plan-related decision so the UI / acceptance metrics can
+    reconstruct why a run ended up with ``plan_source=ai | repaired |
+    deterministic``. Secret-free by construction: the fields below carry only
+    stable codes, bounded paths, booleans, and a strategy/risk label.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["ai-plan-validation-v2"] = (
+        AI_PLAN_VALIDATION_SCHEMA_VERSION
+    )
+    task_id: str = ""
+    requested_strategy: AIStrategyValue = "static_only"
+    effective_strategy: AIStrategyValue = "static_only"
+    allow_dynamic: bool = False
+    allow_network: bool = False
+    rounds: list[PlanValidationRound] = Field(default_factory=list)
+    plan_source: Literal["ai", "repaired", "deterministic"] = "deterministic"
+    planning_failed: bool = False
+    deterministic_plan_fallback: bool = True
+    repair_attempted: bool = False
+    repair_succeeded: bool = False
+    fallback_used: bool = True
+    fallback_reason: str | None = None
+    diagnostics_hash: str = ""

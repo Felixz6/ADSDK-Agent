@@ -698,6 +698,15 @@ class TestDiagnosticsArtifact:
             "thinking_mode", "enabled", "usage", "rounds", "errors",
             "total_rounds", "total_retries", "cache_hit", "cache_enabled",
             "deterministic_fallback", "outcome", "generated_at",
+            # M7B (Section 八/九) — plan-source + dynamic-strategy + report
+            # provenance stamped on the runtime artifact. These are observable
+            # secret-free fields (codes/labels/booleans), extended alongside the
+            # ai-plan-validation-v2 artifact's parallel fields.
+            "plan_source", "planning_failed", "deterministic_plan_fallback",
+            "requested_strategy", "effective_strategy", "repair_attempted",
+            "repair_succeeded", "fallback_used", "validation_error_code",
+            "validation_json_path", "normalized", "normalization_reason",
+            "target_running", "preflight_changed", "report_source",
         }
 
     def test_the_artifact_records_the_compat_profile_and_thinking_mode(
