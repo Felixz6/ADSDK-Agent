@@ -615,6 +615,11 @@ class FullAnalysisSession:
             self._transit(
                 "awaiting_consent_action", "operator consent required"
             )
+            runtime_error = self._refresh_and_validate_runtime_plan()
+            if runtime_error is not None:
+                outcome_failures.append(f"runtime_validation_failed: {runtime_error}")
+                self._transit("failed", "runtime plan blocked", error_code=runtime_error)
+                return "failed"
             self._consent_state = self.effects.wait_consent(self.task_id)
             if (
                 self._consent_state is not None
@@ -628,6 +633,62 @@ class FullAnalysisSession:
         return None
 
     # -- helpers -------------------------------------------------------
+    def _refresh_and_validate_runtime_plan(self) -> str | None:
+        """Run the real session's read-only freshness + runtime semantic gates.
+
+        This path never calls the AI planner.  It is intentionally placed after
+        the human checkpoint is opened and before the session advances beyond
+        the device-state preparation boundary; a fatal freshness/runtime result
+        returns through ``run``'s finally block so cleanup still executes.
+        """
+        if self._snapshot is None or self._plan is None:
+            return "missing_preflight"
+        fresh_capture = getattr(self.effects, "capture_fresh_snapshot", None)
+        fresh = (fresh_capture(self.device_id, self.package_name)
+                 if callable(fresh_capture)
+                 else self.effects.capture_snapshot(self.device_id, self.package_name))
+        from .preflight_freshness import compare_preflight
+        from .runtime_plan_validator import RuntimeCapabilities, validate_plan_against_runtime_state
+        freshness = compare_preflight(self._snapshot, fresh)
+        state = fresh.initial_state
+        target_running = bool(
+            self.package_name and state.foreground_package == self.package_name
+        )
+        capabilities = RuntimeCapabilities(
+            device_online=state.online,
+            boot_id=state.boot_id,
+            package_installed=state.package_installed,
+            target_pids=[state.frida_server_pid] if target_running and state.frida_server_pid else [],
+            foreground_package=state.foreground_package,
+            frida_server_present=state.frida_server_present,
+            frida_server_owned=state.frida_server_owned,
+            http_proxy=state.http_proxy,
+        )
+        diag = self._orch_result.diagnostic
+        requested = (diag.requested_strategy if diag and diag.requested_strategy else self.strategy)
+        effective = (diag.effective_strategy if diag and diag.effective_strategy else requested)
+        result = validate_plan_against_runtime_state(
+            self._plan, preflight=fresh, capabilities=capabilities,
+            confirmation=self._consent_state, lease_state=None,
+            requested_strategy=requested, effective_strategy=effective,
+            allow_dynamic=self.allow_dynamic, allow_network=self.allow_network,
+            confirmed_tools=self.confirmed_tools, package_name=self.package_name,
+            application_launch_allowed=False,
+        )
+        if diag is not None:
+            self._orch_result = self._orch_result.model_copy(update={
+                "diagnostic": diag.model_copy(update={
+                    "preflight_changed": freshness.preflight_changed,
+                    "target_running": target_running,
+                    "validation_error_code": result.first_code,
+                    "validation_json_path": (result.issues[0].json_path if result.issues else None),
+                })
+            })
+        if freshness.fatal:
+            return freshness.block_factor
+        fatal = result.fatal
+        return fatal.code if fatal is not None else None
+
     def _needs_device(self) -> bool:
         return self.allow_dynamic or self.strategy in {
             "dynamic_only",

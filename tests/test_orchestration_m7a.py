@@ -1478,4 +1478,25 @@ def test_consent_api_note_is_length_bounded(tmp_path, monkeypatch):
     )
     assert resp.status_code == 422  # note max_length=240
 
+# M7B — session production-path runtime/freshness integration (all effects injected).
+def test_session_rechecks_freshness_before_dynamic_consent_resolution():
+    effects = _FakeEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
+    session = _build_session(effects)
+    transition = execute_full_analysis_plan(session=session)
+    assert transition.final_state == "completed"
+    # Initial preflight plus the state-change freshness recheck; no AI replanning.
+    assert len(effects.snapshots) == 2
+
+
+def test_session_offline_freshness_blocks_and_still_cleans_up():
+    effects = _FakeEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
+    def offline_snapshot(device_id, package_name):
+        snap = _make_snapshot(device_id=device_id)
+        return snap.model_copy(update={"initial_state": snap.initial_state.model_copy(update={"online": False})})
+    effects.capture_fresh_snapshot = offline_snapshot
+    session = _build_session(effects)
+    transition = execute_full_analysis_plan(session=session)
+    assert transition.final_state == "failed"
+    assert transition.cleanup is not None and transition.cleanup.ran
+    assert any(item.error_code == "device_disconnected_since_preflight" for item in transition.events)
 
