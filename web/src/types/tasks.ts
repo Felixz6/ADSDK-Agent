@@ -296,6 +296,22 @@ export interface AIRuntimeDiagnostic {
   cache_hit: boolean
   cache_enabled: boolean
   deterministic_fallback: boolean
+  /** M7B — plan parsing / repair / strategy normalization diagnostics. */
+  plan_source?: 'ai' | 'repaired' | 'deterministic'
+  planning_failed?: boolean
+  deterministic_plan_fallback?: boolean
+  requested_strategy?: string
+  effective_strategy?: string
+  repair_attempted?: boolean
+  repair_succeeded?: boolean
+  fallback_used?: boolean
+  validation_error_code?: string | null
+  validation_json_path?: string | null
+  normalized?: boolean
+  normalization_reason?: string | null
+  target_running?: boolean
+  preflight_changed?: boolean
+  report_source?: 'ai_validated' | 'ai_repaired' | 'deterministic_fallback'
   outcome: 'ok' | 'degraded' | 'failed' | 'disabled'
   generated_at: string
 }

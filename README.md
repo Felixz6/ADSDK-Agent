@@ -742,3 +742,7 @@ adsdk-agent/
 ## 许可证
 
 本项目采用 [Apache License 2.0](LICENSE)。
+
+## M7B AI runtime hardening (Phase A)
+
+Phase A validates and diagnoses AI plans locally, including session runtime/freshness gates and Reports diagnostics. Automated coverage is complete; real-device acceptance is deliberately pending the MuMu read-only preflight. See `docs/M7B_AI_RUNTIME_HARDENING.md`.

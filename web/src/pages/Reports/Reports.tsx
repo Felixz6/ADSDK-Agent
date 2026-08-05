@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { AISynthesisCard } from '@/components/analysis/AISynthesisCard'
+import { AIOrchestrationCard } from '@/components/analysis/AIOrchestrationCard'
 import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
 import { SdkIntelligencePanel } from '@/components/analysis/SdkIntelligencePanel'
 import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryPanel'
@@ -103,6 +104,8 @@ export default function Reports() {
       <RiskSummaryCard summary={resp.risk_summary} />
 
       <AISynthesisCard section={aiSection} />
+      <AIOrchestrationCard section={aiSection} />
+      <M7BReportDiagnostics section={aiSection} report={resp as unknown as Record<string, unknown>} />
 
       {isDynamic && (
         <>
@@ -264,6 +267,35 @@ export default function Reports() {
         </GlassCard>
       )}
     </div>
+  )
+}
+
+function M7BReportDiagnostics({ section, report }: { section: AIOrchestrationSection | null; report: Record<string, unknown> }) {
+  const diag = section?.diagnostic
+  const consent = (report.consent ?? report.consent_checkpoint ?? null) as Record<string, unknown> | null
+  const cleanup = (report.cleanup ?? report.cleanup_outcome ?? null) as Record<string, unknown> | null
+  const cleanupLimitations = (cleanup?.limitations ?? report.cleanup_limitations ?? []) as unknown
+  const limitations = Array.isArray(cleanupLimitations) ? cleanupLimitations.map(String) : []
+  const value = (v: unknown) => v == null || v === '' ? '—' : String(v)
+  return (
+    <GlassCard padding="md" className="min-w-0 overflow-hidden" data-testid="m7b-report-diagnostics">
+      <h3 className="text-sm font-semibold text-[var(--text-primary)]">M7B 运行诊断</h3>
+      <dl className="mt-3 grid min-w-0 grid-cols-1 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-2">
+        <KV k="计划来源" v={value(diag?.plan_source)} />
+        <KV k="首轮校验" v={diag?.planning_failed ? '失败' : '无失败记录'} />
+        <KV k="校验错误" v={value(diag?.validation_error_code)} mono />
+        <KV k="JSON 路径" v={value(diag?.validation_json_path)} mono />
+        <KV k="修复 / 回退" v={`尝试 ${diag?.repair_attempted ? '是' : '否'} · 成功 ${diag?.repair_succeeded ? '是' : '否'} · 回退 ${diag?.fallback_used ? '是' : '否'}`} />
+        <KV k="请求 / 生效策略" v={`${value(diag?.requested_strategy)} → ${value(diag?.effective_strategy)}`} />
+        <KV k="归一化" v={diag?.normalized ? `是 · ${value(diag.normalization_reason)}` : '否'} />
+        <KV k="目标运行 / 预检变化" v={`${diag?.target_running ? '是' : '否'} / ${diag?.preflight_changed ? '是' : '否'}`} />
+        <KV k="Consent" v={value(consent?.status)} />
+        <KV k="AI 报告 / 证据校验" v={`${value(diag?.report_source)} / ${diag?.report_source === 'deterministic_fallback' ? '确定性回退' : '已验证'}`} />
+        <KV k="模型轮次 / Token" v={`${value(diag?.total_rounds)} / ${value(diag?.usage?.usage_source)}${diag?.cache_hit ? ' · cache' : ''}`} />
+        <KV k="清理状态" v={value(cleanup?.status ?? cleanup?.ok)} />
+      </dl>
+      {limitations.length > 0 && <ul className="mt-3 list-disc space-y-1 break-words pl-4 text-xs text-[var(--text-tertiary)]">{limitations.map((item, i) => <li key={i}>{item}</li>)}</ul>}
+    </GlassCard>
   )
 }
 

@@ -281,6 +281,24 @@ function DiagnosticsBlock({ diag }: { diag: AIRuntimeDiagnostic }) {
         ）。真实与估算分别列示,便于区分实际计费与本地推算。
       </p>
 
+      <div className="mt-3 min-w-0 rounded-[8px] bg-[var(--bg-tertiary)] p-2.5 text-[11px] text-[var(--text-secondary)]" data-testid="m7b-plan-diagnostics">
+        <p className="font-medium text-[var(--text-primary)]">计划与策略诊断</p>
+        <dl className="mt-1.5 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2">
+          <DiagnosticValue k="计划来源" v={diag.plan_source} />
+          <DiagnosticValue k="首轮校验" v={diag.planning_failed ? '失败' : '通过或未执行'} />
+          <DiagnosticValue k="修复" v={`尝试 ${yesNo(diag.repair_attempted)} · 成功 ${yesNo(diag.repair_succeeded)}`} />
+          <DiagnosticValue k="确定性回退" v={yesNo(diag.fallback_used ?? diag.deterministic_plan_fallback)} />
+          <DiagnosticValue k="校验错误" v={diag.validation_error_code} />
+          <DiagnosticValue k="JSON 路径" v={diag.validation_json_path} />
+          <DiagnosticValue k="请求/生效策略" v={strategyPair(diag.requested_strategy, diag.effective_strategy)} />
+          <DiagnosticValue k="归一化" v={diag.normalized ? `是${diag.normalization_reason ? ` · ${diag.normalization_reason}` : ''}` : '否'} />
+          <DiagnosticValue k="目标运行中" v={yesNo(diag.target_running)} />
+          <DiagnosticValue k="预检变化" v={yesNo(diag.preflight_changed)} />
+          <DiagnosticValue k="AI 报告来源" v={diag.report_source} />
+          <DiagnosticValue k="证据校验" v={diag.report_source === 'deterministic_fallback' ? '确定性回退' : '已验证'} />
+        </dl>
+      </div>
+
       {usage.rounds?.length ? (
         <div className="mt-3" data-testid="ai-diagnostic-rounds">
           <p className="text-[11px] font-medium text-[var(--text-secondary)]">每轮来源明细</p>
@@ -311,6 +329,24 @@ function DiagnosticsBlock({ diag }: { diag: AIRuntimeDiagnostic }) {
         </p>
       )}
     </section>
+  )
+}
+
+function yesNo(value: boolean | undefined): string {
+  return value ? '是' : '否'
+}
+
+function strategyPair(requested?: string, effective?: string): string {
+  if (!requested && !effective) return '—'
+  return `${requested || '—'} → ${effective || '—'}`
+}
+
+function DiagnosticValue({ k, v }: { k: string; v?: string | null }) {
+  return (
+    <div className="flex min-w-0 gap-1">
+      <dt className="shrink-0 text-[var(--text-tertiary)]">{k}:</dt>
+      <dd className="min-w-0 break-words text-[var(--text-primary)]">{v || '—'}</dd>
+    </div>
   )
 }
 
