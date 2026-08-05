@@ -146,6 +146,9 @@ class AIOrchestrationRequest:
     token_budget: int | None = None
     report_language: str = AI_REPORT_LANGUAGE
     run_dir: Path | None = None
+    orchestration_entrypoint: str = ""
+    session_engine: str = ""
+    execution_pipeline_version: str = ""
 
 
 @dataclass(slots=True)
@@ -245,6 +248,7 @@ class AIOrchestrator:
         self._deterministic_plan_fallback: bool = True
         self._repair_attempted: bool = False
         self._plan_validation_rounds: list[PlanValidationRound] = []
+        self._normalization_shape: dict[str, Any] = {}
 
     # -- public entry point ---------------------------------------------
     def run(
@@ -279,6 +283,7 @@ class AIOrchestrator:
         self._deterministic_plan_fallback = True
         self._repair_attempted = False
         self._plan_validation_rounds = []
+        self._normalization_shape = {}
         # Availability is represented in the prepared value; execution keeps
         # the legacy deterministic degradation behavior.
         unavailable = self._unavailable_reason()
@@ -647,6 +652,22 @@ class AIOrchestrator:
         the parsed payload (kept only in-memory for the repair contract)."""
         parsed = parse_plan_response(response.content_json)
         if not parsed.ok:
+            raw_root = response.content_json
+            self._normalization_shape = {
+                "root_type": (
+                    "object" if isinstance(raw_root, dict)
+                    else "array" if isinstance(raw_root, list)
+                    else type(raw_root).__name__
+                ),
+                "schema_version_present": False,
+                "steps_present": False,
+                "steps_type": "missing",
+                "normalization_eligible": False,
+                "normalization_applied": False,
+                "normalization_reason_code": "root_type_invalid",
+                "safe_wrapper_detected": False,
+                "top_level_field_count": 0,
+            }
             parse_issue = PlanValidationIssue(
                 code=parsed.error or "parse_failed",
                 stage="parse",
@@ -671,6 +692,31 @@ class AIOrchestrator:
         # It can only fill an absent schema marker; steps, arguments, consent,
         # paths and capability flags are left byte-for-byte untouched.
         normalization = _normalize_plan_envelope(payload)
+        self._normalization_shape = {
+            "root_type": "object",
+            "schema_version_present": "schema_version" in payload,
+            "steps_present": "steps" in payload,
+            "steps_type": (
+                "list" if isinstance(payload.get("steps"), list)
+                else type(payload.get("steps")).__name__ if "steps" in payload
+                else "missing"
+            ),
+            "normalization_eligible": (
+                "schema_version" not in payload
+                and isinstance(payload.get("steps"), list)
+            ),
+            "normalization_applied": normalization.applied,
+            "normalization_reason_code": (
+                normalization.reason_codes[0]
+                if normalization.reason_codes else (
+                    "steps_missing" if "steps" not in payload else
+                    "steps_type_invalid" if not isinstance(payload.get("steps"), list) else
+                    None
+                )
+            ),
+            "safe_wrapper_detected": False,
+            "top_level_field_count": len(payload),
+        }
         payload = normalization.payload
         validation = validate_plan(
             payload,
@@ -1359,6 +1405,19 @@ class AIOrchestrator:
             normalization_reason=normalization_reason,
             target_running=target_running,
             preflight_changed=False,
+            root_type=str(self._normalization_shape.get("root_type", "unknown")),
+            schema_version_present=bool(self._normalization_shape.get("schema_version_present", False)),
+            steps_present=bool(self._normalization_shape.get("steps_present", False)),
+            steps_type=str(self._normalization_shape.get("steps_type", "missing")),
+            normalization_eligible=bool(self._normalization_shape.get("normalization_eligible", False)),
+            normalization_applied=bool(self._normalization_shape.get("normalization_applied", False)),
+            normalization_reason_code=self._normalization_shape.get("normalization_reason_code"),
+            safe_wrapper_detected=bool(self._normalization_shape.get("safe_wrapper_detected", False)),
+            top_level_field_count=int(self._normalization_shape.get("top_level_field_count", 0)),
+            analysis_mode=request.analysis_mode or request.analysis_scope,
+            orchestration_entrypoint=request.orchestration_entrypoint,
+            session_engine=request.session_engine,
+            execution_pipeline_version=request.execution_pipeline_version,
             report_source=report_source,
             generated_at=_utc_now_iso(),
         )

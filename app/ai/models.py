@@ -515,8 +515,21 @@ class AIRuntimeDiagnostic(BaseModel):
     validation_json_path: str | None = None
     normalized: bool = False
     normalization_reason: str | None = None
+    root_type: str = "unknown"
+    schema_version_present: bool = False
+    steps_present: bool = False
+    steps_type: str = "missing"
+    normalization_eligible: bool = False
+    normalization_applied: bool = False
+    normalization_reason_code: str | None = None
+    safe_wrapper_detected: bool = False
+    top_level_field_count: int = 0
     target_running: bool = False
     preflight_changed: bool = False
+    analysis_mode: str = ""
+    orchestration_entrypoint: str = ""
+    session_engine: str = ""
+    execution_pipeline_version: str = ""
     report_source: AIReportSource = "deterministic_fallback"
     generated_at: str = ""
 

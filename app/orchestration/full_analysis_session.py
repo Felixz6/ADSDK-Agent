@@ -585,6 +585,9 @@ class FullAnalysisSession:
             token_budget=self.token_budget,
             report_language=self.report_language,
             run_dir=self.run_dir,
+            orchestration_entrypoint="tasks_ai_orchestrated",
+            session_engine="FullAnalysisSession",
+            execution_pipeline_version="m7b",
         )
 
         prepare = getattr(self.effects, "prepare_orchestration", None)

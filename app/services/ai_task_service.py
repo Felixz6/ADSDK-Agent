@@ -37,6 +37,9 @@ from app.ai.orchestrator import (
     AIOrchestrator,
     write_ai_artifacts,
 )
+from app.ai.orchestrator import PreparedPlan
+from app.ai.models import AIPlan
+from app.orchestration.dynamic_strategy import DynamicStrategyDecision
 
 # A deterministic runner produces the full report dict for the run.
 DeterministicRunner = Callable[[], Mapping[str, Any]]
@@ -107,6 +110,8 @@ class AITaskService:
         run_dir: Path | str,
         static_runner: DeterministicRunner | None = None,
         dynamic_runner: DeterministicRunner | None = None,
+        dynamic_runner_with_strategy: Callable[[str], Mapping[str, Any]] | None = None,
+        unified_runner_with_strategy: Callable[[str], Mapping[str, Any]] | None = None,
         environment_probe: Callable[[], Mapping[str, Any]] | None = None,
         context_builder: AIContextBuilder | None = None,
     ) -> None:
@@ -114,6 +119,9 @@ class AITaskService:
         self._artifacts = RunArtifacts(run_dir)
         self._static_runner = static_runner
         self._dynamic_runner = dynamic_runner
+        self._dynamic_runner_with_strategy = dynamic_runner_with_strategy
+        self._unified_runner_with_strategy = unified_runner_with_strategy
+        self._effective_dynamic_strategy: str | None = None
         self._environment_probe = environment_probe
         self._context = context_builder or AIContextBuilder()
         self._environment: dict[str, Any] | None = None
@@ -127,6 +135,30 @@ class AITaskService:
             request,
             execute_tool=self.execute_tool,
             build_digest=lambda results: self.build_digest(request, results),
+        )
+        write_ai_artifacts(self._artifacts.run_dir, result)
+        return result
+
+    def prepare_plan(self, request: AIOrchestrationRequest) -> PreparedPlan:
+        """Prepare exactly one plan without dispatching deterministic tools."""
+        return self._orchestrator.prepare_plan(request)
+
+    def execute_prepared_plan(
+        self,
+        prepared: PreparedPlan,
+        request: AIOrchestrationRequest,
+        effective_plan: AIPlan,
+        strategy_decision: DynamicStrategyDecision,
+    ) -> AIOrchestrationResult:
+        """Execute the externally gated plan using only the effective policy."""
+        self._effective_dynamic_strategy = strategy_decision.effective_strategy
+        result = self._orchestrator.execute_prepared_plan(
+            prepared,
+            request=request,
+            execute_tool=self.execute_tool,
+            build_digest=lambda results: self.build_digest(request, results),
+            effective_plan=effective_plan,
+            strategy_decision=strategy_decision,
         )
         write_ai_artifacts(self._artifacts.run_dir, result)
         return result
@@ -240,7 +272,7 @@ class AITaskService:
                 decision_summary="existing static artifact reused",
                 recommended_next_tools=["privacy_findings"],
             )
-        if self._static_runner is None:
+        if self._static_runner is None and self._unified_runner_with_strategy is None:
             return ToolCompactResult(
                 tool_name="static_analysis",
                 status="not_run",
@@ -248,7 +280,17 @@ class AITaskService:
                 limitations=["静态分析不可用"],
             )
         try:
-            report = dict(self._static_runner())
+            if self._unified_runner_with_strategy is not None:
+                if not self._effective_dynamic_strategy:
+                    raise RuntimeError("effective_dynamic_strategy_missing")
+                report = dict(
+                    self._unified_runner_with_strategy(
+                        self._effective_dynamic_strategy
+                    )
+                )
+            else:
+                assert self._static_runner is not None
+                report = dict(self._static_runner())
         except Exception as exc:
             return ToolCompactResult(
                 tool_name="static_analysis",
@@ -290,7 +332,11 @@ class AITaskService:
                 decision_summary="existing dynamic artifact reused",
                 recommended_next_tools=["traffic_analysis"],
             )
-        if self._dynamic_runner is None:
+        if (
+            self._dynamic_runner is None
+            and self._dynamic_runner_with_strategy is None
+            and self._unified_runner_with_strategy is None
+        ):
             return ToolCompactResult(
                 tool_name="dynamic_analysis",
                 status="not_run",
@@ -299,7 +345,27 @@ class AITaskService:
                 limitations=["动态分析不可用"],
             )
         try:
-            report = dict(self._dynamic_runner())
+            if self._report_cache is not None:
+                report = self._report_cache
+            elif self._unified_runner_with_strategy is not None:
+                if not self._effective_dynamic_strategy:
+                    raise RuntimeError("effective_dynamic_strategy_missing")
+                report = dict(
+                    self._unified_runner_with_strategy(
+                        self._effective_dynamic_strategy
+                    )
+                )
+            elif self._dynamic_runner_with_strategy is not None:
+                if not self._effective_dynamic_strategy:
+                    raise RuntimeError("effective_dynamic_strategy_missing")
+                report = dict(
+                    self._dynamic_runner_with_strategy(
+                        self._effective_dynamic_strategy
+                    )
+                )
+            else:
+                assert self._dynamic_runner is not None
+                report = dict(self._dynamic_runner())
         except Exception as exc:
             return ToolCompactResult(
                 tool_name="dynamic_analysis",

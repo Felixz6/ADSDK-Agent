@@ -44,6 +44,7 @@ export interface TaskCreateRequest {
   /** AI 编排分析(task_type='ai_orchestrated')专用字段 */
   objective?: string
   analysis_scope?: AnalysisScope
+  analysis_mode?: 'static_only' | 'full_analysis' | 'report_only'
   allow_dynamic?: boolean
   allow_network?: boolean
   ai_enabled?: boolean

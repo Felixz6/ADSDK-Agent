@@ -115,6 +115,14 @@ from app.orchestration.consent_checkpoint import (
     ConsentCheckpointState,
 )
 from app.orchestration.device_lease import LeaseRegistry
+from app.orchestration.cleanup_manager import ResourceOwnershipRegistry
+from app.orchestration.device_session import (
+    DeviceSessionSnapshot,
+    DeviceState,
+    mask_device_ref,
+)
+from app.orchestration.full_analysis_session import FullAnalysisSession
+from app.orchestration.production_session_effects import ProductionSessionEffects
 from app.services import AITaskService, TaskService
 from app.services.application_name_service import (
     repair_historical_application_names,
@@ -2979,9 +2987,12 @@ def _run_ai_orchestrated_task(
     an AI failure degrades the AI section only and never fails the task.
     """
 
-    scope = str(payload.get("analysis_scope") or "static_only")
+    scope = str(payload.get("analysis_mode") or payload.get("analysis_scope") or "static_only")
     allow_dynamic = bool(payload.get("allow_dynamic"))
     apk_path = str(payload["apk_path"])
+
+    if scope == "full_analysis":
+        return _run_m7b_full_analysis_session(task=task, payload=payload)
 
     # 1. Deterministic analysis via the existing entry points. This is the
     #    same code path the plain static / dynamic task types use.
@@ -3037,6 +3048,325 @@ def _run_ai_orchestrated_task(
             content=base_report,
         )
     return base_report
+
+
+def _run_m7b_full_analysis_session(
+    *, task: TaskRecord, payload: dict[str, Any]
+) -> dict[str, Any] | JSONResponse:
+    """Single production entry for ai_orchestrated full_analysis tasks."""
+    run_dir = Path(OUTPUT_DIR) / "runs" / task.id
+    # The deterministic runner owns creation of this run directory.  Creating
+    # it here would make ``create_analysis_run_context`` reject the same task
+    # id and accidentally split planning from deterministic evidence.
+    effective = resolve_effective_ai_settings(ai_settings_service.store)
+    ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
+    provider = ai_settings_service.factory.current() if ai_enabled else None
+    orchestrator = AIOrchestrator(
+        provider=provider,
+        registry=AIToolRegistry(
+            allow_dynamic_tools=bool(effective["allow_dynamic_tools"])
+        ),
+        enabled=ai_enabled,
+        cancelled=_ai_cancelled,
+    )
+    registry = ResourceOwnershipRegistry()
+    report_holder: dict[str, dict[str, Any]] = {}
+    initial_snapshot: dict[str, DeviceSessionSnapshot] = {}
+    frida_session_stoppers: dict[str, Any] = {}
+
+    def snapshot_factory(
+        device_id: str | None, package_name: str | None, capture_kind: str
+    ) -> DeviceSessionSnapshot:
+        snapshot = _capture_m7b_device_snapshot(
+            run_id=task.id,
+            device_id=device_id,
+            package_name=package_name,
+            capture_kind=capture_kind,
+        )
+        initial_snapshot.setdefault("value", snapshot)
+        return snapshot
+
+    def unified_runner(strategy: str) -> dict[str, Any]:
+        request_payload = {
+            key: value
+            for key, value in payload.items()
+            if key in DynamicAnalyzeRequest.model_fields
+        }
+        request_payload["dynamic_mode_policy"] = strategy
+        deterministic = dynamic_analyze(
+            DynamicAnalyzeRequest.model_validate(request_payload)
+        )
+        report = task_service_response_payload(deterministic)
+        report_holder["value"] = report
+        before = initial_snapshot.get("value")
+        if before is not None:
+            _register_m7b_owned_resources(
+                report=report,
+                registry=registry,
+                payload=payload,
+                initial_snapshot=before,
+            )
+        return report
+
+    def stop_registered_frida_session(ref: str) -> bool:
+        stopper = frida_session_stoppers.pop(ref, None)
+        if not callable(stopper):
+            return False
+        result = stopper()
+        return result is not False
+
+    ai_service = AITaskService(
+        orchestrator=orchestrator,
+        run_dir=run_dir,
+        unified_runner_with_strategy=unified_runner,
+        environment_probe=lambda: env_check(payload.get("device_id")),
+    )
+    effects = ProductionSessionEffects(
+        task_id=task.id,
+        run_id=task.id,
+        ai_service=ai_service,
+        consent_service=consent_checkpoint_service,
+        snapshot_factory=snapshot_factory,
+        clock=task_utc_now,
+        is_cancelled=_ai_cancelled,
+        report_step=lambda key, status, message=None: report_step(
+            key, status, message
+        ),
+        set_proxy_action=lambda device, value: _adb_cleanup_action(
+            device, ["shell", "settings", "put", "global", "http_proxy", value]
+        ),
+        delete_proxy_action=lambda device: _adb_cleanup_action(
+            device, ["shell", "settings", "delete", "global", "http_proxy"]
+        ),
+        kill_pid_action=lambda device, pid: _adb_cleanup_action(
+            device, ["shell", "kill", str(pid)]
+        ),
+        stop_mitm_pid_action=_stop_owned_host_pid,
+        stop_frida_session_action=stop_registered_frida_session,
+        read_proxy_action=_read_device_proxy,
+        resource_present_action=_m7b_resource_present,
+        resource_identity_matches_action=_m7b_resource_identity_matches,
+    )
+    session = FullAnalysisSession(
+        task_id=task.id,
+        run_id=task.id,
+        device_id=payload.get("device_id"),
+        package_name=payload.get("package_name"),
+        objective=str(payload.get("objective") or "分析本次 APK 的隐私风险"),
+        strategy="full_analysis",
+        dynamic_mode_policy=str(payload.get("dynamic_mode_policy") or "balanced"),
+        application_launch_allowed=True,
+        allow_dynamic=bool(payload.get("allow_dynamic")),
+        allow_network=bool(payload.get("allow_network")),
+        confirmed_tools=frozenset(str(x) for x in payload.get("confirmed_tools") or []),
+        token_budget=int(payload.get("token_budget") or 6000),
+        report_language=str(payload.get("report_language") or effective["report_language"]),
+        lease=device_lease_registry,
+        consent=consent_checkpoint_service,
+        registry=registry,
+        effects=effects,
+        run_dir=run_dir,
+    )
+    transition = session.run()
+    report = report_holder.get("value", {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": task.id,
+        "status": (
+            "success" if transition.final_state == "completed" else "failed"
+        ),
+        "error_code": transition.runtime_validation_error_code or "m7b_session_failed",
+        "error": "; ".join(transition.failures)[:500] or "M7B session failed",
+        "output_dir": str(run_dir),
+    })
+    if effects.last_result is not None:
+        report["ai_orchestration"] = _public_ai_section(effects.last_result)
+    report["analysis_mode"] = "full_analysis"
+    report["requested_strategy"] = transition.requested_strategy
+    report["effective_strategy"] = transition.effective_strategy
+    report["normalized"] = transition.normalized
+    report["reason_code"] = transition.normalization_reason
+    report["target_running"] = transition.target_running
+    report["preflight_changed"] = transition.preflight_changed
+    report["cleanup"] = transition.cleanup.model_dump(mode="json") if transition.cleanup else None
+    if transition.final_state in {"failed", "cancelled"}:
+        report["status"] = transition.final_state
+    report["report_json"] = str(run_dir / "report.json")
+    if (run_dir / "report.md").is_file():
+        report["report_md"] = str(run_dir / "report.md")
+    if (run_dir / "report.html").is_file():
+        report["report_html"] = str(run_dir / "report.html")
+    atomic_write_json(run_dir / "report.json", report)
+    return report
+
+
+def _capture_m7b_device_snapshot(
+    *, run_id: str, device_id: str | None, package_name: str | None, capture_kind: str
+) -> DeviceSessionSnapshot:
+    state = DeviceState()
+    if device_id:
+        def adb(*args: str) -> dict[str, Any]:
+            return run_cmd(["adb", "-s", device_id, *args])
+        state.online = adb("get-state").get("stdout", "").strip() == "device"
+        state.boot_id = adb("shell", "cat", "/proc/sys/kernel/random/boot_id").get("stdout", "").strip() or None
+        state.abi = adb("shell", "getprop", "ro.product.cpu.abi").get("stdout", "").strip() or None
+        proxy = adb("shell", "settings", "get", "global", "http_proxy").get("stdout", "").strip()
+        state.http_proxy = "" if proxy in {"", ":0", ":null", "null"} else proxy
+        if package_name:
+            state.package_installed = bool(adb("shell", "pm", "path", package_name).get("stdout", "").strip())
+            target = adb("shell", "pidof", package_name).get("stdout", "").strip()
+            state.foreground_package = package_name if target else None
+        frida = adb("shell", "pidof", "frida-server").get("stdout", "").strip()
+        state.frida_server_present = bool(frida)
+        state.frida_server_pid = int(frida.split()[0]) if frida else None
+    return DeviceSessionSnapshot(
+        run_id=run_id,
+        device_ref=mask_device_ref(device_id),
+        captured_at=task_utc_now(),
+        initial_state=state,
+        capture_kind=capture_kind,
+    )
+
+
+def _adb_cleanup_action(device: str, args: list[str]) -> bool:
+    return run_cmd(["adb", "-s", device, *args]).get("returncode") == 0
+
+
+def _stop_owned_host_pid(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        return run_cmd(["taskkill", "/PID", str(pid)]).get("returncode") == 0
+    try:
+        os.kill(pid, 15)
+    except OSError:
+        return False
+    return True
+
+
+def _read_device_proxy(device: str) -> str | None:
+    result = run_cmd(
+        ["adb", "-s", device, "shell", "settings", "get", "global", "http_proxy"]
+    )
+    if result.get("returncode") != 0:
+        return None
+    value = str(result.get("stdout") or "").strip()
+    return "" if value in {"", ":0", ":null", "null"} else value
+
+
+def _device_process_command(device: str, pid: int) -> str | None:
+    if not device or pid <= 0:
+        return None
+    result = run_cmd(
+        ["adb", "-s", device, "shell", "cat", f"/proc/{pid}/cmdline"]
+    )
+    if result.get("returncode") != 0:
+        return None
+    return str(result.get("stdout") or "").replace("\x00", " ").strip() or None
+
+
+def _host_process_command(pid: int) -> str | None:
+    if pid <= 0:
+        return None
+    if os.name == "nt":
+        command = (
+            "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = "
+            f"{pid}' -ErrorAction SilentlyContinue; if ($p) {{ $p.CommandLine }}"
+        )
+        result = run_cmd(["powershell.exe", "-NoProfile", "-Command", command])
+    else:
+        result = run_cmd(["cat", f"/proc/{pid}/cmdline"])
+    if result.get("returncode") != 0:
+        return None
+    return str(result.get("stdout") or "").replace("\x00", " ").strip() or None
+
+
+def _m7b_resource_present(kind: str, detail: dict[str, Any]) -> bool | None:
+    pid = int(detail.get("pid") or -1)
+    if kind in {"app_process", "frida_server", "frida_helper"}:
+        return _device_process_command(str(detail.get("device_id") or ""), pid) is not None
+    if kind == "mitm_process":
+        return _host_process_command(pid) is not None
+    if kind in {"mitm_port", "frida_port"}:
+        port = int(detail.get("port") or -1)
+        if port <= 0:
+            return None
+        return check_port_listening(
+            port=port,
+            host=str(detail.get("host") or "127.0.0.1"),
+        )
+    if kind == "frida_session":
+        return None
+    return None
+
+
+def _m7b_resource_identity_matches(kind: str, detail: dict[str, Any]) -> bool:
+    """Treat absence as a verified cleanup state; guard only live PID reuse."""
+    pid = int(detail.get("pid") or -1)
+    expected = str(detail.get("expected_command_token") or "").casefold()
+    if kind in {"app_process", "frida_server", "frida_helper"}:
+        command = _device_process_command(str(detail.get("device_id") or ""), pid)
+    elif kind == "mitm_process":
+        command = _host_process_command(pid)
+    else:
+        return True
+    if command is None:
+        return True
+    return bool(expected) and expected in command.casefold()
+
+
+def _register_m7b_owned_resources(
+    *,
+    report: dict[str, Any],
+    registry: ResourceOwnershipRegistry,
+    payload: dict[str, Any],
+    initial_snapshot: DeviceSessionSnapshot,
+) -> None:
+    """Register only resources whose run/session provenance is explicit."""
+    device_id = str(payload.get("device_id") or "")
+    package_name = str(payload.get("package_name") or "")
+    process = report.get("process_diagnostics")
+    if (
+        isinstance(process, dict)
+        and isinstance(process.get("pid"), int)
+        and process["pid"] > 0
+        and initial_snapshot.initial_state.foreground_package != package_name
+    ):
+        registry.mark_owned(
+            "app_process",
+            str(process["pid"]),
+            pid=process["pid"],
+            device_id=device_id,
+            expected_command_token=package_name,
+            preexisting=False,
+            created_by_run=True,
+        )
+
+    sessions = report.get("collector_sessions")
+    mitm = sessions.get("mitm") if isinstance(sessions, dict) else None
+    if not isinstance(mitm, dict) or mitm.get("run_id") != report.get("run_id"):
+        return
+    pid = mitm.get("pid")
+    session_id = mitm.get("session_id")
+    if isinstance(pid, int) and pid > 0 and isinstance(session_id, str):
+        registry.mark_owned(
+            "mitm_process",
+            session_id,
+            pid=pid,
+            expected_command_token="mitmdump",
+            preexisting=False,
+            created_by_run=True,
+        )
+    port = mitm.get("port") or mitm.get("listen_port")
+    if isinstance(port, int) and port > 0 and isinstance(session_id, str):
+        registry.mark_owned(
+            "mitm_port",
+            f"{session_id}:{port}",
+            port=port,
+            host=str(mitm.get("listen_host") or "127.0.0.1"),
+            pid=pid,
+            preexisting=False,
+            created_by_run=True,
+        )
 
 
 def task_service_response_payload(
