@@ -43,6 +43,9 @@ from app.ai.provider import (
     OpenAICompatibleProvider,
     ProviderError,
 )
+from app.ai.secret_store import SecretStore
+from app.ai.settings_service import AISettingsService
+from app.ai.settings_store import AISettingsStore
 from app.ai.report_composer import AIReportComposer, FIXED_DISCLAIMER
 from app.ai.tool_registry import (
     AIToolRegistry,
@@ -61,6 +64,27 @@ from app.tasks.models import TaskCreateRequest
 # ---------------------------------------------------------------------------
 def _no_cache() -> AIResponseCache:
     return AIResponseCache(enabled=False)
+
+
+def _install_local_ai_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, model: str = "test-model"
+) -> AISettingsService:
+    """Install an isolated, configured service without external I/O."""
+
+    store = AISettingsStore(
+        settings_path=tmp_path / "ai-settings.json",
+        secret_store=SecretStore(tmp_path / "ai-secret.bin"),
+    )
+    service = AISettingsService(store)
+    service.save_settings({
+        "enabled": True,
+        "provider": "openai_compatible",
+        "base_url": "https://example.invalid/v1",
+        "model": model,
+        "api_key": "sk-test-status-only",
+    })
+    monkeypatch.setattr(main_module, "ai_settings_service", service)
+    return service
 
 
 def _tool(name: str, **kwargs: Any) -> ToolCompactResult:
@@ -597,16 +621,11 @@ def test_api_key_never_enters_logs(caplog: pytest.LogCaptureFixture):
     assert secret not in repr(provider)
 
 
-def test_api_key_never_enters_ai_status_response(monkeypatch: pytest.MonkeyPatch):
-    secret = "sk-response-leak-check"
-    monkeypatch.setattr(main_module, "AI_ENABLED", True)
-    monkeypatch.setattr(
-        main_module,
-        "build_ai_provider",
-        lambda: OpenAICompatibleProvider(
-            base_url="https://example.invalid/v1", api_key=secret, model="m"
-        ),
-    )
+def test_api_key_never_enters_ai_status_response(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    secret = "sk-test-status-only"
+    _install_local_ai_settings(monkeypatch, tmp_path)
     client = TestClient(main_module.app)
     response = client.get("/ai/status")
 
@@ -1069,7 +1088,18 @@ def test_model_failure_retries_at_most_once_without_looping():
 # ---------------------------------------------------------------------------
 # API surface.
 # ---------------------------------------------------------------------------
-def test_ai_status_endpoint_defaults_to_disabled():
+def test_ai_status_endpoint_defaults_to_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    for name in ("AI_ENABLED", "AI_PROVIDER", "AI_BASE_URL", "AI_MODEL", "AI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    store = AISettingsStore(
+        settings_path=tmp_path / "ai-settings.json",
+        secret_store=SecretStore(tmp_path / "ai-secret.bin"),
+    )
+    service = AISettingsService(store)
+    service.save_settings({"enabled": False})
+    monkeypatch.setattr(main_module, "ai_settings_service", service)
     client = TestClient(main_module.app)
     payload = client.get("/ai/status").json()
 
@@ -1079,7 +1109,9 @@ def test_ai_status_endpoint_defaults_to_disabled():
     assert payload["reachable"] is None
 
 
-def test_ai_status_does_not_probe_provider_by_default(monkeypatch: pytest.MonkeyPatch):
+def test_ai_status_does_not_probe_provider_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
     probes = {"count": 0}
 
     class ProbeCountingProvider(MockAIProvider):
@@ -1087,8 +1119,8 @@ def test_ai_status_does_not_probe_provider_by_default(monkeypatch: pytest.Monkey
             probes["count"] += 1
             return True, None
 
-    monkeypatch.setattr(main_module, "AI_ENABLED", True)
-    monkeypatch.setattr(main_module, "build_ai_provider", ProbeCountingProvider)
+    service = _install_local_ai_settings(monkeypatch, tmp_path)
+    monkeypatch.setattr(service.factory, "current", lambda: ProbeCountingProvider())
     client = TestClient(main_module.app)
 
     client.get("/ai/status")

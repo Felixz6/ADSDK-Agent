@@ -70,6 +70,7 @@ __all__ = [
     "AIProviderFactory",
     "AISettingsValidationError",
     "EffectiveSettings",
+    "resolve_effective_ai_settings",
     "SCHEMA_VERSION",
 ]
 
@@ -247,12 +248,17 @@ class AIProviderFactory:
             return dict(self._build_error) if self._build_error else None
 
     def rebuild(self) -> AIProvider | None:
-        """Rebuild from the latest effective settings. Keeps old on failure."""
+        """Rebuild from live settings; only transient build errors keep the old one."""
 
         with self._lock:
             new = self._build_locked()
             if new is not None:
                 self._provider = new
+            elif self._build_error is None:
+                # A complete, successful resolution that has no provider means
+                # the effective configuration is now incomplete (for example
+                # the local key was deleted).  Do not retain a stale provider.
+                self._provider = None
             return self._provider
 
     def _build_locked(self) -> AIProvider | None:
@@ -275,19 +281,19 @@ class AIProviderFactory:
 
     def _build_from_effective(self) -> AIProvider | None:
         # Mock is test-only and opt-in; never built from saved settings in prod.
-        provider_name = self._effective_field("provider")
+        effective = resolve_effective_ai_settings(self._store)
+        provider_name = effective["provider"]
         if provider_name == "mock" and self._allow_mock:
             return MockAIProvider()
         if provider_name != "openai_compatible" and provider_name != "mock":
             return None
-        enabled = self._effective_field("enabled")
         # Even if AI is disabled we can still *build* a provider (so /test
         # works while disabled). Disabling only gates orchestration, not the
         # provider object itself.
-        base_url = self._effective_field("base_url") or ""
-        model = self._effective_field("model") or ""
-        api_key = self._store.effective_api_key() or ""
-        timeout = self._effective_field("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS
+        base_url = effective["base_url"] or ""
+        model = effective["model"] or ""
+        api_key = effective["api_key"] or ""
+        timeout = effective["timeout_seconds"] or DEFAULT_TIMEOUT_SECONDS
         if not (base_url and model and api_key):
             # Not enough to build a real provider; return None so callers
             # degrade gracefully without raising.
@@ -298,22 +304,6 @@ class AIProviderFactory:
             model=model,
             timeout_seconds=float(timeout),
         )
-
-    def _effective_field(self, name: str):
-        """env > local > default, reading the *live* environment via the store."""
-
-        from app.ai.settings_store import settings_corruption_degradable
-
-        raw_env = self._store.environment_raw(name)
-        env = _coerce_env(name, raw_env) if raw_env is not None else None
-        if env is not None:
-            return env
-        local = settings_corruption_degradable(self._store)
-        local_value = getattr(local, name, None)
-        if local_value is not None:
-            return local_value
-        return _DEFAULT_FIELD_VALUES.get(name)
-
 
 # Fields whose env value is authoritative when present.
 _ENV_VALUE_PROVIDER_SET = {
@@ -348,6 +338,50 @@ _DEFAULT_FIELD_VALUES = {
     "report_language": DEFAULT_REPORT_LANGUAGE,
     "default_token_budget": DEFAULT_DEFAULT_TOKEN_BUDGET,
 }
+
+
+def resolve_effective_ai_settings(store: AISettingsStore) -> dict[str, Any]:
+    """Resolve the one live AI configuration used by every runtime path.
+
+    The returned mapping is internal-only because it carries the plaintext key
+    briefly for provider construction.  Callers returning HTTP payloads must
+    use :meth:`AISettingsService.get_effective_settings`, which masks it.
+    """
+
+    from app.ai.settings_store import settings_corruption_degradable
+
+    local = settings_corruption_degradable(store)
+
+    def resolve(name: str) -> Any:
+        raw_env = store.environment_raw(name)
+        env = _coerce_env(name, raw_env) if raw_env is not None else None
+        if env is not None:
+            return env
+        local_value = getattr(local, name, None)
+        if local_value is not None:
+            return local_value
+        return _DEFAULT_FIELD_VALUES.get(name)
+
+    values = {name: resolve(name) for name in _DEFAULT_FIELD_VALUES}
+    api_key = store.effective_api_key()
+    api_key_source = store.api_key_source()
+    values.update(
+        api_key=api_key,
+        api_key_source=api_key_source,
+        api_key_configured=api_key_source != "none",
+        configured=(
+            values["provider"] == "openai_compatible"
+            and bool(values["base_url"])
+            and bool(values["model"])
+            and bool(api_key)
+        ),
+        locked_fields=sorted(store.environment_overrides()),
+        field_sources={
+            name: store.field_source(name)
+            for name in AISettingsService._EDITABLE_FIELDS
+        },
+    )
+    return values
 
 
 # ---------------------------------------------------------------------------
@@ -393,53 +427,14 @@ class AISettingsService:
 
     # -- masked response ----------------------------------------------
     def get_effective_settings(self) -> dict[str, Any]:
-        locked = self._store.environment_overrides()
-        local = self._safe_load_local()
-        provider_name = self._resolve("provider", local, locked)
-        base_url = self._resolve("base_url", local, locked)
-        model = self._resolve("model", local, locked)
-        enabled = self._resolve("enabled", local, locked)
-        api_key_source = self._store.api_key_source()
-        api_key_configured = api_key_source != "none"
+        effective = resolve_effective_ai_settings(self._store)
         payload = {
             "schema_version": SCHEMA_VERSION,
-            "enabled": bool(enabled),
-            "provider": provider_name or "",
-            "base_url": base_url or "",
-            "model": model or "",
-            "api_key_configured": api_key_configured,
-            "api_key_source": api_key_source,
-            "default_token_budget": int(
-                self._resolve("default_token_budget", local, locked) or DEFAULT_DEFAULT_TOKEN_BUDGET
-            ),
-            "max_rounds": int(self._resolve("max_rounds", local, locked) or DEFAULT_MAX_ROUNDS),
-            "max_tool_calls": int(
-                self._resolve("max_tool_calls", local, locked) or DEFAULT_MAX_TOOL_CALLS
-            ),
-            "timeout_seconds": int(
-                self._resolve("timeout_seconds", local, locked) or DEFAULT_TIMEOUT_SECONDS
-            ),
-            "max_input_tokens": int(
-                self._resolve("max_input_tokens", local, locked) or DEFAULT_MAX_INPUT_TOKENS
-            ),
-            "max_output_tokens": int(
-                self._resolve("max_output_tokens", local, locked) or DEFAULT_MAX_OUTPUT_TOKENS
-            ),
-            "cache_enabled": bool(
-                self._resolve("cache_enabled", local, locked) or DEFAULT_CACHE_ENABLED
-            ),
-            "cache_ttl_seconds": int(
-                self._resolve("cache_ttl_seconds", local, locked) or DEFAULT_CACHE_TTL_SECONDS
-            ),
-            "allow_dynamic_tools": bool(
-                self._resolve("allow_dynamic_tools", local, locked) or DEFAULT_ALLOW_DYNAMIC_TOOLS
-            ),
-            "report_language": self._resolve("report_language", local, locked)
-            or DEFAULT_REPORT_LANGUAGE,
-            "field_sources": {
-                name: self._store.field_source(name) for name in self._EDITABLE_FIELDS
-            },
-            "locked_fields": sorted(locked),
+            **{name: effective[name] for name in self._EDITABLE_FIELDS},
+            "api_key_configured": effective["api_key_configured"],
+            "api_key_source": effective["api_key_source"],
+            "field_sources": effective["field_sources"],
+            "locked_fields": effective["locked_fields"],
         }
         return payload
 
@@ -494,7 +489,9 @@ class AISettingsService:
     def delete_api_key(self) -> bool:
         """Delete only the locally-stored key. Env key is untouched."""
 
-        return self._store.delete_api_key()
+        deleted = self._store.delete_api_key()
+        self._factory.rebuild()
+        return deleted
 
     # -- test connection -----------------------------------------------
     def test_connection(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -505,11 +502,13 @@ class AISettingsService:
         """
 
         request = request or {}
-        # Resolve effective temporary config: supplied overrides > saved.
-        base_url = self._merge_for_test("base_url", request)
-        model = self._merge_for_test("model", request)
-        provider_name = self._merge_for_test("provider", request) or DEFAULT_PROVIDER
-        timeout = self._merge_for_test("timeout_seconds", request) or DEFAULT_TIMEOUT_SECONDS
+        # Resolve the same live settings used by status and new tasks, then let
+        # explicit one-shot test fields override that snapshot.
+        effective = resolve_effective_ai_settings(self._store)
+        base_url = request.get("base_url") or effective["base_url"]
+        model = request.get("model") or effective["model"]
+        provider_name = request.get("provider") or effective["provider"] or DEFAULT_PROVIDER
+        timeout = request.get("timeout_seconds") or effective["timeout_seconds"] or DEFAULT_TIMEOUT_SECONDS
         try:
             timeout_f = float(timeout)
         except (TypeError, ValueError):
@@ -521,7 +520,7 @@ class AISettingsService:
             _validate_api_key(temp_key)
             api_key = temp_key
         else:
-            api_key = self._store.effective_api_key() or ""
+            api_key = effective["api_key"] or ""
 
         result: dict[str, Any] = {
             "status": "unreachable",
@@ -624,30 +623,3 @@ class AISettingsService:
         from app.ai.settings_store import settings_corruption_degradable
 
         return settings_corruption_degradable(self._store)
-
-    def _resolve(self, name: str, local: LocalSettings, locked: set[str]):
-        """env > local > default, reading the *live* environment via the store.
-
-        ``app.config`` parses env vars once at import; reading the live
-        environment here is what makes ``locked_fields`` and the effective
-        value agree, and what lets a deployment change an env var without the
-        masked view drifting from what the orchestrator would actually use.
-        """
-
-        raw_env = self._store.environment_raw(name)
-        if raw_env is not None:
-            coerced = _coerce_env(name, raw_env)
-            if coerced is not None:
-                return coerced
-        local_value = getattr(local, name, None)
-        if local_value is not None:
-            return local_value
-        return _DEFAULT_FIELD_VALUES.get(name)
-
-    def _merge_for_test(self, name: str, request: dict[str, Any]):
-        """For test-connection: explicit request value > saved effective value."""
-
-        if name in request and request[name] not in (None, ""):
-            return request[name]
-        local = self._safe_load_local()
-        return self._resolve(name, local, self._store.environment_overrides())
