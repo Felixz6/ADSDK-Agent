@@ -55,8 +55,10 @@ from app.ai.orchestrator import (
 
 from .cleanup_manager import (
     CleanupActions,
+    CleanupDiagnostic,
     CleanupManager,
     CleanupOutcome,
+    CleanupStep,
     ResourceOwnershipRegistry,
 )
 from .consent_checkpoint import (
@@ -548,8 +550,8 @@ class FullAnalysisSession:
         finally:
             if self._state != "cleanup":
                 self._transit("cleanup", "always run cleanup")
-            self._release_lease()
             self._run_cleanup()
+            self._release_lease()
             self._finalize_consent_clear()
 
         final_state: SessionState
@@ -852,11 +854,37 @@ class FullAnalysisSession:
         if not self._snapshot:
             return
         device_key = self._snapshot.device_ref
+        before = self.lease.owner(device_key)
         try:
-            ok = self.lease.release(device_key=device_key, run_id=self.run_id)
-            self._lease_released = bool(ok)
+            action_result = self.lease.release(device_key=device_key, run_id=self.run_id)
         except BaseException:
-            self._lease_released = False
+            action_result = False
+        after = self.lease.owner(device_key)
+        self._lease_released = bool(action_result)
+        if self._cleanup_outcome is None:
+            return
+        if after is None:
+            verification, final, reason = "verified", "success", "lease_release_verified"
+        elif after.owner_run_id == self.run_id:
+            verification, final, reason = "present", "partial", "lease_still_owned"
+        else:
+            verification, final, reason = "present", "partial", "lease_owner_changed"
+        self._cleanup_outcome.verification_attempted = True
+        self._cleanup_outcome.diagnostics.append(CleanupDiagnostic(
+            resource_type="device_lease", identifier_hash="lease", owned_by_run=bool(before and before.owner_run_id == self.run_id),
+            cleanup_attempted=True, cleanup_action_result=action_result,
+            verification_attempted=True, verification_result=verification,
+            final_status=final, reason_code=reason,
+        ))
+        self._cleanup_outcome.steps.append(CleanupStep(
+            rule="release_lease", target_kind="device_lease", target_identity="lease",
+            ownership="owned_by_run", status="success" if final == "success" else "failed",
+            safe_message=reason,
+        ))
+        if final != "success":
+            self._cleanup_outcome.failures.append(reason)
+            if self._cleanup_outcome.status == "success":
+                self._cleanup_outcome.status = "partial"
 
     def _run_cleanup(self) -> None:
         if self._snapshot is None:
@@ -951,6 +979,8 @@ def verify_cleanup(outcome: CleanupOutcome | None) -> dict[str, Any]:
         return {"ok": False, "reason": "no cleanup outcome"}
     return {
         "ok": outcome.ok,
+        "status": outcome.status,
+        "verification_attempted": outcome.verification_attempted,
         "proxy_restore_attempted": outcome.proxy_restore_attempted,
         "proxy_restore_failed": outcome.proxy_restore_failed,
         "external_frida_touched": outcome.external_frida_touched,
@@ -1035,3 +1065,4 @@ __all__ = [
     "execute_full_analysis_plan",
     "verify_cleanup",
 ]
+
