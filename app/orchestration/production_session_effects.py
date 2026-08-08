@@ -8,7 +8,7 @@ dynamic strategy inside the two-phase orchestration boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from app.ai.models import AIPlan
 from app.ai.orchestrator import AIOrchestrationRequest, AIOrchestrationResult, PreparedPlan
@@ -18,7 +18,8 @@ from app.orchestration.consent_checkpoint import (
 )
 from app.orchestration.device_session import DeviceSessionSnapshot
 from app.orchestration.dynamic_strategy import DynamicStrategyDecision
-from app.services.ai_task_service import AITaskService
+if TYPE_CHECKING:
+    from app.services.ai_task_service import AITaskService
 
 
 SnapshotFactory = Callable[[str | None, str | None, str], DeviceSessionSnapshot]
@@ -37,7 +38,7 @@ class ProductionSessionEffects:
 
     task_id: str
     run_id: str
-    ai_service: AITaskService
+    ai_service: "AITaskService"
     consent_service: ConsentCheckpointService
     snapshot_factory: SnapshotFactory
     clock: Callable[[], str]
@@ -53,6 +54,9 @@ class ProductionSessionEffects:
     resource_identity_matches_action: Callable[[str, dict[str, Any]], bool]
     plan_observer: Callable[[AIPlan, str], None] | None = None
     last_result: AIOrchestrationResult | None = field(default=None, init=False)
+    last_executor_strategy_receipt: dict[str, str] | None = field(
+        default=None, init=False
+    )
 
     def capture_snapshot(
         self, device_id: str | None, package_name: str | None
@@ -92,6 +96,10 @@ class ProductionSessionEffects:
             )
             self.last_result.diagnostic.session_engine = "FullAnalysisSession"
             self.last_result.diagnostic.execution_pipeline_version = "m7b"
+        receipt = getattr(self.ai_service, "executor_strategy_receipt", None)
+        self.last_executor_strategy_receipt = (
+            dict(receipt) if isinstance(receipt, dict) else None
+        )
         return self.last_result
 
     def enter_consent(self, task_id: str, run_id: str) -> ConsentCheckpointState:

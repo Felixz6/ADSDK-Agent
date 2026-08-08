@@ -89,6 +89,10 @@ class CleanupDiagnostic(BaseModel):
     retry_attempted: bool = False
     final_status: CleanupStatus
     reason_code: str
+    raw_expected_state: str | None = None
+    raw_observed_state: str | None = None
+    canonical_expected_state: str | None = None
+    canonical_observed_state: str | None = None
 
 
 class CleanupOutcome(BaseModel):
@@ -268,6 +272,13 @@ class CleanupManager:
             verification_attempted=True, verification_result=verification,
             final_status=final, reason_code="proxy_restore_verified" if verified else "proxy_restore_mismatch",
             expected_final_state="initial_proxy_semantics",
+            raw_expected_state=initial,
+            raw_observed_state=observed if callable(read_proxy) else None,
+            canonical_expected_state=desired or "none",
+            canonical_observed_state=(
+                _proxy_semantic(observed) or "none"
+                if callable(read_proxy) else None
+            ),
         ))
         outcome.steps.append(CleanupStep(rule="restore_proxy", target_kind=_RESOURCE_KIND_PROXY,
             target_identity="global http_proxy", ownership="owned_by_run",
