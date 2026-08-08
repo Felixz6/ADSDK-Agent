@@ -3093,7 +3093,7 @@ def _run_m7b_full_analysis_session(
             if key in DynamicAnalyzeRequest.model_fields
         }
         request_payload["dynamic_mode_policy"] = strategy
-        deterministic = dynamic_analyze(
+        deterministic = _dynamic_analyze_v2(
             DynamicAnalyzeRequest.model_validate(request_payload)
         )
         report = task_service_response_payload(deterministic)
