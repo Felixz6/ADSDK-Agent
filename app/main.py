@@ -3164,6 +3164,17 @@ def _run_m7b_full_analysis_session(
             capture_kind=capture_kind,
         )
         initial_snapshot.setdefault("value", snapshot)
+        if capture_kind == "read_only":
+            for pid in snapshot.initial_state.frida_helper_pids:
+                registry.mark_external(
+                    "frida_helper", str(pid), pid=pid,
+                    device_id=str(device_id or ""),
+                    expected_command_token="re.frida.helper",
+                    preexisting=True, created_by_run=False,
+                    cleanup_required=False, verification_required=False,
+                    ownership_source="preflight_pidof",
+                    registered_at_stage="read_only_preflight", run_id=task.id,
+                )
         return snapshot
 
     def unified_runner(strategy: str) -> dict[str, Any]:
@@ -3249,6 +3260,18 @@ def _run_m7b_full_analysis_session(
         run_dir=run_dir,
     )
     transition = session.run()
+    before_snapshot = initial_snapshot.get("value") or getattr(
+        transition, "snapshot", None
+    )
+    postflight_snapshot = (
+        _capture_m7b_device_snapshot(
+            run_id=task.id,
+            device_id=payload.get("device_id"),
+            package_name=payload.get("package_name"),
+            capture_kind="postflight",
+        )
+        if before_snapshot is not None else None
+    )
     report = report_holder.get("value", {
         "schema_version": SCHEMA_VERSION,
         "run_id": task.id,
@@ -3278,6 +3301,33 @@ def _run_m7b_full_analysis_session(
         transition.cleanup.model_dump(mode="json")
         if transition.cleanup is not None else None
     )
+    before_helpers = set(before_snapshot.initial_state.frida_helper_pids) if before_snapshot else set()
+    after_helpers = (
+        set(postflight_snapshot.initial_state.frida_helper_pids)
+        if postflight_snapshot is not None else set()
+    )
+    owned_helpers = {
+        int(item.detail.get("pid")) for item in registry.owned()
+        if item.kind == "frida_helper" and isinstance(item.detail.get("pid"), int)
+    }
+    newly_unknown = sorted(after_helpers - before_helpers - owned_helpers)
+    report["helper_provenance"] = {
+        "process_name": "re.frida.helper",
+        "before_pids": sorted(before_helpers),
+        "after_pids": sorted(after_helpers),
+        "owned_pids": sorted(owned_helpers),
+        "preexisting_external_pids": sorted(before_helpers - owned_helpers),
+        "unknown_newly_appeared_pids": newly_unknown,
+        "postflight_capture": (
+            postflight_snapshot.safe_dump()
+            if postflight_snapshot is not None else None
+        ),
+    }
+    if newly_unknown:
+        report["status"] = "partial"
+        report.setdefault("limitations", []).append(
+            "new re.frida.helper PID has unknown provenance; it was not claimed or killed"
+        )
     report["normalized"] = transition.normalized
     report["reason_code"] = transition.normalization_reason
     report["target_running"] = transition.target_running
@@ -3313,6 +3363,10 @@ def _capture_m7b_device_snapshot(
         frida = adb("shell", "pidof", "frida-server").get("stdout", "").strip()
         state.frida_server_present = bool(frida)
         state.frida_server_pid = int(frida.split()[0]) if frida else None
+        helper = adb("shell", "pidof", "re.frida.helper").get("stdout", "").strip()
+        state.frida_helper_pids = [
+            int(value) for value in helper.split() if value.isdigit() and int(value) > 0
+        ]
     return DeviceSessionSnapshot(
         run_id=run_id,
         device_ref=mask_device_ref(device_id),

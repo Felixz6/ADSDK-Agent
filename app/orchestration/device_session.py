@@ -59,6 +59,9 @@ class DeviceState(BaseModel):
     frida_server_owned: bool = False
     frida_server_pid: int | None = None
     frida_server_version: str | None = None
+    # ``re.frida.helper`` is observed independently from frida-server. These
+    # PIDs are provenance facts only; observing them never grants ownership.
+    frida_helper_pids: list[int] = Field(default_factory=list)
     # mitm processes owned by *this* run — empty when none started yet.
     mitm_pids: list[int] = Field(default_factory=list)
     mitm_ports: list[int] = Field(default_factory=list)
@@ -90,7 +93,7 @@ class DeviceSessionSnapshot(BaseModel):
     environment_notes: list[str] = Field(default_factory=list)
     # Whether the snapshot is read-only-validated vs a full preflight. Phase B
     # produces read_only snapshots; Phase D re-captures before state changes.
-    capture_kind: Literal["read_only", "preflight", "pre_state_change"] = (
+    capture_kind: Literal["read_only", "preflight", "pre_state_change", "postflight"] = (
         "read_only"
     )
 
@@ -128,7 +131,7 @@ def build_snapshot(
     probe: SnapshotProbe,
     captured_at: str,
     package_name: str | None = None,
-    capture_kind: Literal["read_only", "preflight", "pre_state_change"] = (
+    capture_kind: Literal["read_only", "preflight", "pre_state_change", "postflight"] = (
         "read_only"
     ),
     environment_notes: list[str] | None = None,
@@ -198,6 +201,13 @@ def build_snapshot(
     state.frida_server_version = (
         probe.frida_server_version(device_id) if pids else None
     )
+    try:
+        helper_pids = probe.pidof(device_id, "re.frida.helper")
+    except BaseException:
+        helper_pids = []
+    state.frida_helper_pids = [
+        pid for pid in helper_pids if isinstance(pid, int) and pid > 0
+    ]
 
     try:
         state.foreground_package = probe.current_focus(device_id)
