@@ -86,6 +86,7 @@ class _FakeProbe:
         abi: str | None = "x86_64",
         http_proxy: str | None = "",
         frida_pids: list[int] | None = None,
+        helper_pids: list[int] | None = None,
         package_installed: bool | None = True,
         package_version: str | None = "1.2.3",
         foreground: str | None = "launcher",
@@ -94,6 +95,7 @@ class _FakeProbe:
         self._abi = abi
         self._http_proxy = http_proxy
         self._frida_pids = frida_pids or []
+        self._helper_pids = helper_pids or []
         self._package_installed = package_installed
         self._package_version = package_version
         self._foreground = foreground
@@ -128,6 +130,8 @@ class _FakeProbe:
         self.calls.append(("pidof", device, process))
         if process == "frida-server":
             return list(self._frida_pids)
+        if process == "re.frida.helper":
+            return list(self._helper_pids)
         return []
 
     def frida_server_version(self, device: str) -> str | None:
@@ -152,8 +156,12 @@ def _make_snapshot(
     device_id: str | None = "127.0.0.1:16416",
     http_proxy: str | None = "",
     frida_pids: list[int] | None = None,
+    helper_pids: list[int] | None = None,
 ) -> DeviceSessionSnapshot:
-    probe = _FakeProbe(http_proxy=http_proxy, frida_pids=frida_pids or [])
+    probe = _FakeProbe(
+        http_proxy=http_proxy, frida_pids=frida_pids or [],
+        helper_pids=helper_pids or [],
+    )
     return build_snapshot(
         run_id=run_id,
         device_id=device_id,
@@ -217,6 +225,12 @@ def test_snapshot_records_frida_server_present_but_not_owned():
     assert snap.initial_state.frida_server_pid == 4321
     assert snap.initial_state.frida_server_owned is False
     assert snap.initial_state.frida_server_version == "16.5.9"
+
+
+def test_snapshot_records_helper_pids_as_read_only_provenance():
+    snap = _make_snapshot(helper_pids=[4444])
+
+    assert snap.initial_state.frida_helper_pids == [4444]
 
 
 def test_snapshot_offline_records_frida_present_none():
