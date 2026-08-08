@@ -216,6 +216,7 @@ def run_dynamic_collection(
     clock: CollectionClock | None = None,
     stimulate_ui: Callable[[], Any] | None = None,
     resume_without_frida: Callable[[], Any] | None = None,
+    on_frida_started: Callable[[FridaCollectionSession], None] | None = None,
 ) -> DynamicCollectionResult:
     """Run one spawn-gated collection and always clean its owned sessions.
 
@@ -310,6 +311,11 @@ def run_dynamic_collection(
                     "frida_spawn_failed",
                     "Frida session failed to start",
                 )
+            # This is the first boundary at which a Frida session's exact
+            # target PID is available.  Notify the caller before later hook
+            # phases may fail so its finalizer can still own the lifecycle.
+            if on_frida_started is not None:
+                on_frida_started(frida_session)
             result.outcomes["frida_spawn"] = "success"
             result.outcomes["frida_script_load"] = "success"
         except BaseException as exc:
