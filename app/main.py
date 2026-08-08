@@ -1724,7 +1724,11 @@ def _append_collection_steps(
         )
 
 
-def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
+def _dynamic_analyze_v2(
+    req: DynamicAnalyzeRequest,
+    *,
+    ownership_registry: ResourceOwnershipRegistry | None = None,
+):
     context, steps, failure_response = _prepare_run(
         req.apk_path,
         device_id=req.device_id,
@@ -2019,6 +2023,14 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
     )
     frida_diagnostic_payload: dict[str, Any] | None = None
 
+    # The real PolicyFridaSession branch replaces this with the atomic PID
+    # ownership boundary below. Compatibility collectors never manufacture
+    # Android target ownership from a host-side helper process.
+    def register_runtime_target(
+        pid: int, *, ownership_source: str, created_by_run: bool
+    ) -> None:
+        del pid, ownership_source, created_by_run
+
     if install_ok and device_context is not None:
         script_path = (
             Path(__file__).resolve().parent
@@ -2104,6 +2116,31 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                         ),
                     )
 
+                def register_runtime_target(
+                    pid: int,
+                    *,
+                    ownership_source: str,
+                    created_by_run: bool,
+                ) -> None:
+                    if ownership_registry is None or pid <= 0:
+                        return
+                    detail = {
+                        "pid": pid,
+                        "device_id": device_context.serial,
+                        "expected_command_token": package_name,
+                        "preexisting": not created_by_run,
+                        "created_by_run": created_by_run,
+                        "cleanup_required": created_by_run,
+                        "verification_required": created_by_run,
+                        "ownership_source": ownership_source,
+                        "registered_at_stage": "target_pid_available",
+                        "run_id": context.run_id,
+                    }
+                    if created_by_run:
+                        ownership_registry.mark_owned("app_process", str(pid), **detail)
+                    else:
+                        ownership_registry.mark_external("app_process", str(pid), **detail)
+
                 def launch_target_for_attach() -> dict[str, Any]:
                     launch_requested = _utc_now()
                     launch_result = launch_app(
@@ -2128,6 +2165,17 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                             and str(pid_result.get("stdout") or "").strip()
                         ):
                             pid_observed = _utc_now()
+                            pid_text = str(pid_result.get("stdout") or "").strip().split()[0]
+                            pid = int(pid_text) if pid_text.isdigit() else 0
+                            if pid <= 0:
+                                continue
+                            # Atomic production boundary: the launch command
+                            # succeeded and the exact resulting PID is known.
+                            register_runtime_target(
+                                pid,
+                                ownership_source="launch_then_attach_pidof",
+                                created_by_run=True,
+                            )
                             return {
                                 "launch_requested_at": launch_requested.isoformat(
                                     timespec="milliseconds"
@@ -2136,6 +2184,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                                     timespec="milliseconds"
                                 ).replace("+00:00", "Z"),
                                 "_launch_requested_datetime": launch_requested,
+                                "pid": pid,
                             }
                         time.sleep(0.25)
                     raise FridaSessionError(
@@ -2182,6 +2231,36 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
             if result.get("returncode") != 0:
                 raise RuntimeError("UI stimulation failed")
 
+        def register_frida_started(session: Any) -> None:
+            pid = getattr(session, "pid", None)
+            if not isinstance(pid, int) or pid <= 0:
+                return
+            selected = getattr(session, "selected_mode", None)
+            mode = getattr(selected, "value", selected)
+            register_runtime_target(
+                pid,
+                ownership_source=(
+                    "frida_spawn" if mode == ExecutionMode.SPAWN_SUSPENDED.value
+                    else "frida_attach_existing"
+                ),
+                created_by_run=mode == ExecutionMode.SPAWN_SUSPENDED.value,
+            )
+            helper_pid = getattr(session, "helper_pid", None)
+            if (
+                ownership_registry is not None
+                and isinstance(helper_pid, int)
+                and helper_pid > 0
+            ):
+                ownership_registry.mark_owned(
+                    "frida_helper", str(helper_pid), pid=helper_pid,
+                    device_id=device_context.serial,
+                    expected_command_token="re.frida.helper",
+                    preexisting=False, created_by_run=True,
+                    cleanup_required=True, verification_required=True,
+                    ownership_source="frida_session_helper_start",
+                    registered_at_stage="helper_pid_available", run_id=context.run_id,
+                )
+
         collection_result = run_dynamic_collection(
             frida_session=frida_session,
             mitm_session=mitm_session,
@@ -2203,6 +2282,7 @@ def _dynamic_analyze_v2(req: DynamicAnalyzeRequest):
                 event,
             ),
             stimulate_ui=stimulate_ui,
+            on_frida_started=register_frida_started,
             resume_without_frida=stimulate_ui,
         )
         _append_collection_steps(
@@ -3094,7 +3174,8 @@ def _run_m7b_full_analysis_session(
         }
         request_payload["dynamic_mode_policy"] = strategy
         deterministic = _dynamic_analyze_v2(
-            DynamicAnalyzeRequest.model_validate(request_payload)
+            DynamicAnalyzeRequest.model_validate(request_payload),
+            ownership_registry=registry,
         )
         report = task_service_response_payload(deterministic)
         report_holder["value"] = report
@@ -3184,6 +3265,19 @@ def _run_m7b_full_analysis_session(
     report["requested_strategy"] = transition.requested_strategy
     report["effective_strategy"] = transition.effective_strategy
     report["executor_strategy_receipt"] = effects.last_executor_strategy_receipt
+    report["resource_ownership"] = [
+        {
+            "resource_type": item.kind,
+            "resource_id": item.identity,
+            "ownership": item.ownership,
+            **dict(item.detail),
+        }
+        for item in registry.all_items()
+    ]
+    report["cleanup_final_verification"] = (
+        transition.cleanup.model_dump(mode="json")
+        if transition.cleanup is not None else None
+    )
     report["normalized"] = transition.normalized
     report["reason_code"] = transition.normalization_reason
     report["target_running"] = transition.target_running
@@ -3331,6 +3425,7 @@ def _register_m7b_owned_resources(
         and isinstance(process.get("pid"), int)
         and process["pid"] > 0
         and initial_snapshot.initial_state.foreground_package != package_name
+        and registry.get("app_process", str(process["pid"])) is None
     ):
         registry.mark_owned(
             "app_process",
