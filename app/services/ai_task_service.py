@@ -122,6 +122,9 @@ class AITaskService:
         self._dynamic_runner_with_strategy = dynamic_runner_with_strategy
         self._unified_runner_with_strategy = unified_runner_with_strategy
         self._effective_dynamic_strategy: str | None = None
+        # Recorded where the production tool boundary actually dispatches the
+        # resolved policy, rather than inferred by FullAnalysisSession.
+        self._executor_strategy_receipt: dict[str, str] | None = None
         self._environment_probe = environment_probe
         self._context = context_builder or AIContextBuilder()
         self._environment: dict[str, Any] | None = None
@@ -152,6 +155,7 @@ class AITaskService:
     ) -> AIOrchestrationResult:
         """Execute the externally gated plan using only the effective policy."""
         self._effective_dynamic_strategy = strategy_decision.effective_strategy
+        self._executor_strategy_receipt = None
         result = self._orchestrator.execute_prepared_plan(
             prepared,
             request=request,
@@ -162,6 +166,31 @@ class AITaskService:
         )
         write_ai_artifacts(self._artifacts.run_dir, result)
         return result
+
+    @property
+    def executor_strategy_receipt(self) -> dict[str, str] | None:
+        """Receipt emitted by the tool executor after it selects a branch."""
+        return dict(self._executor_strategy_receipt) if self._executor_strategy_receipt else None
+
+    def _run_unified_with_effective_strategy(self) -> dict[str, Any]:
+        if not self._effective_dynamic_strategy:
+            raise RuntimeError("effective_dynamic_strategy_missing")
+        if self._unified_runner_with_strategy is None:
+            raise RuntimeError("unified_runner_missing")
+        strategy = self._effective_dynamic_strategy
+        report = dict(self._unified_runner_with_strategy(strategy))
+        # This is deliberately adjacent to the actual runner invocation.  It
+        # proves the strategy passed to and selected by the executor boundary.
+        self._executor_strategy_receipt = {
+            "executor_received_strategy": strategy,
+            "executor_execution_strategy": str(
+                report.get("execution_decision", {}).get("policy", strategy)
+                if isinstance(report.get("execution_decision"), Mapping)
+                else strategy
+            ),
+            "executor_provenance_source": "AITaskService.unified_runner_with_strategy",
+        }
+        return report
 
     # -- digest ---------------------------------------------------------
     def build_digest(
@@ -280,14 +309,10 @@ class AITaskService:
                 limitations=["静态分析不可用"],
             )
         try:
-            if self._unified_runner_with_strategy is not None:
-                if not self._effective_dynamic_strategy:
-                    raise RuntimeError("effective_dynamic_strategy_missing")
-                report = dict(
-                    self._unified_runner_with_strategy(
-                        self._effective_dynamic_strategy
-                    )
-                )
+            if self._report_cache is not None:
+                report = self._report_cache
+            elif self._unified_runner_with_strategy is not None:
+                report = self._run_unified_with_effective_strategy()
             else:
                 assert self._static_runner is not None
                 report = dict(self._static_runner())
@@ -348,13 +373,7 @@ class AITaskService:
             if self._report_cache is not None:
                 report = self._report_cache
             elif self._unified_runner_with_strategy is not None:
-                if not self._effective_dynamic_strategy:
-                    raise RuntimeError("effective_dynamic_strategy_missing")
-                report = dict(
-                    self._unified_runner_with_strategy(
-                        self._effective_dynamic_strategy
-                    )
-                )
+                report = self._run_unified_with_effective_strategy()
             elif self._dynamic_runner_with_strategy is not None:
                 if not self._effective_dynamic_strategy:
                     raise RuntimeError("effective_dynamic_strategy_missing")

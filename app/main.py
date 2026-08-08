@@ -3183,6 +3183,7 @@ def _run_m7b_full_analysis_session(
     report["analysis_mode"] = "full_analysis"
     report["requested_strategy"] = transition.requested_strategy
     report["effective_strategy"] = transition.effective_strategy
+    report["executor_strategy_receipt"] = effects.last_executor_strategy_receipt
     report["normalized"] = transition.normalized
     report["reason_code"] = transition.normalization_reason
     report["target_running"] = transition.target_running
