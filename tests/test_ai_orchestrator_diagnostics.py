@@ -37,6 +37,7 @@ from app.ai.models import (
     ToolCompactResult,
 )
 from app.ai.orchestrator import (
+    _normalize_plan_envelope,
     AIOrchestrationRequest,
     AIOrchestrator,
     write_ai_artifacts,
@@ -698,6 +699,21 @@ class TestDiagnosticsArtifact:
             "thinking_mode", "enabled", "usage", "rounds", "errors",
             "total_rounds", "total_retries", "cache_hit", "cache_enabled",
             "deterministic_fallback", "outcome", "generated_at",
+            # M7B (Section 八/九) — plan-source + dynamic-strategy + report
+            # provenance stamped on the runtime artifact. These are observable
+            # secret-free fields (codes/labels/booleans), extended alongside the
+            # ai-plan-validation-v2 artifact's parallel fields.
+            "plan_source", "planning_failed", "deterministic_plan_fallback",
+            "requested_strategy", "effective_strategy", "repair_attempted",
+            "repair_succeeded", "fallback_used", "validation_error_code",
+            "validation_json_path", "normalized", "normalization_reason",
+            "target_running", "preflight_changed", "report_source",
+            "analysis_mode", "orchestration_entrypoint", "session_engine",
+            "execution_pipeline_version", "root_type",
+            "schema_version_present", "steps_present", "steps_type",
+            "normalization_eligible", "normalization_applied",
+            "normalization_reason_code", "safe_wrapper_detected",
+            "top_level_field_count",
         }
 
     def test_the_artifact_records_the_compat_profile_and_thinking_mode(
@@ -757,3 +773,20 @@ def _all_keys(value: Any) -> set[str]:
         for child in value:
             keys |= _all_keys(child)
     return keys
+
+
+def test_m7b_missing_schema_version_is_normalized_without_changing_steps():
+    payload = {"objective": "o", "steps": [{"tool_name": "static_analysis", "arguments": {}}]}
+    normalized = _normalize_plan_envelope(payload)
+    assert normalized.applied is True
+    assert normalized.fields == ("schema_version",)
+    assert normalized.reason_codes == ("missing_schema_version",)
+    assert normalized.payload["schema_version"] == "ai-plan-v1"
+    assert normalized.payload["steps"] == payload["steps"]
+
+
+def test_m7b_envelope_normalizer_does_not_rewrite_invalid_tool_or_arguments():
+    payload = {"steps": [{"tool_name": "not_whitelisted", "arguments": {"device": "x"}}]}
+    normalized = _normalize_plan_envelope(payload)
+    assert normalized.applied is True
+    assert normalized.payload["steps"] == payload["steps"]

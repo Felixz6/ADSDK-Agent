@@ -427,6 +427,28 @@ def compute_digest_hash(digest: EvidenceDigest) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _native_bridge_signal(environment: Mapping[str, Any] | None) -> bool:
+    """Deterministic Native Bridge detector for the digest's environment block.
+
+    The environment probe (``app.frida.diagnostics``) carries either an explicit
+    ``native_bridge_detected`` boolean or an ``abi`` string from
+    ``getprop ro.product.cpu.abi``. The libhoudini / libhp15_x86_64 Native
+    Bridge runs an ARM-targeted app under an x86 host abi — the failure mode the
+    runtime validator and the Evidence Validator both narrate as an anti-debug /
+    crash risk. A missing or unknown value is treated as no Native Bridge so a
+    spurious flag cannot block an otherwise valid report.
+    """
+
+    if not isinstance(environment, Mapping):
+        return False
+    explicit = environment.get("native_bridge_detected")
+    if isinstance(explicit, bool):
+        return explicit
+    # An x86-class abi hosting an ARM APK is the MuMu Native Bridge signature.
+    abi = _clean(environment.get("abi"), 32).lower()
+    return abi in {"x86", "x86_64"} and environment.get("abi_likely_native_bridge") is True
+
+
 class AIContextBuilder:
     """Builds the deterministic evidence digest for one run."""
 
@@ -497,12 +519,19 @@ class AIContextBuilder:
         environment: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         if not isinstance(environment, Mapping):
-            return {"status": "not_evaluated"}
+            return {"status": "not_evaluated", "native_bridge_detected": False}
         checks = (
             environment.get("checks")
             if isinstance(environment.get("checks"), Mapping)
             else {}
         )
+        # Section 十六 — a deterministic Native Bridge flag the Evidence
+        # Validator can read. The probe payload never carries a raw serial; it
+        # exposes either an explicit ``native_bridge_detected`` boolean or an
+        # ``abi`` string. A MuMu x86 abi hosting an ARM-target app (typical of
+        # the libhoudini/libhp15_x86_64 Native Bridge) is the failure mode the
+        # validator narrates as anti-debug risk — never trusted from the model.
+        native_bridge = _native_bridge_signal(environment)
         return {
             "status": "evaluated",
             "ok": bool(environment.get("ok")),
@@ -511,6 +540,7 @@ class AIContextBuilder:
                 _clean(key, 60): bool(value)
                 for key, value in list(checks.items())[:MAX_LIST_ITEMS]
             },
+            "native_bridge_detected": native_bridge,
         }
 
 

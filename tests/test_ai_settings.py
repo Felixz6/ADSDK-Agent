@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -65,6 +66,11 @@ def ai_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("AI_MODEL", raising=False)
     monkeypatch.delenv("AI_BASE_URL", raising=False)
     monkeypatch.delenv("AI_PROVIDER", raising=False)
+    monkeypatch.delenv("AI_ALLOW_DYNAMIC_TOOLS", raising=False)
+    monkeypatch.delenv("AI_CACHE_ENABLED", raising=False)
+    monkeypatch.delenv("AI_CACHE_TTL_SECONDS", raising=False)
+    monkeypatch.delenv("AI_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("AI_REPORT_LANGUAGE", raising=False)
     settings_path, secret_path = _rewire(tmp_path)
     # Rebuild a fresh factory+service bound to the freshly re-wired store so
     # provider cache state never bleeds between tests.
@@ -513,7 +519,7 @@ def test_provider_build_failure_keeps_old(ai_store: AISettingsService, monkeypat
 def test_ai_disabled_does_not_break_static_task(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    monkeypatch.setattr(main_module, "AI_ENABLED", False)
+    monkeypatch.setenv("AI_ENABLED", "false")
     repo = TaskRepository(tmp_path / "state" / "tasks.db")
     repo.initialize()
     from app.services import TaskService
@@ -572,9 +578,126 @@ def test_pydantic_serializes_ai_settings_response(
     assert r.status_code == 200
     body = r.json()
     assert set(body.keys()) >= {"schema_version", "field_sources", "locked_fields",
-                                "api_key_configured", "api_key_source"}
+                                 "api_key_configured", "api_key_source"}
     assert isinstance(body["field_sources"], dict)
     assert isinstance(body["locked_fields"], list)
+
+
+# ---------------------------------------------------------------------------
+# M7B: status, test and task runtime share one effective settings snapshot.
+# ---------------------------------------------------------------------------
+def test_status_matches_local_effective_settings_without_probe(
+    client: TestClient, ai_store: AISettingsService
+):
+    ai_store.save_settings({
+        "enabled": True,
+        "provider": "openai_compatible",
+        "base_url": "https://example.invalid/v1",
+        "model": "saved-model",
+        "api_key": API_KEY,
+        "allow_dynamic_tools": True,
+    })
+
+    settings = client.get("/ai/settings").json()
+    status = client.get("/ai/status").json()
+
+    assert status["enabled"] == settings["enabled"] is True
+    assert status["provider"] == settings["provider"] == "openai_compatible"
+    assert status["model"] == settings["model"] == "saved-model"
+    assert status["configured"] is True
+    assert status["reachable"] is None
+    assert status["last_error_code"] is None
+    assert API_KEY not in repr(status)
+
+
+def test_status_updates_model_and_invalidates_provider_after_key_delete(
+    client: TestClient, ai_store: AISettingsService
+):
+    ai_store.save_settings({
+        "enabled": True,
+        "base_url": "https://example.invalid/v1",
+        "model": "old-model",
+        "api_key": API_KEY,
+    })
+    first = ai_store.factory.current()
+    assert first is not None and first.model == "old-model"
+
+    client.put("/ai/settings", json={"model": "new-model"})
+    assert client.get("/ai/status").json()["model"] == "new-model"
+    refreshed = ai_store.factory.current()
+    assert refreshed is not None and refreshed.model == "new-model"
+
+    client.delete("/ai/settings/api-key")
+    status = client.get("/ai/status").json()
+    assert status["configured"] is False
+    assert status["last_error_code"] is None
+    assert ai_store.factory.current() is None
+
+
+def test_successful_settings_test_does_not_make_status_unconfigured(
+    client: TestClient,
+    ai_store: AISettingsService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ai_store.save_settings({
+        "enabled": True,
+        "base_url": "https://example.invalid/v1",
+        "model": "tested-model",
+        "api_key": API_KEY,
+    })
+    monkeypatch.setattr(
+        OpenAICompatibleProvider,
+        "probe_reachable",
+        lambda self, **_kwargs: {
+            "status": "reachable", "provider": "openai_compatible",
+            "model": self.model, "latency_ms": 1,
+            "safe_message": "ok", "models_endpoint_supported": True,
+        },
+    )
+
+    assert client.post("/ai/settings/test", json={}).json()["status"] == "reachable"
+    status = client.get("/ai/status").json()
+    assert status["configured"] is True
+    assert status["model"] == "tested-model"
+    assert status["reachable"] is None
+    assert status["last_error_code"] is None
+
+
+def test_new_ai_task_captures_provider_from_saved_effective_model(
+    ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch
+):
+    ai_store.save_settings({
+        "enabled": True,
+        "base_url": "https://example.invalid/v1",
+        "model": "new-task-model",
+        "api_key": API_KEY,
+    })
+    captured: dict[str, str] = {}
+
+    class StopAfterConstruction(RuntimeError):
+        pass
+
+    class CapturingOrchestrator:
+        def __init__(self, *, provider, **_kwargs):  # noqa: ANN001
+            captured["model"] = provider.model
+
+    class StopTaskService:
+        def __init__(self, **_kwargs):  # noqa: ANN003
+            raise StopAfterConstruction()
+
+    monkeypatch.setattr(main_module, "AIOrchestrator", CapturingOrchestrator)
+    monkeypatch.setattr(main_module, "AITaskService", StopTaskService)
+    monkeypatch.setattr(main_module, "report_step", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(StopAfterConstruction):
+        main_module._execute_ai_orchestration(
+            task=SimpleNamespace(id="task-1"),
+            payload={"analysis_scope": "static_only", "ai_enabled": True},
+            run_dir=None,
+            base_report={},
+        )
+
+    assert captured["model"] == "new-task-model"
 
 
 # 39: non-Windows must not downgrade to cleartext.

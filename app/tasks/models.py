@@ -33,6 +33,7 @@ class TaskCreateRequest(BaseModel):
     # their exact current shape and behaviour.
     objective: str | None = Field(default=None, max_length=2000)
     analysis_scope: AnalysisScope = "static_only"
+    analysis_mode: Literal["static_only", "full_analysis", "report_only"] | None = None
     allow_dynamic: bool = False
     allow_network: bool = False
     ai_enabled: bool = True

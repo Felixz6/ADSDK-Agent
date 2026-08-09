@@ -53,6 +53,7 @@ from .full_analysis_session import (
     execute_full_analysis_plan,
     verify_cleanup,
 )
+from .production_session_effects import ProductionSessionEffects
 
 __all__ = [
     "AIPlan",
@@ -70,6 +71,7 @@ __all__ = [
     "LeaseRegistry",
     "LeaseState",
     "PlanValidationError",
+    "ProductionSessionEffects",
     "ResourceOwnershipRegistry",
     "SessionEvent",
     "SessionState",

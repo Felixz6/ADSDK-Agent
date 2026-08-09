@@ -65,7 +65,12 @@ class PolicyFridaSession:
                 return attempt
         raise RuntimeError(f"missing active execution attempt: {mode.value}")
 
-    def _enrich_launch_timing(self, session: Any) -> None:
+    def _enrich_launch_timing(
+        self,
+        session: Any,
+        *,
+        launch_requested: datetime | None = None,
+    ) -> None:
         if self.selected_mode is not ExecutionMode.LAUNCH_THEN_ATTACH:
             return
         started = getattr(session, "attach_started_at", None)
@@ -74,22 +79,31 @@ class PolicyFridaSession:
             self.launch_timing["attach_started_at"] = _utc_text(started)
         if completed is not None:
             self.launch_timing["attach_completed_at"] = _utc_text(completed)
-        requested = self.launch_timing.get("_launch_requested_datetime")
-        if isinstance(requested, datetime) and isinstance(completed, datetime):
+        if isinstance(launch_requested, datetime) and isinstance(completed, datetime):
             self.launch_timing["startup_gap_ms"] = max(
                 0,
-                int((completed - requested).total_seconds() * 1000),
+                int((completed - launch_requested).total_seconds() * 1000),
             )
-        self.launch_timing.pop("_launch_requested_datetime", None)
 
     def _activate(self, mode: ExecutionMode) -> Any:
         launch_details: Mapping[str, Any] | None = None
+        launch_requested: datetime | None = None
         if mode is ExecutionMode.LAUNCH_THEN_ATTACH:
             if self.launch_target is None:
                 raise RuntimeError("package_launch_failed")
             launch_details = self.launch_target()
             if launch_details:
-                self.launch_timing.update(dict(launch_details))
+                # ``_launch_requested_datetime`` is an internal calculation
+                # value.  Strip it at the domain boundary before any public
+                # status/report payload can observe ``launch_timing``.  This
+                # must also hold when ``session.start()`` raises.
+                public_details = dict(launch_details)
+                internal_requested = public_details.pop(
+                    "_launch_requested_datetime", None
+                )
+                if isinstance(internal_requested, datetime):
+                    launch_requested = internal_requested
+                self.launch_timing.update(public_details)
         session = self.session_factory(mode)
         self.sessions.append(session)
         session.start()
@@ -122,7 +136,10 @@ class PolicyFridaSession:
                 timestamps=dict(self.launch_timing) if launch_details else {},
             )
         )
-        self._enrich_launch_timing(session)
+        self._enrich_launch_timing(
+            session,
+            launch_requested=launch_requested,
+        )
         if launch_details:
             self.attempts[-1].timestamps = dict(self.launch_timing)
         return session
