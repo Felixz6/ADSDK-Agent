@@ -17,7 +17,11 @@ No analysis logic is re-implemented here. ``static_analysis`` and
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 from typing import Any, Callable, Mapping
+from uuid import uuid4
+
+from app.core.artifacts import atomic_write_json
 
 from app.ai.context_builder import (
     AIContextBuilder,
@@ -37,6 +41,9 @@ from app.ai.orchestrator import (
     AIOrchestrator,
     write_ai_artifacts,
 )
+from app.ai.orchestrator import PreparedPlan
+from app.ai.models import AIPlan
+from app.orchestration.dynamic_strategy import DynamicStrategyDecision
 
 # A deterministic runner produces the full report dict for the run.
 DeterministicRunner = Callable[[], Mapping[str, Any]]
@@ -97,6 +104,114 @@ class RunArtifacts:
         ]
 
 
+class RunScopedExecution:
+    """One run-owned deterministic execution, shared by every consumer.
+
+    This is deliberately supplied by the production session rather than held
+    in a process-global map: its lifetime is the task/run and it also shares an
+    in-flight failure with later consumers.
+    """
+
+    def __init__(
+        self,
+        runner: Callable[[str], Mapping[str, Any]],
+        *,
+        task_id: str = "",
+        run_context_path: Path | str | None = None,
+        diagnostics_path: Path | str | None = None,
+    ) -> None:
+        self._runner = runner
+        self._condition = threading.Condition()
+        self._running = False
+        self._completed = False
+        self._result: dict[str, Any] | None = None
+        self._error: BaseException | None = None
+        self._task_id = task_id
+        self._run_context_path = str(run_context_path or "")
+        self._diagnostics_path = Path(diagnostics_path) if diagnostics_path else None
+        self._events: list[dict[str, Any]] = []
+        self._sequence = 0
+
+    def _record(self, **event: Any) -> None:
+        self._sequence += 1
+        payload = {
+            "claim_sequence": self._sequence,
+            "run_id": self._task_id,
+            "task_id": self._task_id,
+            "execution_scope_id": self._task_id,
+            "single_flight_key": self._task_id,
+            "run_context_path": self._run_context_path,
+            **event,
+        }
+        self._events.append(payload)
+        if self._diagnostics_path is not None:
+            atomic_write_json(self._diagnostics_path, {
+                "schema_version": "run-context-claims-v1",
+                "events": self._events,
+            })
+
+    def request(self, strategy: str, *, caller_role: str, service_instance_token: str) -> dict[str, Any]:
+        with self._condition:
+            if self._running:
+                self._record(phase="unified_execution", caller_role=caller_role,
+                    operation="reuse_existing_execution", single_flight_role="waiter",
+                    service_instance_token=service_instance_token, result="waiting")
+                while self._running:
+                    self._condition.wait()
+                if self._error is not None:
+                    self._record(phase="unified_execution", caller_role=caller_role,
+                        operation="reuse_same_failure", single_flight_role="reuser",
+                        service_instance_token=service_instance_token, result="failure",
+                        exception_type=type(self._error).__name__)
+                    raise self._error
+                assert self._result is not None
+                self._record(phase="unified_execution", caller_role=caller_role,
+                    operation="reuse_existing_execution", single_flight_role="reuser",
+                    service_instance_token=service_instance_token, result="success")
+                return dict(self._result)
+            if self._completed:
+                if self._error is not None:
+                    self._record(phase="unified_execution", caller_role=caller_role,
+                        operation="reuse_same_failure", single_flight_role="reuser",
+                        service_instance_token=service_instance_token, result="failure",
+                        exception_type=type(self._error).__name__)
+                    raise self._error
+                assert self._result is not None
+                self._record(phase="unified_execution", caller_role=caller_role,
+                    operation="reuse_existing_execution", single_flight_role="reuser",
+                    service_instance_token=service_instance_token, result="success")
+                return dict(self._result)
+            self._running = True
+            self._record(phase="run_context", caller_role=caller_role, operation="create",
+                single_flight_role="owner", service_instance_token=service_instance_token,
+                result="started")
+        try:
+            result = dict(self._runner(strategy))
+        except BaseException as exc:
+            with self._condition:
+                self._error = exc
+                self._completed = True
+                self._running = False
+                self._record(phase="run_context", caller_role=caller_role, operation="create",
+                    single_flight_role="owner", service_instance_token=service_instance_token,
+                    result="failure", exception_type=type(exc).__name__,
+                    path_existed=Path(self._run_context_path).exists() if self._run_context_path else None)
+                self._condition.notify_all()
+            raise
+        with self._condition:
+            self._result = result
+            self._completed = True
+            self._running = False
+            self._record(phase="run_context", caller_role=caller_role, operation="create",
+                single_flight_role="owner", service_instance_token=service_instance_token,
+                result="success")
+            self._condition.notify_all()
+        return dict(result)
+
+    def __call__(self, strategy: str) -> dict[str, Any]:
+        return self.request(strategy, caller_role="execution_owner", service_instance_token="direct")
+
+
 class AITaskService:
     """Runs one ``ai_orchestrated`` task end to end."""
 
@@ -107,6 +222,8 @@ class AITaskService:
         run_dir: Path | str,
         static_runner: DeterministicRunner | None = None,
         dynamic_runner: DeterministicRunner | None = None,
+        dynamic_runner_with_strategy: Callable[[str], Mapping[str, Any]] | None = None,
+        unified_runner_with_strategy: Callable[[str], Mapping[str, Any]] | None = None,
         environment_probe: Callable[[], Mapping[str, Any]] | None = None,
         context_builder: AIContextBuilder | None = None,
     ) -> None:
@@ -114,12 +231,19 @@ class AITaskService:
         self._artifacts = RunArtifacts(run_dir)
         self._static_runner = static_runner
         self._dynamic_runner = dynamic_runner
+        self._dynamic_runner_with_strategy = dynamic_runner_with_strategy
+        self._unified_runner_with_strategy = unified_runner_with_strategy
+        self._effective_dynamic_strategy: str | None = None
+        # Recorded where the production tool boundary actually dispatches the
+        # resolved policy, rather than inferred by FullAnalysisSession.
+        self._executor_strategy_receipt: dict[str, str] | None = None
         self._environment_probe = environment_probe
         self._context = context_builder or AIContextBuilder()
         self._environment: dict[str, Any] | None = None
         # Cache of the report produced in-process so a later tool in the same
         # plan does not re-run an expensive pipeline.
         self._report_cache: dict[str, Any] | None = None
+        self._service_instance_token = uuid4().hex[:12]
 
     # -- public ---------------------------------------------------------
     def run(self, request: AIOrchestrationRequest) -> AIOrchestrationResult:
@@ -130,6 +254,54 @@ class AITaskService:
         )
         write_ai_artifacts(self._artifacts.run_dir, result)
         return result
+
+    def prepare_plan(self, request: AIOrchestrationRequest) -> PreparedPlan:
+        """Prepare exactly one plan without dispatching deterministic tools."""
+        return self._orchestrator.prepare_plan(request)
+
+    def execute_prepared_plan(
+        self,
+        prepared: PreparedPlan,
+        request: AIOrchestrationRequest,
+        effective_plan: AIPlan,
+        strategy_decision: DynamicStrategyDecision,
+    ) -> AIOrchestrationResult:
+        """Execute the externally gated plan using only the effective policy."""
+        self._effective_dynamic_strategy = strategy_decision.effective_strategy
+        self._executor_strategy_receipt = None
+        result = self._orchestrator.execute_prepared_plan(
+            prepared,
+            request=request,
+            execute_tool=self.execute_tool,
+            build_digest=lambda results: self.build_digest(request, results),
+            effective_plan=effective_plan,
+            strategy_decision=strategy_decision,
+        )
+        write_ai_artifacts(self._artifacts.run_dir, result)
+        return result
+
+    @property
+    def executor_strategy_receipt(self) -> dict[str, str] | None:
+        """Receipt emitted by the tool executor after it selects a branch."""
+        return dict(self._executor_strategy_receipt) if self._executor_strategy_receipt else None
+
+    def _run_unified_with_effective_strategy(self, caller_role: str) -> dict[str, Any]:
+        if not self._effective_dynamic_strategy:
+            raise RuntimeError("effective_dynamic_strategy_missing")
+        if self._unified_runner_with_strategy is None:
+            raise RuntimeError("unified_runner_missing")
+        strategy = self._effective_dynamic_strategy
+        runner = self._unified_runner_with_strategy
+        request = getattr(runner, "request", None)
+        report = dict(request(strategy, caller_role=caller_role, service_instance_token=self._service_instance_token) if callable(request) else runner(strategy))
+        receipt = report.get("executor_strategy_receipt")
+        if isinstance(receipt, Mapping):
+            self._executor_strategy_receipt = {
+                "executor_received_strategy": str(receipt.get("executor_received_strategy") or strategy),
+                "executor_execution_strategy": str(receipt.get("executor_execution_strategy") or strategy),
+                "executor_provenance_source": str(receipt.get("executor_provenance_source") or "unknown"),
+            }
+        return report
 
     # -- digest ---------------------------------------------------------
     def build_digest(
@@ -240,7 +412,7 @@ class AITaskService:
                 decision_summary="existing static artifact reused",
                 recommended_next_tools=["privacy_findings"],
             )
-        if self._static_runner is None:
+        if self._static_runner is None and self._unified_runner_with_strategy is None:
             return ToolCompactResult(
                 tool_name="static_analysis",
                 status="not_run",
@@ -248,7 +420,13 @@ class AITaskService:
                 limitations=["静态分析不可用"],
             )
         try:
-            report = dict(self._static_runner())
+            if self._report_cache is not None:
+                report = self._report_cache
+            elif self._unified_runner_with_strategy is not None:
+                report = self._run_unified_with_effective_strategy("static_consumer")
+            else:
+                assert self._static_runner is not None
+                report = dict(self._static_runner())
         except Exception as exc:
             return ToolCompactResult(
                 tool_name="static_analysis",
@@ -290,7 +468,11 @@ class AITaskService:
                 decision_summary="existing dynamic artifact reused",
                 recommended_next_tools=["traffic_analysis"],
             )
-        if self._dynamic_runner is None:
+        if (
+            self._dynamic_runner is None
+            and self._dynamic_runner_with_strategy is None
+            and self._unified_runner_with_strategy is None
+        ):
             return ToolCompactResult(
                 tool_name="dynamic_analysis",
                 status="not_run",
@@ -299,7 +481,21 @@ class AITaskService:
                 limitations=["动态分析不可用"],
             )
         try:
-            report = dict(self._dynamic_runner())
+            if self._report_cache is not None:
+                report = self._report_cache
+            elif self._unified_runner_with_strategy is not None:
+                report = self._run_unified_with_effective_strategy("dynamic_consumer")
+            elif self._dynamic_runner_with_strategy is not None:
+                if not self._effective_dynamic_strategy:
+                    raise RuntimeError("effective_dynamic_strategy_missing")
+                report = dict(
+                    self._dynamic_runner_with_strategy(
+                        self._effective_dynamic_strategy
+                    )
+                )
+            else:
+                assert self._dynamic_runner is not None
+                report = dict(self._dynamic_runner())
         except Exception as exc:
             return ToolCompactResult(
                 tool_name="dynamic_analysis",

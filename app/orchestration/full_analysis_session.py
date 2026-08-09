@@ -46,6 +46,7 @@ from app.ai.models import (
     AISynthesisStatus,
     EvidenceDigest,
     PlanStep,
+    PreparedPlan,
 )
 from app.ai.orchestrator import (
     AIOrchestrationRequest,
@@ -54,18 +55,26 @@ from app.ai.orchestrator import (
 
 from .cleanup_manager import (
     CleanupActions,
+    CleanupDiagnostic,
     CleanupManager,
     CleanupOutcome,
+    CleanupStep,
     ResourceOwnershipRegistry,
 )
 from .consent_checkpoint import (
     ConsentCheckpointService,
     ConsentCheckpointState,
 )
-from .device_lease import LeaseAcquireError, LeaseRegistry
+from .device_lease import DeviceLease, LeaseAcquireError, LeaseRegistry
 from .device_session import (
     DeviceSessionSnapshot,
     DeviceState,
+)
+from .dynamic_strategy import DynamicStrategyDecision, normalize_dynamic_strategy
+from .preflight_freshness import compare_preflight
+from .runtime_plan_validator import (
+    RuntimeCapabilities,
+    validate_plan_against_runtime_state,
 )
 
 # ---------------------------------------------------------------------------
@@ -176,6 +185,13 @@ class SessionTransition(BaseModel):
     consent: ConsentCheckpointState | None = None
     lease_released: bool = False
     failures: list[str] = Field(default_factory=list)
+    requested_strategy: str = ""
+    effective_strategy: str = ""
+    normalized: bool = False
+    normalization_reason: str | None = None
+    target_running: bool = False
+    preflight_changed: bool = False
+    runtime_validation_error_code: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +388,18 @@ class SessionEffects(Protocol):
         self, request: AIOrchestrationRequest
     ) -> AIOrchestrationResult: ...
 
+    def prepare_orchestration(
+        self, request: AIOrchestrationRequest
+    ) -> PreparedPlan: ...
+
+    def execute_prepared_orchestration(
+        self,
+        prepared: PreparedPlan,
+        request: AIOrchestrationRequest,
+        effective_plan: AIPlan,
+        strategy_decision: DynamicStrategyDecision,
+    ) -> AIOrchestrationResult: ...
+
     def enter_consent(self, task_id: str, run_id: str) -> ConsentCheckpointState: ...
 
     def wait_consent(self, task_id: str) -> ConsentCheckpointState: ...
@@ -449,6 +477,8 @@ class FullAnalysisSession:
     registry: ResourceOwnershipRegistry
     effects: "SessionEffects"
     run_dir: Any = None
+    dynamic_mode_policy: Literal["strict", "balanced", "attach_only"] = "balanced"
+    application_launch_allowed: bool = True
     # Internal trace.
     _state: SessionState = "queued"
     _events: list[SessionEvent] = field(default_factory=list)
@@ -461,6 +491,11 @@ class FullAnalysisSession:
     _consent_state: ConsentCheckpointState | None = None
     _lease_released: bool = False
     _plan_uses_dynamic: bool = False
+    _prepared: PreparedPlan | None = None
+    _fresh_snapshot: DeviceSessionSnapshot | None = None
+    _strategy_decision: DynamicStrategyDecision | None = None
+    _preflight_changed: bool = False
+    _runtime_validation_code: str | None = None
 
     # -- state machine -------------------------------------------------
     def _now(self) -> str:
@@ -515,8 +550,8 @@ class FullAnalysisSession:
         finally:
             if self._state != "cleanup":
                 self._transit("cleanup", "always run cleanup")
-            self._release_lease()
             self._run_cleanup()
+            self._release_lease()
             self._finalize_consent_clear()
 
         final_state: SessionState
@@ -532,9 +567,8 @@ class FullAnalysisSession:
         return self._finalize(outcome_failures)
 
     def _run_body(self, outcome_failures: list[str]) -> SessionState | None:
-        """The session flow. Returns an early terminal state, or ``None`` to
-        let :meth:`run` decide the final state. Never runs cleanup itself."""
-        # Phase preflight: capture snapshot (read-only).
+        """Run planning, runtime gates, execution, consent, then finalisation."""
+        # 1. Planning preflight is read-only and becomes the cleanup baseline.
         self._snapshot = self.effects.capture_snapshot(
             self.device_id, self.package_name
         )
@@ -542,6 +576,8 @@ class FullAnalysisSession:
         request = AIOrchestrationRequest(
             objective=self.objective,
             analysis_scope=self.strategy,
+            analysis_mode=self.strategy,
+            dynamic_mode_policy=self.dynamic_mode_policy,
             task_id=self.task_id,
             allow_dynamic=self.allow_dynamic,
             allow_network=self.allow_network,
@@ -549,64 +585,216 @@ class FullAnalysisSession:
             token_budget=self.token_budget,
             report_language=self.report_language,
             run_dir=self.run_dir,
+            orchestration_entrypoint="tasks_ai_orchestrated",
+            session_engine="FullAnalysisSession",
+            execution_pipeline_version="m7b",
         )
 
-        # Device-changing strategies take a lease and require the explicit
-        # confirmation gate (the Phase C confirmation word lives outside this
-        # module — the session only enforces that the gate was passed).
-        if self._needs_device():
+        prepare = getattr(self.effects, "prepare_orchestration", None)
+        execute_prepared = getattr(
+            self.effects, "execute_prepared_orchestration", None
+        )
+        # Compatibility: read-only modes may still use the old one-shot effect.
+        if self.strategy in {"static_only", "report_only"} and not (
+            callable(prepare) and callable(execute_prepared)
+        ):
+            self._orch_result = self.effects.run_orchestration(request)
+            self._adopt_result(self._orch_result)
+            self._transit("ai_synthesis", "AI final report composed")
+            return None
+
+        # 2. Planning/repair/fallback only. This interface executes no tool.
+        try:
+            if not callable(prepare) or not callable(execute_prepared):
+                raise RuntimeError("two_phase_orchestration_effects_missing")
+            self._prepared = prepare(request)
+            self._plan = self._prepared.plan
+            self._plan_build_path = (
+                "ai" if self._plan.generated_by == "ai" else "default"
+            )
+            try:
+                self.effects.notify_plan_built(self._plan, self._plan_build_path)
+            except BaseException:
+                pass
+        except BaseException as exc:
+            outcome_failures.append(f"planning_failed: {type(exc).__name__}")
+            self._transit("failed", "planning failed", error_code="planning_failed")
+            return "failed"
+
+        # 3. Execution preflight and freshness comparison happen after the
+        # planner and before the first state-changing tool.
+        fresh_capture = getattr(self.effects, "capture_fresh_snapshot", None)
+        self._fresh_snapshot = (
+            fresh_capture(self.device_id, self.package_name)
+            if callable(fresh_capture)
+            else self.effects.capture_snapshot(self.device_id, self.package_name)
+        )
+        freshness = compare_preflight(self._snapshot, self._fresh_snapshot)
+        self._preflight_changed = freshness.preflight_changed
+        if freshness.fatal:
+            self._runtime_validation_code = freshness.block_factor
+            outcome_failures.append(
+                f"runtime_validation_failed: {freshness.block_factor}"
+            )
+            self._transit(
+                "failed", "freshness gate blocked", error_code=freshness.block_factor
+            )
+            return "failed"
+
+        state = self._fresh_snapshot.initial_state
+        target_running = bool(
+            self.package_name and state.foreground_package == self.package_name
+        )
+        plan_references_traffic = any(
+            step.tool_name == "traffic_analysis" for step in self._plan.steps
+        )
+        native_bridge_detected = any(
+            "Native Bridge" in note
+            for note in self._fresh_snapshot.environment_notes
+        )
+        prepared_has_dynamic = any(
+            step.tool_name in _DEVICE_STATE_TOOLS for step in self._plan.steps
+        )
+        prospective_lease = None
+        if prepared_has_dynamic:
+            prospective_lease = self.lease.owner(self._snapshot.device_ref)
+            if prospective_lease is None:
+                prospective_lease = DeviceLease(device_key=self._snapshot.device_ref)
+
+        capabilities = RuntimeCapabilities(
+            device_online=state.online,
+            boot_id=state.boot_id,
+            package_installed=state.package_installed,
+            target_pids=([state.frida_server_pid or 1] if target_running else []),
+            foreground_package=state.foreground_package,
+            frida_server_present=state.frida_server_present,
+            frida_server_owned=state.frida_server_owned,
+            native_bridge_detected=native_bridge_detected,
+            http_proxy=state.http_proxy,
+        )
+
+        # 4. Normalize the dynamic policy before runtime validation. Analysis
+        # mode chooses the plan route; it is never a requested/effective policy.
+        self._strategy_decision = normalize_dynamic_strategy(
+            requested_strategy=self.dynamic_mode_policy,
+            requested_scope=self.strategy,
+            allow_dynamic=self.allow_dynamic,
+            allow_network=self.allow_network,
+            confirmed_tools=self.confirmed_tools,
+            target_running=target_running,
+            application_launch_allowed=self.application_launch_allowed,
+            plan_references_traffic=plan_references_traffic,
+            native_bridge_detected=native_bridge_detected,
+        )
+        # Runtime semantic validation sees the normalized execution policy.
+        runtime_validation = validate_plan_against_runtime_state(
+            self._plan,
+            preflight=self._snapshot,
+            capabilities=capabilities,
+            confirmation=None,
+            lease_state=prospective_lease,
+            requested_strategy=self._strategy_decision.requested_strategy,
+            effective_strategy=self._strategy_decision.effective_strategy,
+            allow_dynamic=self.allow_dynamic,
+            allow_network=self.allow_network,
+            confirmed_tools=self.confirmed_tools,
+            package_name=self.package_name,
+            application_launch_allowed=self.application_launch_allowed,
+            require_consent_checkpoint=False,
+            current_run_id=self.run_id,
+        )
+
+        if not runtime_validation.ok:
+            self._runtime_validation_code = runtime_validation.first_code
+            failure_prefix = (
+                "lease_acquire_failed"
+                if self._runtime_validation_code in {
+                    "lease_busy",
+                    "lease_held_by_other_run",
+                    "lease_stale_blocked",
+                }
+                else "runtime_validation_failed"
+            )
+            outcome_failures.append(
+                f"{failure_prefix}: {self._runtime_validation_code}"
+            )
+            self._transit(
+                "failed",
+                "runtime semantic gate blocked",
+                error_code=self._runtime_validation_code,
+            )
+            return "failed"
+
+        effective_scope = self._strategy_decision.effective_scope or self.strategy
+        effective_plan = self._effective_plan(
+            self._plan, effective_scope=effective_scope
+        )
+        self._plan = effective_plan
+        self._plan_uses_dynamic = any(
+            step.tool_name in _DEVICE_STATE_TOOLS for step in effective_plan.steps
+        )
+        if self._strategy_decision.blocked:
+            self._runtime_validation_code = self._strategy_decision.reason_code
+            outcome_failures.append(
+                f"runtime_validation_failed: {self._runtime_validation_code}"
+            )
+            self._transit(
+                "failed",
+                "strategy normalization blocked",
+                error_code=self._runtime_validation_code,
+            )
+            return "failed"
+
+        # 6. Explicit confirmation/lease/capability gates happen immediately
+        # before execution. Lease races are caught by acquire itself.
+        if self._plan_uses_dynamic:
             self._transit(
                 "awaiting_confirmation",
                 "device-state changes require explicit confirmation",
             )
-            device_key = (
-                self._snapshot.device_ref if self._snapshot else "__no_device__"
-            )
+            if not self.allow_dynamic or "dynamic_analysis" not in self.confirmed_tools:
+                self._runtime_validation_code = "dynamic_confirmation_missing"
+                outcome_failures.append(
+                    f"runtime_validation_failed: {self._runtime_validation_code}"
+                )
+                self._transit(
+                    "failed",
+                    "confirmation gate blocked",
+                    error_code=self._runtime_validation_code,
+                )
+                return "failed"
             try:
                 self.lease.acquire(
-                    device_key=device_key,
+                    device_key=self._snapshot.device_ref,
                     run_id=self.run_id,
                     task_id=self.task_id,
                 )
             except LeaseAcquireError as exc:
+                self._runtime_validation_code = exc.code
                 outcome_failures.append(f"lease_acquire_failed: {exc.code}")
-                self._transit(
-                    "failed", "lease unavailable", error_code=exc.code
-                )
+                self._transit("failed", "lease unavailable", error_code=exc.code)
                 return "failed"
             if self._cancelled():
-                self._transit("cancelled", "cancelled before device work")
                 return "cancelled"
 
-        # Execute the plan via the AI orchestrator (which enforces the
-        # constrained DAG, confirmation gate, <=1 repair, fallback, and
-        # per-stage caps internally).
-        self._transit("preparing_device", "executing deterministic steps")
+        # 7. Only this point can dispatch tools, using the validated plan.
+        self._transit("preparing_device", "executing validated effective plan")
         try:
-            self._orch_result = self.effects.run_orchestration(request)
-            if self._orch_result is not None:
-                self._plan = self._orch_result.plan
-                self._plan_build_path = (
-                    "ai"
-                    if self._orch_result.plan.generated_by == "ai"
-                    else "default"
-                )
-                self._plan_uses_dynamic = any(
-                    step.tool_name in _DEVICE_STATE_TOOLS
-                    for step in self._orch_result.plan.steps
-                )
-                try:
-                    self.effects.notify_plan_built(
-                        self._orch_result.plan, self._plan_build_path
-                    )
-                except BaseException:
-                    pass
-        except BaseException as exc:  # defensive: never leak stacks
+            self._orch_result = execute_prepared(
+                self._prepared,
+                request,
+                effective_plan,
+                self._strategy_decision,
+            )
+            self._adopt_result(self._orch_result)
+        except BaseException as exc:
             outcome_failures.append(
                 f"orchestration_failed: {type(exc).__name__}"
             )
             self._orch_result = None
 
+        # Consent remains a post-execution evidence checkpoint and is never
+        # created on a blocked runtime-gate path.
         if self._orch_result is not None and self._needs_consent():
             self._transit("dynamic_pre_consent", "awaiting manual consent")
             self._consent_state = self.effects.enter_consent(
@@ -620,15 +808,61 @@ class FullAnalysisSession:
                 self._consent_state is not None
                 and self._consent_state.status == "cancelled"
             ):
-                self._transit("cancelled", "consent cancelled by operator")
                 return "cancelled"
-            self._transit("dynamic_post_consent", "consent resolved")
+            consent_status = (
+                self._consent_state.status
+                if self._consent_state is not None
+                else "expired"
+            )
+            if consent_status == "awaiting":
+                outcome_failures.append("consent_checkpoint_unresolved")
+                self._transit(
+                    "failed",
+                    "consent checkpoint returned while still awaiting",
+                    error_code="consent_checkpoint_unresolved",
+                )
+                return "failed"
+            if consent_status == "expired":
+                outcome_failures.append("consent_checkpoint_expired")
+            self._transit(
+                "dynamic_post_consent",
+                f"consent {consent_status}",
+            )
 
         self._transit("ai_synthesis", "AI final report composed")
         return None
 
     # -- helpers -------------------------------------------------------
+    def _adopt_result(self, result: AIOrchestrationResult | None) -> None:
+        if result is None:
+            return
+        self._plan = result.plan
+        self._plan_build_path = (
+            "ai" if result.plan.generated_by == "ai" else "default"
+        )
+        self._plan_uses_dynamic = any(
+            step.tool_name in _DEVICE_STATE_TOOLS for step in result.plan.steps
+        )
+
+    def _effective_plan(self, plan: AIPlan, *, effective_scope: str) -> AIPlan:
+        """Narrow a prepared plan to the deterministic effective scope."""
+        allowed = _STRATEGY_STEPS.get(effective_scope, _STRATEGY_STEPS["static_only"])
+        steps = [
+            step
+            for step in plan.steps
+            if step.tool_name in allowed
+            and (self.allow_network or step.tool_name != "traffic_analysis")
+        ]
+        strategy = (
+            effective_scope
+            if effective_scope in _STRATEGY_STEPS
+            else "static_only"
+        )
+        return plan.model_copy(update={"strategy": strategy, "steps": steps})
+
     def _needs_device(self) -> bool:
+        if self._plan is not None:
+            return self._plan_uses_dynamic
         return self.allow_dynamic or self.strategy in {
             "dynamic_only",
             "full_analysis",
@@ -641,11 +875,37 @@ class FullAnalysisSession:
         if not self._snapshot:
             return
         device_key = self._snapshot.device_ref
+        before = self.lease.owner(device_key)
         try:
-            ok = self.lease.release(device_key=device_key, run_id=self.run_id)
-            self._lease_released = bool(ok)
+            action_result = self.lease.release(device_key=device_key, run_id=self.run_id)
         except BaseException:
-            self._lease_released = False
+            action_result = False
+        after = self.lease.owner(device_key)
+        self._lease_released = bool(action_result)
+        if self._cleanup_outcome is None:
+            return
+        if after is None:
+            verification, final, reason = "verified", "success", "lease_release_verified"
+        elif after.owner_run_id == self.run_id:
+            verification, final, reason = "present", "partial", "lease_still_owned"
+        else:
+            verification, final, reason = "present", "partial", "lease_owner_changed"
+        self._cleanup_outcome.verification_attempted = True
+        self._cleanup_outcome.diagnostics.append(CleanupDiagnostic(
+            resource_type="device_lease", identifier_hash="lease", owned_by_run=bool(before and before.owner_run_id == self.run_id),
+            cleanup_attempted=True, cleanup_action_result=action_result,
+            verification_attempted=True, verification_result=verification,
+            final_status=final, reason_code=reason,
+        ))
+        self._cleanup_outcome.steps.append(CleanupStep(
+            rule="release_lease", target_kind="device_lease", target_identity="lease",
+            ownership="owned_by_run", status="success" if final == "success" else "failed",
+            safe_message=reason,
+        ))
+        if final != "success":
+            self._cleanup_outcome.failures.append(reason)
+            if self._cleanup_outcome.status == "success":
+                self._cleanup_outcome.status = "partial"
 
     def _run_cleanup(self) -> None:
         if self._snapshot is None:
@@ -699,6 +959,28 @@ class FullAnalysisSession:
             consent=self._consent_state,
             lease_released=self._lease_released,
             failures=failures,
+            requested_strategy=(
+                self._strategy_decision.requested_strategy
+                if self._strategy_decision else ""
+            ),
+            effective_strategy=(
+                self._strategy_decision.effective_strategy
+                if self._strategy_decision else ""
+            ),
+            normalized=(
+                self._strategy_decision.normalized
+                if self._strategy_decision else False
+            ),
+            normalization_reason=(
+                self._strategy_decision.reason_code
+                if self._strategy_decision else None
+            ),
+            target_running=(
+                self._strategy_decision.target_running
+                if self._strategy_decision else False
+            ),
+            preflight_changed=self._preflight_changed,
+            runtime_validation_error_code=self._runtime_validation_code,
         )
 
 
@@ -718,6 +1000,8 @@ def verify_cleanup(outcome: CleanupOutcome | None) -> dict[str, Any]:
         return {"ok": False, "reason": "no cleanup outcome"}
     return {
         "ok": outcome.ok,
+        "status": outcome.status,
+        "verification_attempted": outcome.verification_attempted,
         "proxy_restore_attempted": outcome.proxy_restore_attempted,
         "proxy_restore_failed": outcome.proxy_restore_failed,
         "external_frida_touched": outcome.external_frida_touched,
@@ -755,6 +1039,10 @@ def build_full_analysis_acceptance(
     ):
         limitations.append(
             "consent UI was not reached; dynamic evidence is partial"
+        )
+    if transition.consent is not None and transition.consent.status == "expired":
+        limitations.append(
+            "operator consent checkpoint expired; dynamic evidence is partial"
         )
     if result is not None and result.status == "budget_exhausted":
         limitations.append(
@@ -802,3 +1090,4 @@ __all__ = [
     "execute_full_analysis_plan",
     "verify_cleanup",
 ]
+

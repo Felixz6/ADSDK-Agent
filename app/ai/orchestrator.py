@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Literal, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping, Sequence
 
 from pydantic import ValidationError
 
@@ -67,6 +67,7 @@ from .models import (
     AIErrorObservation,
     AIPlan,
     AIReport,
+    AIReportSource,
     AIRoundType,
     AIRuntimeDiagnostic,
     AISynthesisStatus,
@@ -76,10 +77,20 @@ from .models import (
     AIPerRoundUsage,
     EvidenceDigest,
     PlanStep,
+    PreparedPlan,
+    PlanValidationIssue,
+    PlanValidationRound,
     ToolCompactResult,
     ToolErrorDetail,
     TokenUsageSource,
 )
+from .plan_parser import ParseOutcome, PlanParseError, parse_plan_response
+from .plan_repair import (
+    build_plan_repair_contract,
+    repaired_plan_from,
+    revalidate_repaired,
+)
+from .plan_validator import PlanValidationResult, validate_plan
 from .provider import AIProvider, ProviderError, ProviderResponse, build_system_prompt
 from .report_composer import AIReportComposer
 from .tool_registry import (
@@ -89,6 +100,23 @@ from .tool_registry import (
     UnknownToolError,
     prioritize_steps,
 )
+# M7B (Section 十二) — deterministic dynamic-strategy normalization owns the
+# ``requested_strategy -> effective_strategy`` decision (Rules A–F). The
+# orchestrator records both on the runtime diagnostic so the acceptance
+# metrics can show when the AI requested ``dynamic_only`` but the runtime
+# normalized to ``attach_only`` (e.g. the target process was not running).
+#
+# Imported lazily at the call site (see ``AIOrchestrationRequest``-handling):
+# ``app.orchestration.dynamic_strategy`` is a leaf module, but the
+# ``app.orchestration`` package ``__init__`` eagerly imports
+# ``full_analysis_session``, which imports ``AIOrchestrationRequest`` back from
+# this module. A top-level ``from app.orchestration...`` import would therefore
+# trigger the package ``__init__`` mid-load and raise a circular import before
+# this module finishes initializing. ``DynamicStrategyDecision`` is only used
+# as a stringised type annotation here (``from __future__ import annotations``
+# is active), so a ``TYPE_CHECKING`` guard suffices for the type checker.
+if TYPE_CHECKING:
+    from app.orchestration.dynamic_strategy import DynamicStrategyDecision
 
 # The executor callable a host supplies for one tool.
 ToolExecutor = Callable[[str, dict[str, Any]], ToolCompactResult]
@@ -107,7 +135,10 @@ class AIOrchestrationRequest:
     """Everything the orchestrator needs for one AI task."""
 
     objective: str
-    analysis_scope: str = "static_only"
+    # Analysis routing is independent from the dynamic execution policy.
+    analysis_scope: str = "static_only"  # legacy alias for analysis_mode
+    analysis_mode: str | None = None
+    dynamic_mode_policy: str = "balanced"
     task_id: str | None = None
     allow_dynamic: bool = False
     allow_network: bool = False
@@ -115,6 +146,9 @@ class AIOrchestrationRequest:
     token_budget: int | None = None
     report_language: str = AI_REPORT_LANGUAGE
     run_dir: Path | None = None
+    orchestration_entrypoint: str = ""
+    session_engine: str = ""
+    execution_pipeline_version: str = ""
 
 
 @dataclass(slots=True)
@@ -202,6 +236,19 @@ class AIOrchestrator:
         self._diagnostic_errors: list[AIErrorObservation] = []
         self._diagnostic_rounds: list[AIPerRoundUsage] = []
         self._used_deterministic_report = False
+        # M7B (Section 八/九) — per-run plan-validation provenance accumulated by
+        # ``_plan`` and stamped onto AIRuntimeDiagnostic by ``_build_diagnostic``.
+        # Defaults are the safest values: a run is treated as a deterministic
+        # plan fallback with planning failed and no repair until ``_plan``
+        # observably proves otherwise. Secret-free: only codes/booleans/labels.
+        self._plan_source: Literal["ai", "repaired", "deterministic"] = (
+            "deterministic"
+        )
+        self._planning_failed: bool = False
+        self._deterministic_plan_fallback: bool = True
+        self._repair_attempted: bool = False
+        self._plan_validation_rounds: list[PlanValidationRound] = []
+        self._normalization_shape: dict[str, Any] = {}
 
     # -- public entry point ---------------------------------------------
     def run(
@@ -211,6 +258,17 @@ class AIOrchestrator:
         execute_tool: ToolExecutor,
         build_digest: Callable[[list[ToolCompactResult]], EvidenceDigest],
     ) -> AIOrchestrationResult:
+        """Compatibility wrapper for callers that do not need an outer gate."""
+        prepared = self.prepare_plan(request)
+        return self.execute_prepared_plan(
+            prepared,
+            request=request,
+            execute_tool=execute_tool,
+            build_digest=build_digest,
+        )
+
+    def prepare_plan(self, request: AIOrchestrationRequest) -> PreparedPlan:
+        """Build and validate a plan without executing any tool or side effect."""
         usage = AITokenUsage()
         trace = AIToolTrace()
         started = time.perf_counter()
@@ -219,13 +277,53 @@ class AIOrchestrator:
         self._diagnostic_errors = []
         self._diagnostic_rounds = []
         self._used_deterministic_report = False
-        model_attempted = False
-        deterministic_fallback = False
-
-        # 1. Availability gate. AI unavailable is a degradation, never a failure.
+        # M7B — reset per-run plan-validation provenance for the same reason.
+        self._plan_source = "deterministic"
+        self._planning_failed = False
+        self._deterministic_plan_fallback = True
+        self._repair_attempted = False
+        self._plan_validation_rounds = []
+        self._normalization_shape = {}
+        # Availability is represented in the prepared value; execution keeps
+        # the legacy deterministic degradation behavior.
         unavailable = self._unavailable_reason()
         if unavailable is not None:
             plan = self._default_plan(request, reason=unavailable)
+            return PreparedPlan(
+                plan=plan,
+                usage=usage,
+                trace=trace,
+                unavailable_reason=unavailable,
+                started_monotonic=started,
+            )
+
+        plan, plan_error = self._plan(request, usage)
+        return PreparedPlan(
+            plan=plan,
+            usage=usage,
+            trace=trace,
+            plan_error=plan_error,
+            started_monotonic=started,
+        )
+
+    def execute_prepared_plan(
+        self,
+        prepared: PreparedPlan,
+        *,
+        request: AIOrchestrationRequest,
+        execute_tool: ToolExecutor,
+        build_digest: Callable[[list[ToolCompactResult]], EvidenceDigest],
+        effective_plan: AIPlan | None = None,
+        strategy_decision: DynamicStrategyDecision | None = None,
+    ) -> AIOrchestrationResult:
+        """Execute the externally-gated effective plan and compose its report."""
+        usage = prepared.usage.model_copy(deep=True)
+        trace = prepared.trace.model_copy(deep=True)
+        started = prepared.started_monotonic or time.perf_counter()
+        plan = effective_plan or prepared.plan
+        unavailable = prepared.unavailable_reason
+
+        if unavailable is not None:
             results, trace = self._execute_plan(
                 plan, request, execute_tool, trace, usage
             )
@@ -265,10 +363,8 @@ class AIOrchestrator:
                 diagnostic=diagnostic,
             )
 
-        # 2. Planning phase (model round 1, with at most one structured repair).
-        plan, plan_error = self._plan(request, usage)
-
-        # 3. Tool execution against the whitelist only.
+        # Tool execution begins only in this second phase.  FullAnalysisSession
+        # supplies ``effective_plan`` after freshness/runtime/strategy gates.
         results, trace = self._execute_plan(plan, request, execute_tool, trace, usage)
 
         # 4. Deterministic digest — code-built, never AI-authored.
@@ -276,7 +372,7 @@ class AIOrchestrator:
 
         # 5. Reporting phase (model round 2), unless budget/cancel stop us.
         report, status, error_code = self._compose_report(
-            request, digest, usage, plan_error
+            request, digest, usage, prepared.plan_error
         )
 
         # Track whether we ever attempted a model call vs degrading immediately.
@@ -288,6 +384,28 @@ class AIOrchestrator:
         # point of use, so budget_exhausted (a template) and a validated model
         # report carrying a plan_error are both classified correctly.
         deterministic_fallback = self._used_deterministic_report
+        # M7B (Section 十二) — deterministic dynamic-strategy normalization owns
+        # the ``requested_strategy -> effective_strategy`` decision. The AI may
+        # *request* ``dynamic_only`` but the operator's flags (allow_dynamic /
+        # allow_network / confirmed_tools) deterministic gate it. We record
+        # BOTH on the runtime artifact so the acceptance metrics can show the
+        # gap between intent and what actually executed. ``target_running`` is a
+        # preflight fact not available to the orchestrator in Phase A; the
+        # default ``False`` only matters under attach_only policy (Rule E), which
+        # the static_only default path never reaches, so it is safe here.
+        # Lazy import: see the ``TYPE_CHECKING`` note near the top of file.
+        if strategy_decision is None:
+            from app.orchestration.dynamic_strategy import normalize_dynamic_strategy
+
+            strategy_decision = normalize_dynamic_strategy(
+                requested_strategy=request.dynamic_mode_policy,
+                requested_scope=_normalize_strategy(request.analysis_mode or request.analysis_scope),
+                allow_dynamic=request.allow_dynamic,
+                allow_network=request.allow_network,
+                confirmed_tools=request.confirmed_tools,
+                target_running=False,
+            )
+        report_source = report.report_source
 
         usage = usage.model_copy(
             update={
@@ -312,6 +430,8 @@ class AIOrchestrator:
             usage,
             outcome=outcome,
             deterministic_fallback=deterministic_fallback,
+            strategy_decision=strategy_decision,
+            report_source=report_source,
         )
         return AIOrchestrationResult(
             status=status,
@@ -355,58 +475,379 @@ class AIOrchestrator:
         request: AIOrchestrationRequest,
         usage: AITokenUsage,
     ) -> tuple[AIPlan, str | None]:
-        strategy = _normalize_strategy(request.analysis_scope)
+        strategy = _normalize_strategy(request.analysis_mode or request.analysis_scope)
         allow_dynamic = request.allow_dynamic
+        confirmed_tools = frozenset(request.confirmed_tools)
         # report_only has a fixed, fully deterministic tool set: there is nothing
         # for the model to choose. Skipping the planning round keeps the normal
         # path at a single billed call (M6C low-token acceptance) without
         # changing which tools run.
         if strategy == "report_only":
+            self._record_plan_round(
+                stage="plan", parse_code=None, issues=[], succeeded=False
+            )
+            self._mark_deterministic_plan(reason="report_only")
             return self._default_plan(request, reason="report_only"), None
         catalogue = self._registry.prompt_catalogue(
             strategy, allow_dynamic=allow_dynamic
         )
         prompt = self._planning_prompt(request, strategy, catalogue)
 
-        last_error: str | None = None
-        # One initial attempt plus at most one structured repair, still bounded
-        # by AI_MAX_ROUNDS overall.
-        for attempt in range(2):
-            if usage.model_round_count >= self._max_rounds:
-                return self._default_plan(request, reason="max_rounds"), "max_rounds"
-            if self._cancelled():
-                return self._default_plan(request, reason="cancelled"), "cancelled"
-            try:
-                response = self._call_model(
-                    prompt if attempt == 0 else _repair_prompt(prompt, last_error),
-                    catalogue,
-                    usage,
-                    stage=("plan" if attempt == 0 else "repair"),
-                    request=request,
-                )
-            except ProviderError as exc:
-                # Provider failure: one retry only when retryable, then default.
-                self._record_provider_error(
-                    exc,
-                    stage="plan" if attempt == 0 else "repair",
-                    attempt=attempt + 1,
-                    finalized=not (attempt == 0 and exc.retryable),
-                )
-                if attempt == 0 and exc.retryable:
-                    last_error = exc.code
-                    continue
+        # ----- Pre-round budget gate -----
+        # No model round left to spend -> fall straight to the deterministic
+        # plan. This guard runs before any billed call so a budget-exhausted
+        # orchestrator never attempts planning.
+        if usage.model_round_count >= self._max_rounds:
+            self._record_plan_round(
+                stage="plan", parse_code="max_rounds", issues=[], succeeded=False
+            )
+            self._mark_deterministic_plan(reason="max_rounds")
+            return self._default_plan(request, reason="max_rounds"), "max_rounds"
+        if self._cancelled():
+            self._record_plan_round(
+                stage="plan", parse_code="cancelled", issues=[], succeeded=False
+            )
+            self._mark_deterministic_plan(reason="cancelled")
+            return self._default_plan(request, reason="cancelled"), "cancelled"
+
+        # ----- Round 1: initial plan attempt -----
+        # A transient transport failure (timeout / 5xx) is NOT a validation
+        # problem: the model returned no parseable payload, so the structured
+        # repair module (which builds from a PlanValidationResult) cannot
+        # reason about it. The honest response to a *retryable* transport
+        # error is one retry of the same planning prompt — the deterministic
+        # fallback only fires when the retry is also unavailable or fails.
+        response, round1_provider_error = self._plan_model_round(
+            prompt, catalogue, request, usage, stage="plan", attempt=1
+        )
+        if round1_provider_error is not None:
+            exc = round1_provider_error
+            retryable = bool(exc.retryable)
+            # Is there a model round left to retry the *same* plan prompt?
+            can_retry = (
+                retryable
+                and usage.model_round_count < self._max_rounds
+                and not self._cancelled()
+            )
+            if not can_retry:
+                self._mark_deterministic_plan(reason=exc.code)
                 return self._default_plan(request, reason=exc.code), exc.code
-            try:
-                plan = _validate_plan(
-                    response.content_json, self._registry, strategy, allow_dynamic
-                )
-            except (ValidationError, ValueError, UnknownToolError,
-                    InvalidToolArgumentsError) as exc:
-                last_error = _error_text(exc)
-                continue
-            plan = self._apply_call_budget(plan)
+            # Retry once. The first observation is recorded as not-finalized;
+            # the retry's outcome (another provider error, parse failure, or a
+            # validated plan) decides provenance.
+            round1 = self._retry_plan_round(
+                prompt, catalogue, request, usage, strategy,
+                allow_dynamic, confirmed_tools,
+            )
+            if round1 is not None and round1.ok:
+                plan = self._apply_call_budget(round1.plan)  # type: ignore[arg-type]
+                self._plan_source = "ai"
+                self._planning_failed = False
+                self._deterministic_plan_fallback = False
+                return plan.model_copy(update={"generated_by": "ai"}), None
+            # The retry did not yield a usable plan. Fall back honestly. The
+            # second provider error round ("repair") is already recorded by
+            # _retry_plan_round as finalized; if the retry produced a parsed
+            # but invalid plan we drop to deterministic with planning_failed.
+            self._mark_deterministic_plan(reason="planning_failed")
+            return self._default_plan(request, reason="planning_failed"), "planning_failed"
+
+        round1 = self._attempt_plan_round(
+            response, strategy, allow_dynamic, confirmed_tools, stage="plan"
+        )
+        if round1.ok:
+            plan = self._apply_call_budget(round1.plan)  # type: ignore[arg-type]
+            self._plan_source = "ai"
+            self._planning_failed = False
+            self._deterministic_plan_fallback = False
             return plan.model_copy(update={"generated_by": "ai"}), None
+
+        # ----- Round 2: at most one structured repair -----
+        repair_prompt = build_plan_repair_contract(
+            registry=self._registry,
+            strategy=strategy,
+            allow_dynamic=allow_dynamic,
+            confirmed_tools=confirmed_tools,
+            rejected_plan=round1.payload,
+            validation=round1.validation,
+            max_steps=self._max_tool_calls,
+            budget_rounds_remaining=self._max_rounds - usage.model_round_count,
+        )
+        # No model round left or no repair contract: fall back deterministically.
+        if repair_prompt is None or usage.model_round_count >= self._max_rounds:
+            self._record_plan_round(
+                stage="repair",
+                parse_code="no_repair_budget",
+                issues=round1.validation.issues,
+                succeeded=False,
+            )
+            self._mark_deterministic_plan(reason="planning_failed")
+            return self._default_plan(request, reason="planning_failed"), "planning_failed"
+        if self._cancelled():
+            self._record_plan_round(
+                stage="repair",
+                parse_code="cancelled",
+                issues=round1.validation.issues,
+                succeeded=False,
+            )
+            self._mark_deterministic_plan(reason="cancelled")
+            return self._default_plan(request, reason="cancelled"), "cancelled"
+
+        self._repair_attempted = True
+        try:
+            repair_response = self._call_model(
+                repair_prompt, catalogue, usage, stage="repair", request=request
+            )
+        except ProviderError as exc:
+            self._record_provider_error(
+                exc, stage="repair", attempt=2, finalized=True
+            )
+            self._record_plan_round(
+                stage="repair",
+                parse_code=exc.code,
+                issues=round1.validation.issues,
+                succeeded=False,
+            )
+            self._mark_deterministic_plan(reason="planning_failed")
+            return self._default_plan(request, reason="planning_failed"), "planning_failed"
+
+        round2 = self._attempt_plan_round(
+            repair_response,
+            strategy,
+            allow_dynamic,
+            confirmed_tools,
+            stage="repair",
+            previous_issues=round1.validation.issues,
+        )
+        if round2.ok:
+            plan = self._apply_call_budget(round2.plan)  # type: ignore[arg-type]
+            self._plan_source = "repaired"
+            self._planning_failed = False
+            self._deterministic_plan_fallback = False
+            return plan.model_copy(update={"generated_by": "ai"}), None
+        self._mark_deterministic_plan(reason="planning_failed")
         return self._default_plan(request, reason="planning_failed"), "planning_failed"
+
+    @dataclass(slots=True)
+    class _PlanRoundOutcome:
+        """Internal unpacking of one parse+validate attempt (never persisted)."""
+
+        ok: bool
+        plan: AIPlan | None
+        validation: PlanValidationResult
+        payload: Mapping[str, Any] | None
+
+    def _attempt_plan_round(
+        self,
+        response: ProviderResponse,
+        strategy: str,
+        allow_dynamic: bool,
+        confirmed_tools: frozenset[str],
+        *,
+        stage: Literal["plan", "repair"],
+        previous_issues: list[PlanValidationIssue] | None = None,
+    ) -> "_PlanRoundOutcome":
+        """Parse + validate one model response (plan or repair), recording the
+        structured ``PlanValidationRound`` diagnostics. Returns the result plus
+        the parsed payload (kept only in-memory for the repair contract)."""
+        parsed = parse_plan_response(response.content_json)
+        if not parsed.ok:
+            raw_root = response.content_json
+            self._normalization_shape = {
+                "root_type": (
+                    "object" if isinstance(raw_root, dict)
+                    else "array" if isinstance(raw_root, list)
+                    else type(raw_root).__name__
+                ),
+                "schema_version_present": False,
+                "steps_present": False,
+                "steps_type": "missing",
+                "normalization_eligible": False,
+                "normalization_applied": False,
+                "normalization_reason_code": "root_type_invalid",
+                "safe_wrapper_detected": False,
+                "top_level_field_count": 0,
+            }
+            parse_issue = PlanValidationIssue(
+                code=parsed.error or "parse_failed",
+                stage="parse",
+                json_path=parsed.json_path,
+            )
+            self._record_plan_round(
+                stage=stage,
+                parse_code=parse_issue.code,
+                issues=[parse_issue],
+                succeeded=False,
+            )
+            return AIOrchestrator._PlanRoundOutcome(
+                ok=False,
+                plan=None,
+                validation=PlanValidationResult(
+                    plan=None, issues=[parse_issue], parse_code=parse_issue.code
+                ),
+                payload=parsed.value,
+            )
+        payload = parsed.value or {}
+        # Deterministic envelope-only repair happens before schema validation.
+        # It can only fill an absent schema marker; steps, arguments, consent,
+        # paths and capability flags are left byte-for-byte untouched.
+        normalization = _normalize_plan_envelope(payload)
+        self._normalization_shape = {
+            "root_type": "object",
+            "schema_version_present": "schema_version" in payload,
+            "steps_present": "steps" in payload,
+            "steps_type": (
+                "list" if isinstance(payload.get("steps"), list)
+                else type(payload.get("steps")).__name__ if "steps" in payload
+                else "missing"
+            ),
+            "normalization_eligible": (
+                "schema_version" not in payload
+                and isinstance(payload.get("steps"), list)
+            ),
+            "normalization_applied": normalization.applied,
+            "normalization_reason_code": (
+                normalization.reason_codes[0]
+                if normalization.reason_codes else (
+                    "steps_missing" if "steps" not in payload else
+                    "steps_type_invalid" if not isinstance(payload.get("steps"), list) else
+                    None
+                )
+            ),
+            "safe_wrapper_detected": False,
+            "top_level_field_count": len(payload),
+        }
+        payload = normalization.payload
+        validation = validate_plan(
+            payload,
+            registry=self._registry,
+            strategy=strategy,
+            allow_dynamic=allow_dynamic,
+            confirmed_tools=confirmed_tools,
+        )
+        if not validation.ok or validation.plan is None:
+            issues = list(validation.issues) or list(previous_issues or [])
+            self._record_plan_round(
+                stage=stage,
+                parse_code=parsed.error,
+                issues=issues,
+                succeeded=False,
+            )
+            return AIOrchestrator._PlanRoundOutcome(
+                ok=False,
+                plan=None,
+                validation=PlanValidationResult(
+                    plan=None,
+                    issues=issues,
+                    parse_code=parsed.error,
+                ),
+                payload=payload,
+            )
+        self._record_plan_round(
+            stage=stage,
+            parse_code=None,
+            issues=[],
+            succeeded=True,
+        )
+        return AIOrchestrator._PlanRoundOutcome(
+            ok=True,
+            plan=validation.plan,
+            validation=validation,
+            payload=payload,
+        )
+
+    def _record_plan_round(
+        self,
+        *,
+        stage: Literal["plan", "repair"],
+        parse_code: str | None,
+        issues: list[PlanValidationIssue],
+        succeeded: bool,
+    ) -> None:
+        """Append one structured plan-validation round (ai-plan-validation-v2)."""
+        self._plan_validation_rounds.append(
+            PlanValidationRound(
+                round_index=len(self._plan_validation_rounds),
+                stage=stage,
+                parse_code=parse_code,
+                issues=list(issues),
+                succeeded=succeeded,
+            )
+        )
+
+    def _mark_deterministic_plan(self, *, reason: str) -> None:
+        """Set plan provenance to the deterministic-fallback outcome."""
+        self._plan_source = "deterministic"
+        self._planning_failed = True
+        self._deterministic_plan_fallback = True
+        # ``reason`` is recorded only locally for readability; the outcome is
+        # fully expressed by plan_source/planning_failed/fallback booleans.
+        _ = reason
+
+    def _plan_model_round(
+        self,
+        prompt: str,
+        catalogue: list[dict[str, Any]],
+        request: AIOrchestrationRequest,
+        usage: AITokenUsage,
+        *,
+        stage: AIRoundType,
+        attempt: int,
+    ) -> tuple[ProviderResponse | None, ProviderError | None]:
+        """One model call for a planning round.
+
+        Returns ``(response, None)`` on success or ``(None, exc)`` on a
+        :class:`ProviderError`. The caller owns the retryability decision: a
+        *retryable* transport error on the initial round earns one retry of the
+        same prompt (a bare transport blip is not a validation problem the
+        repair module can address), while a non-retryable error immediately
+        finalizes as the deterministic fallback.
+        """
+
+        try:
+            response = self._call_model(
+                prompt, catalogue, usage, stage=stage, request=request
+            )
+        except ProviderError as exc:
+            self._record_provider_error(
+                exc, stage=stage, attempt=max(1, attempt),
+                finalized=not bool(exc.retryable),
+            )
+            return None, exc
+        return response, None
+
+    def _retry_plan_round(
+        self,
+        prompt: str,
+        catalogue: list[dict[str, Any]],
+        request: AIOrchestrationRequest,
+        usage: AITokenUsage,
+        strategy: str,
+        allow_dynamic: bool,
+        confirmed_tools: frozenset[str],
+    ) -> "_PlanRoundOutcome | None":
+        """Retry the same planning prompt once after a transient transport blip.
+
+        The retry is recorded as the second attempt (``stage="repair"``,
+        ``attempt=2``) for diagnostics honesty. On a second provider error it
+        records the finalized observation and returns ``None`` so the caller
+        falls back deterministically. On a parse/validate failure it returns the
+        ``_PlanRoundOutcome`` (``ok=False``) carrying the validation issues.
+        """
+
+        retry_response, retry_error = self._plan_model_round(
+            prompt, catalogue, request, usage, stage="repair", attempt=2
+        )
+        if retry_error is not None:
+            # The retry also failed at transport; finalize honestly.
+            return None
+        return self._attempt_plan_round(
+            retry_response,  # type: ignore[arg-type]
+            strategy,
+            allow_dynamic,
+            confirmed_tools,
+            stage="repair",
+        )
 
     def _default_plan(
         self,
@@ -416,7 +857,7 @@ class AIOrchestrator:
     ) -> AIPlan:
         """Code-generated fallback plan. Never authored by the model."""
 
-        strategy = _normalize_strategy(request.analysis_scope)
+        strategy = _normalize_strategy(request.analysis_mode or request.analysis_scope)
         names = list(DEFAULT_PLAN_STEPS.get(strategy, DEFAULT_PLAN_STEPS["static_only"]))
         if not request.allow_dynamic:
             names = [
@@ -646,7 +1087,9 @@ class AIOrchestrator:
             except ValidationError:
                 self._cache.expire(cache_key)
             else:
-                outcome = self._composer.validate(cached_report, digest)
+                outcome = self._composer.validate(
+                    cached_report, digest, report_source="ai_validated"
+                )
                 if outcome.usable:
                     _mark_usage(usage, cache_hit=True)
                     status = _report_status(plan_error, outcome.usable)
@@ -697,13 +1140,16 @@ class AIOrchestrator:
                         reason="ai_report_invalid",
                     )
                     return report, "partial", "ai_report_invalid"
+                report_source: AIReportSource = "ai_repaired"
             else:
                 report = self._deterministic_report(
                     digest, status="partial", usage=usage, reason="ai_report_invalid"
                 )
                 return report, "partial", "ai_report_invalid"
+        else:
+            report_source = "ai_validated"
 
-        outcome = self._composer.validate(candidate, digest)
+        outcome = self._composer.validate(candidate, digest, report_source=report_source)
         if not outcome.usable:
             report = self._deterministic_report(
                 digest,
@@ -905,7 +1351,28 @@ class AIOrchestrator:
         outcome: Literal["ok", "degraded", "failed", "disabled"],
         deterministic_fallback: bool,
         disabled: bool = False,
+        strategy_decision: DynamicStrategyDecision | None = None,
+        report_source: AIReportSource = "deterministic_fallback",
     ) -> AIRuntimeDiagnostic:
+        requested = ""
+        effective = ""
+        normalized = False
+        normalization_reason: str | None = None
+        target_running = False
+        if strategy_decision is not None:
+            requested = strategy_decision.requested_strategy
+            effective = strategy_decision.effective_strategy
+            normalized = strategy_decision.normalized
+            normalization_reason = strategy_decision.reason_code
+            target_running = strategy_decision.target_running
+        validation_issue = next(
+            (
+                issue
+                for round_ in self._plan_validation_rounds
+                for issue in round_.issues
+            ),
+            None,
+        )
         return AIRuntimeDiagnostic(
             task_id=request.task_id or "",
             model=getattr(self._provider, "model", "") if self._provider else "",
@@ -921,6 +1388,37 @@ class AIOrchestrator:
             cache_enabled=self._cache.enabled,
             deterministic_fallback=deterministic_fallback,
             outcome=outcome,
+            # M7B plan-validation provenance accumulated by ``_plan``; on the
+            # availability-gate path these stay at their safest defaults
+            # (deterministic / planning failed / no repair).
+            plan_source=self._plan_source,
+            planning_failed=self._planning_failed,
+            deterministic_plan_fallback=self._deterministic_plan_fallback,
+            requested_strategy=requested,
+            effective_strategy=effective,
+            repair_attempted=self._repair_attempted,
+            repair_succeeded=self._plan_source == "repaired",
+            fallback_used=self._deterministic_plan_fallback,
+            validation_error_code=(validation_issue.code if validation_issue else None),
+            validation_json_path=(validation_issue.json_path if validation_issue else None),
+            normalized=normalized,
+            normalization_reason=normalization_reason,
+            target_running=target_running,
+            preflight_changed=False,
+            root_type=str(self._normalization_shape.get("root_type", "unknown")),
+            schema_version_present=bool(self._normalization_shape.get("schema_version_present", False)),
+            steps_present=bool(self._normalization_shape.get("steps_present", False)),
+            steps_type=str(self._normalization_shape.get("steps_type", "missing")),
+            normalization_eligible=bool(self._normalization_shape.get("normalization_eligible", False)),
+            normalization_applied=bool(self._normalization_shape.get("normalization_applied", False)),
+            normalization_reason_code=self._normalization_shape.get("normalization_reason_code"),
+            safe_wrapper_detected=bool(self._normalization_shape.get("safe_wrapper_detected", False)),
+            top_level_field_count=int(self._normalization_shape.get("top_level_field_count", 0)),
+            analysis_mode=request.analysis_mode or request.analysis_scope,
+            orchestration_entrypoint=request.orchestration_entrypoint,
+            session_engine=request.session_engine,
+            execution_pipeline_version=request.execution_pipeline_version,
+            report_source=report_source,
             generated_at=_utc_now_iso(),
         )
 
@@ -942,7 +1440,7 @@ class AIOrchestrator:
     ) -> str | None:
         if not self._cache.enabled or self._provider is None:
             return None
-        strategy = _normalize_strategy(request.analysis_scope)
+        strategy = _normalize_strategy(request.analysis_mode or request.analysis_scope)
         return AIResponseCache.make_key(
             provider=getattr(self._provider, "name", "unknown"),
             model=getattr(self._provider, "model", "unknown"),
@@ -1199,6 +1697,23 @@ def write_ai_artifacts(run_dir: Path, result: AIOrchestrationResult) -> dict[str
             pass
     return written
 
+
+
+@dataclass(frozen=True, slots=True)
+class _EnvelopeNormalization:
+    payload: dict[str, Any]
+    applied: bool
+    fields: tuple[str, ...]
+    reason_codes: tuple[str, ...]
+
+
+def _normalize_plan_envelope(payload: Mapping[str, Any]) -> _EnvelopeNormalization:
+    """Whitelist-only structural normalization before Pydantic validation."""
+    normalized = dict(payload)
+    if "schema_version" not in normalized and isinstance(normalized.get("steps"), list):
+        normalized["schema_version"] = "ai-plan-v1"
+        return _EnvelopeNormalization(normalized, True, ("schema_version",), ("missing_schema_version",))
+    return _EnvelopeNormalization(normalized, False, (), ())
 
 __all__ = [
     "AIOrchestrationRequest",

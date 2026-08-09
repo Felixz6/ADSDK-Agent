@@ -216,6 +216,7 @@ def run_dynamic_collection(
     clock: CollectionClock | None = None,
     stimulate_ui: Callable[[], Any] | None = None,
     resume_without_frida: Callable[[], Any] | None = None,
+    on_frida_started: Callable[[FridaCollectionSession], None] | None = None,
 ) -> DynamicCollectionResult:
     """Run one spawn-gated collection and always clean its owned sessions.
 
@@ -302,6 +303,7 @@ def run_dynamic_collection(
             result.outcomes["mitm_ready"] = "skipped"
 
         frida_attempted = True
+        frida_start_notified = False
         try:
             started = frida_session.start()
             if started is False:
@@ -310,9 +312,26 @@ def run_dynamic_collection(
                     "frida_spawn_failed",
                     "Frida session failed to start",
                 )
+            # This is the first boundary at which a Frida session's exact
+            # target PID is available.  Notify the caller before later hook
+            # phases may fail so its finalizer can still own the lifecycle.
+            if on_frida_started is not None:
+                on_frida_started(frida_session)
+                frida_start_notified = True
             result.outcomes["frida_spawn"] = "success"
             result.outcomes["frida_script_load"] = "success"
         except BaseException as exc:
+            # Spawn/attach may expose a real target PID and then fail before
+            # ``start`` returns.  Ownership must be registered before this
+            # failure is classified so final cleanup still sees that PID.
+            if (
+                on_frida_started is not None
+                and not frida_start_notified
+                and isinstance(getattr(frida_session, "pid", None), int)
+                and getattr(frida_session, "pid") > 0
+            ):
+                on_frida_started(frida_session)
+                frida_start_notified = True
             session_error_code = str(
                 getattr(frida_session, "error_code", None)
                 or getattr(exc, "code", None)

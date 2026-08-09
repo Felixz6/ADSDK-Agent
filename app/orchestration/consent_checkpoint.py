@@ -30,6 +30,7 @@ not depend on wall-clock sleeps.
 from __future__ import annotations
 
 import threading
+import time
 from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -186,6 +187,21 @@ class ConsentCheckpointService:
                 event.set()
             return state.model_copy()
 
+    def expire(self, *, task_id: str) -> ConsentCheckpointState | None:
+        """Bound an operator wait without ever manufacturing confirmation."""
+        lock = self._lock_for(task_id)
+        with lock:
+            state = self._states.get(task_id)
+            if state is None:
+                return None
+            if state.status == "awaiting":
+                state.status = "expired"
+                state.resolved_at = self._clock()
+            event = self._events.get(task_id)
+            if event is not None:
+                event.set()
+            return state.model_copy()
+
     def wait(
         self,
         *,
@@ -194,6 +210,8 @@ class ConsentCheckpointService:
         poll_interval: float = 0.2,
         is_cancelled: Callable[[], bool] | None = None,
         heartbeat: Callable[[], None] | None = None,
+        timeout_seconds: float | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> ConsentCheckpointState:
         """Block (cooperatively, via injected sleep) until resolved or
         cancelled. A cancellation callback short-circuits the wait. No
@@ -211,6 +229,11 @@ class ConsentCheckpointService:
             if event is None:
                 event = threading.Event()
                 self._events[task_id] = event
+        deadline = (
+            monotonic() + max(0.0, float(timeout_seconds))
+            if timeout_seconds is not None
+            else None
+        )
         while True:
             if event.is_set():
                 break
@@ -222,6 +245,9 @@ class ConsentCheckpointService:
                     heartbeat()
                 except BaseException:
                     pass
+            if deadline is not None and monotonic() >= deadline:
+                self.expire(task_id=task_id)
+                break
             if sleep is None:
                 # No sleeper injected: spin once then break (test path).
                 break

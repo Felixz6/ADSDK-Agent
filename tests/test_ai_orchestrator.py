@@ -13,6 +13,7 @@ import json
 import logging
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -43,6 +44,9 @@ from app.ai.provider import (
     OpenAICompatibleProvider,
     ProviderError,
 )
+from app.ai.secret_store import SecretStore
+from app.ai.settings_service import AISettingsService
+from app.ai.settings_store import AISettingsStore
 from app.ai.report_composer import AIReportComposer, FIXED_DISCLAIMER
 from app.ai.tool_registry import (
     AIToolRegistry,
@@ -61,6 +65,27 @@ from app.tasks.models import TaskCreateRequest
 # ---------------------------------------------------------------------------
 def _no_cache() -> AIResponseCache:
     return AIResponseCache(enabled=False)
+
+
+def _install_local_ai_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, model: str = "test-model"
+) -> AISettingsService:
+    """Install an isolated, configured service without external I/O."""
+
+    store = AISettingsStore(
+        settings_path=tmp_path / "ai-settings.json",
+        secret_store=SecretStore(tmp_path / "ai-secret.bin"),
+    )
+    service = AISettingsService(store)
+    service.save_settings({
+        "enabled": True,
+        "provider": "openai_compatible",
+        "base_url": "https://example.invalid/v1",
+        "model": model,
+        "api_key": "sk-test-status-only",
+    })
+    monkeypatch.setattr(main_module, "ai_settings_service", service)
+    return service
 
 
 def _tool(name: str, **kwargs: Any) -> ToolCompactResult:
@@ -597,16 +622,11 @@ def test_api_key_never_enters_logs(caplog: pytest.LogCaptureFixture):
     assert secret not in repr(provider)
 
 
-def test_api_key_never_enters_ai_status_response(monkeypatch: pytest.MonkeyPatch):
-    secret = "sk-response-leak-check"
-    monkeypatch.setattr(main_module, "AI_ENABLED", True)
-    monkeypatch.setattr(
-        main_module,
-        "build_ai_provider",
-        lambda: OpenAICompatibleProvider(
-            base_url="https://example.invalid/v1", api_key=secret, model="m"
-        ),
-    )
+def test_api_key_never_enters_ai_status_response(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    secret = "sk-test-status-only"
+    _install_local_ai_settings(monkeypatch, tmp_path)
     client = TestClient(main_module.app)
     response = client.get("/ai/status")
 
@@ -1069,7 +1089,18 @@ def test_model_failure_retries_at_most_once_without_looping():
 # ---------------------------------------------------------------------------
 # API surface.
 # ---------------------------------------------------------------------------
-def test_ai_status_endpoint_defaults_to_disabled():
+def test_ai_status_endpoint_defaults_to_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    for name in ("AI_ENABLED", "AI_PROVIDER", "AI_BASE_URL", "AI_MODEL", "AI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    store = AISettingsStore(
+        settings_path=tmp_path / "ai-settings.json",
+        secret_store=SecretStore(tmp_path / "ai-secret.bin"),
+    )
+    service = AISettingsService(store)
+    service.save_settings({"enabled": False})
+    monkeypatch.setattr(main_module, "ai_settings_service", service)
     client = TestClient(main_module.app)
     payload = client.get("/ai/status").json()
 
@@ -1079,7 +1110,9 @@ def test_ai_status_endpoint_defaults_to_disabled():
     assert payload["reachable"] is None
 
 
-def test_ai_status_does_not_probe_provider_by_default(monkeypatch: pytest.MonkeyPatch):
+def test_ai_status_does_not_probe_provider_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
     probes = {"count": 0}
 
     class ProbeCountingProvider(MockAIProvider):
@@ -1087,8 +1120,8 @@ def test_ai_status_does_not_probe_provider_by_default(monkeypatch: pytest.Monkey
             probes["count"] += 1
             return True, None
 
-    monkeypatch.setattr(main_module, "AI_ENABLED", True)
-    monkeypatch.setattr(main_module, "build_ai_provider", ProbeCountingProvider)
+    service = _install_local_ai_settings(monkeypatch, tmp_path)
+    monkeypatch.setattr(service.factory, "current", lambda: ProbeCountingProvider())
     client = TestClient(main_module.app)
 
     client.get("/ai/status")
@@ -1170,6 +1203,92 @@ def test_ai_orchestrated_task_type_is_accepted_and_persisted(tmp_path: Path):
     assert captured[0]["objective"] == "检查隐私风险"
     assert captured[0]["analysis_scope"] == "static_only"
     assert service.get(created.id).status == "completed"
+    service.shutdown()
+
+
+def test_post_tasks_full_analysis_routes_only_through_m7b_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repository = TaskRepository(tmp_path / "state" / "tasks.db")
+    repository.initialize()
+    service = TaskService(repository, max_workers=1)
+    calls = {"session": 0, "legacy_dynamic": 0}
+    captured: dict[str, Any] = {}
+
+    def run_session(session):
+        calls["session"] += 1
+        captured["session"] = session
+        captured["effects"] = session.effects
+        assert isinstance(
+            session.effects, main_module.ProductionSessionEffects
+        )
+        return SimpleNamespace(
+            final_state="completed",
+            runtime_validation_error_code=None,
+            failures=[],
+            requested_strategy="attach_only",
+            effective_strategy="balanced",
+            normalized=True,
+            normalization_reason="attach_target_missing_launch_allowed",
+            target_running=False,
+            preflight_changed=False,
+            cleanup=None,
+            consent=None,
+        )
+
+    def legacy_dynamic(_request):
+        calls["legacy_dynamic"] += 1
+        raise AssertionError("legacy direct dynamic path executed")
+
+    monkeypatch.setattr(main_module, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(
+        main_module,
+        "resolve_effective_ai_settings",
+        lambda _store: {
+            "enabled": False,
+            "allow_dynamic_tools": True,
+            "report_language": "zh-CN",
+        },
+    )
+    monkeypatch.setattr(main_module.FullAnalysisSession, "run", run_session)
+    monkeypatch.setattr(main_module, "dynamic_analyze", legacy_dynamic)
+    monkeypatch.setattr(main_module, "task_service", service)
+    monkeypatch.setattr(main_module, "task_repository", repository)
+    service.set_runner(main_module._run_persisted_task)
+    client = TestClient(main_module.app)
+
+    response = client.post(
+        "/tasks",
+        json={
+            "task_type": "ai_orchestrated",
+            "apk_path": "D:/samples/app.apk",
+            "analysis_scope": "full_analysis",
+            "analysis_mode": "full_analysis",
+            "dynamic_mode_policy": "attach_only",
+            "allow_dynamic": True,
+            "allow_network": True,
+            "confirmed_tools": ["dynamic_analysis"],
+        },
+    )
+    assert response.status_code == 202
+    task_id = response.json()["id"]
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        if service.get(task_id).status in {"completed", "failed", "cancelled"}:
+            break
+        time.sleep(0.01)
+
+    assert service.get(task_id).status == "completed"
+    assert calls == {"session": 1, "legacy_dynamic": 0}
+    session = captured["session"]
+    assert session.strategy == "full_analysis"
+    assert session.dynamic_mode_policy == "attach_only"
+    assert session.run_id == task_id
+    assert captured["effects"].run_id == task_id
+    report = json.loads((tmp_path / "runs" / task_id / "report.json").read_text(encoding="utf-8"))
+    assert report["analysis_mode"] == "full_analysis"
+    assert report["requested_strategy"] == "attach_only"
+    assert report["effective_strategy"] == "balanced"
     service.shutdown()
 
 
