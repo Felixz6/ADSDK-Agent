@@ -115,7 +115,11 @@ from app.orchestration.consent_checkpoint import (
     ConsentCheckpointState,
 )
 from app.orchestration.device_lease import LeaseRegistry
-from app.orchestration.cleanup_manager import ResourceOwnershipRegistry
+from app.orchestration.cleanup_manager import (
+    CleanupDiagnostic,
+    CleanupStep,
+    ResourceOwnershipRegistry,
+)
 from app.orchestration.device_session import (
     DeviceSessionSnapshot,
     DeviceState,
@@ -124,6 +128,7 @@ from app.orchestration.device_session import (
 from app.orchestration.full_analysis_session import FullAnalysisSession
 from app.orchestration.production_session_effects import ProductionSessionEffects
 from app.services import AITaskService, TaskService
+from app.services.ai_task_service import RunScopedExecution
 from app.services.application_name_service import (
     repair_historical_application_names,
 )
@@ -2729,6 +2734,13 @@ def _dynamic_analyze_v2(
         "fallback_path": list(getattr(frida_session, "fallback_path", [])),
         "launch_timing": dict(getattr(frida_session, "launch_timing", {})),
     }
+    # This is emitted at the executor that selected the real Frida branch,
+    # rather than inferred later by the orchestration/session layer.
+    executor_strategy_receipt = {
+        "executor_received_strategy": req.dynamic_mode_policy,
+        "executor_execution_strategy": selected_mode.value,
+        "executor_provenance_source": "app.main._dynamic_analyze_v2.execution_decision",
+    }
     evidence_quality = build_evidence_quality(
         selected_mode,
         transport_trusted=hook_evidence_available,
@@ -2948,6 +2960,7 @@ def _dynamic_analyze_v2(
             "collection_status": collection_result.status,
             "dynamic_validation_level": dynamic_validation_level,
             "dynamic_execution": execution_decision,
+            "executor_strategy_receipt": executor_strategy_receipt,
             "environment_capabilities": environment_capabilities,
             "dynamic_task_result": task_result,
             "dynamic_evidence_quality": evidence_quality.model_dump(mode="json"),
@@ -3200,6 +3213,10 @@ def _run_m7b_full_analysis_session(
             )
         return report
 
+    # This object is task-scoped and injected into every consumer.  It is the
+    # execution ownership boundary, not an instance-local AITaskService cache.
+    run_execution = RunScopedExecution(unified_runner)
+
     def stop_registered_frida_session(ref: str) -> bool:
         stopper = frida_session_stoppers.pop(ref, None)
         if not callable(stopper):
@@ -3210,7 +3227,7 @@ def _run_m7b_full_analysis_session(
     ai_service = AITaskService(
         orchestrator=orchestrator,
         run_dir=run_dir,
-        unified_runner_with_strategy=unified_runner,
+        unified_runner_with_strategy=run_execution,
         environment_probe=lambda: env_check(payload.get("device_id")),
     )
     effects = ProductionSessionEffects(
@@ -3272,6 +3289,36 @@ def _run_m7b_full_analysis_session(
         )
         if before_snapshot is not None else None
     )
+    postflight_target_pid = _m7b_target_pid(
+        str(payload.get("device_id") or ""), str(payload.get("package_name") or "")
+    )
+    preflight_target_absent = bool(
+        before_snapshot is not None
+        and before_snapshot.initial_state.foreground_package != payload.get("package_name")
+    )
+    unclassified_new_target = (
+        postflight_target_pid is not None
+        and preflight_target_absent
+        and registry.get("app_process", str(postflight_target_pid)) is None
+    )
+    if unclassified_new_target and transition.cleanup is not None:
+        # Never claim or kill an unexplained process, but never report a clean
+        # aggregate when a target absent at preflight appeared during this run.
+        transition.cleanup.status = "partial"
+        transition.cleanup.failures.append("unclassified_new_target")
+        transition.cleanup.verification_attempted = True
+        transition.cleanup.steps.append(CleanupStep(
+            rule="ownership_accounting_completeness", target_kind="app_process",
+            target_identity=str(postflight_target_pid), ownership="external",
+            status="failed", safe_message="unclassified_new_target",
+        ))
+        transition.cleanup.diagnostics.append(CleanupDiagnostic(
+            resource_type="app_process", identifier_hash=str(postflight_target_pid),
+            preexisting=False, owned_by_run=False, created_by_run=False,
+            cleanup_attempted=False, verification_attempted=True,
+            verification_result="present", final_status="partial",
+            reason_code="unclassified_new_target",
+        ))
     report = report_holder.get("value", {
         "schema_version": SCHEMA_VERSION,
         "run_id": task.id,
@@ -3297,6 +3344,10 @@ def _run_m7b_full_analysis_session(
         }
         for item in registry.all_items()
     ]
+    report["unclassified_new_target"] = (
+        {"pid": postflight_target_pid, "reason_code": "unclassified_new_target"}
+        if unclassified_new_target else None
+    )
     report["cleanup_final_verification"] = (
         transition.cleanup.model_dump(mode="json")
         if transition.cleanup is not None else None
@@ -3374,6 +3425,14 @@ def _capture_m7b_device_snapshot(
         initial_state=state,
         capture_kind=capture_kind,
     )
+
+
+def _m7b_target_pid(device_id: str, package_name: str) -> int | None:
+    if not device_id or not package_name:
+        return None
+    result = run_cmd(["adb", "-s", device_id, "shell", "pidof", package_name])
+    value = str(result.get("stdout") or "").strip().split()
+    return int(value[0]) if value and value[0].isdigit() and int(value[0]) > 0 else None
 
 
 def _adb_cleanup_action(device: str, args: list[str]) -> bool:

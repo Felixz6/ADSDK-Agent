@@ -17,6 +17,7 @@ No analysis logic is re-implemented here. ``static_analysis`` and
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 from typing import Any, Callable, Mapping
 
 from app.ai.context_builder import (
@@ -100,6 +101,49 @@ class RunArtifacts:
         ]
 
 
+class RunScopedExecution:
+    """One run-owned deterministic execution, shared by every consumer.
+
+    This is deliberately supplied by the production session rather than held
+    in a process-global map: its lifetime is the task/run and it also shares an
+    in-flight failure with later consumers.
+    """
+
+    def __init__(self, runner: Callable[[str], Mapping[str, Any]]) -> None:
+        self._runner = runner
+        self._condition = threading.Condition()
+        self._running = False
+        self._completed = False
+        self._result: dict[str, Any] | None = None
+        self._error: BaseException | None = None
+
+    def __call__(self, strategy: str) -> dict[str, Any]:
+        with self._condition:
+            while self._running:
+                self._condition.wait()
+            if self._completed:
+                if self._error is not None:
+                    raise self._error
+                assert self._result is not None
+                return dict(self._result)
+            self._running = True
+        try:
+            result = dict(self._runner(strategy))
+        except BaseException as exc:
+            with self._condition:
+                self._error = exc
+                self._completed = True
+                self._running = False
+                self._condition.notify_all()
+            raise
+        with self._condition:
+            self._result = result
+            self._completed = True
+            self._running = False
+            self._condition.notify_all()
+        return dict(result)
+
+
 class AITaskService:
     """Runs one ``ai_orchestrated`` task end to end."""
 
@@ -179,17 +223,13 @@ class AITaskService:
             raise RuntimeError("unified_runner_missing")
         strategy = self._effective_dynamic_strategy
         report = dict(self._unified_runner_with_strategy(strategy))
-        # This is deliberately adjacent to the actual runner invocation.  It
-        # proves the strategy passed to and selected by the executor boundary.
-        self._executor_strategy_receipt = {
-            "executor_received_strategy": strategy,
-            "executor_execution_strategy": str(
-                report.get("execution_decision", {}).get("policy", strategy)
-                if isinstance(report.get("execution_decision"), Mapping)
-                else strategy
-            ),
-            "executor_provenance_source": "AITaskService.unified_runner_with_strategy",
-        }
+        receipt = report.get("executor_strategy_receipt")
+        if isinstance(receipt, Mapping):
+            self._executor_strategy_receipt = {
+                "executor_received_strategy": str(receipt.get("executor_received_strategy") or strategy),
+                "executor_execution_strategy": str(receipt.get("executor_execution_strategy") or strategy),
+                "executor_provenance_source": str(receipt.get("executor_provenance_source") or "unknown"),
+            }
         return report
 
     # -- digest ---------------------------------------------------------

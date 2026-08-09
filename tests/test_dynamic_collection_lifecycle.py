@@ -176,6 +176,37 @@ def test_started_callback_receives_exact_pid_before_later_hook_failure() -> None
     assert result.status == "failed"
 
 
+def test_started_callback_receives_pid_when_start_raises_after_spawn() -> None:
+    """Spawn may allocate a target PID before Frida reports attach failure."""
+    DynamicCollectionConfig, run_dynamic_collection = _import_collection_api()
+    calls: list[str] = []
+    registered: list[int] = []
+
+    class SpawnedButAttachFailed(FakeFridaSession):
+        pid = 26189
+
+        def start(self) -> None:
+            super().start()
+            raise RuntimeError("Frida could not attach to spawned process")
+
+    result = run_dynamic_collection(
+        frida_session=SpawnedButAttachFailed(calls),
+        mitm_session=None,
+        config=DynamicCollectionConfig(
+            consent_after_seconds=None,
+            pre_consent_seconds=0,
+            post_consent_seconds=0,
+            enable_traffic=False,
+        ),
+        emit_control_event=lambda _event: None,
+        on_frida_started=lambda session: registered.append(session.pid),
+        clock=FakeClock(),
+    )
+
+    assert registered == [26189]
+    assert result.status == "failed"
+
+
 def test_post_resume_crash_preserves_resume_success_and_fails_stability_gate() -> None:
     DynamicCollectionConfig, run_dynamic_collection = _import_collection_api()
     calls: list[str] = []
