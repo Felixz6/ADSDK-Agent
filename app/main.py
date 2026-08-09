@@ -3262,6 +3262,10 @@ def _run_m7b_full_analysis_session(
         read_proxy_action=_read_device_proxy,
         resource_present_action=_m7b_resource_present,
         resource_identity_matches_action=_m7b_resource_identity_matches,
+        force_stop_package_action=lambda device, package: _adb_cleanup_action(
+            device, ["shell", "am", "force-stop", package]
+        ),
+        consent_wait_seconds=M7A_CONSENT_WAIT_SECONDS,
     )
     session = FullAnalysisSession(
         task_id=task.id,
@@ -3358,6 +3362,10 @@ def _run_m7b_full_analysis_session(
     report["cleanup_final_verification"] = (
         transition.cleanup.model_dump(mode="json")
         if transition.cleanup is not None else None
+    )
+    report["consent_checkpoint"] = (
+        transition.consent.model_dump(mode="json")
+        if transition.consent is not None else None
     )
     before_helpers = set(before_snapshot.initial_state.frida_helper_pids) if before_snapshot else set()
     after_helpers = (
@@ -3479,6 +3487,24 @@ def _device_process_command(device: str, pid: int) -> str | None:
     return str(result.get("stdout") or "").replace("\x00", " ").strip() or None
 
 
+def _device_package_pids(device: str, package_name: str) -> list[int] | None:
+    """Return every live package PID; ``None`` means the probe itself failed."""
+    if not device or not package_name:
+        return None
+    result = run_cmd(
+        ["adb", "-s", device, "shell", "pidof", package_name]
+    )
+    stdout = str(result.get("stdout") or "").strip()
+    stderr = str(result.get("stderr") or "").strip()
+    if result.get("returncode") != 0 and stderr:
+        return None
+    return [
+        int(value)
+        for value in stdout.split()
+        if value.isdigit() and int(value) > 0
+    ]
+
+
 def _host_process_command(pid: int) -> str | None:
     if pid <= 0:
         return None
@@ -3497,7 +3523,16 @@ def _host_process_command(pid: int) -> str | None:
 
 def _m7b_resource_present(kind: str, detail: dict[str, Any]) -> bool | None:
     pid = int(detail.get("pid") or -1)
-    if kind in {"app_process", "frida_server", "frida_helper"}:
+    if kind == "app_process":
+        device = str(detail.get("device_id") or "")
+        package_name = str(detail.get("expected_command_token") or "")
+        package_pids = _device_package_pids(device, package_name)
+        if package_pids is None:
+            return None
+        # Package-level verification catches PID replacement/respawn after an
+        # exact owned-PID action instead of declaring false success.
+        return bool(package_pids)
+    if kind in {"frida_server", "frida_helper"}:
         return _device_process_command(str(detail.get("device_id") or ""), pid) is not None
     if kind == "mitm_process":
         return _host_process_command(pid) is not None

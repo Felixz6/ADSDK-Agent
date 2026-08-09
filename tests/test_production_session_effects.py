@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import threading
+import time
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from app.orchestration.cleanup_manager import CleanupManager, ResourceOwnershipRegistry
+from app.orchestration.consent_checkpoint import ConsentCheckpointService
 from app.orchestration.device_session import DeviceSessionSnapshot, DeviceState
 from app.orchestration.production_session_effects import ProductionSessionEffects
 
@@ -33,7 +38,7 @@ class _Consent:
     def enter(self, *, task_id: str, run_id: str) -> Any:
         return SimpleNamespace(task_id=task_id, run_id=run_id, status="pending")
 
-    def wait(self, *, task_id: str, is_cancelled: Any) -> Any:
+    def wait(self, *, task_id: str, is_cancelled: Any, **_kwargs: Any) -> Any:
         return SimpleNamespace(task_id=task_id, status="cancelled" if is_cancelled() else "resolved")
 
 
@@ -122,3 +127,36 @@ def test_production_effects_cleanup_verifies_residual_and_retries_once() -> None
     assert diagnostic.verification_result == "verified"
     assert diagnostic.final_status == "success"
     assert outcome.status == "success"
+
+
+def test_production_consent_wait_remains_addressable_until_operator_confirms() -> None:
+    service = ConsentCheckpointService(clock=lambda: "2026-08-08T08:00:00Z")
+    effects = _effects(
+        consent_service=service,
+        consent_wait_seconds=2.0,
+        consent_sleep=lambda delay: time.sleep(min(delay, 0.005)),
+    )
+    service.enter(task_id="task-1", run_id="run-1")
+    result: list[Any] = []
+    waiter = threading.Thread(target=lambda: result.append(effects.wait_consent("task-1")))
+    waiter.start()
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        state = service.state("task-1")
+        if state is not None and state.status == "awaiting":
+            break
+        time.sleep(0.001)
+    else:
+        pytest.fail("checkpoint never became addressable")
+
+    confirmed = service.resolve(task_id="task-1", action="confirmed")
+    duplicate = service.resolve(task_id="task-1", action="confirmed")
+    waiter.join(1.0)
+
+    assert not waiter.is_alive()
+    assert confirmed.status == duplicate.status == "confirmed"
+    assert len(result) == 1 and result[0].status == "confirmed"
+    assert result[0].resolved_by_action == "confirmed"
+    service.clear("task-1")
+    assert service.state("task-1") is None

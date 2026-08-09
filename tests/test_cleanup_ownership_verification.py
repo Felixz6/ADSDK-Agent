@@ -32,6 +32,30 @@ class FakeActions:
     def read_proxy(self, device): return self.proxy
 
 
+class PackageActions(FakeActions):
+    def __init__(self, *, package_states, exact_result=False):
+        super().__init__()
+        self.package_states = iter(package_states)
+        self.exact_result = exact_result
+        self.force_stops = []
+
+    def resource_present(self, kind, detail):
+        if kind == "app_process":
+            return next(self.package_states)
+        return super().resource_present(kind, detail)
+
+    def resource_identity_matches(self, kind, detail):
+        return kind != "app_process" or bool(detail.get("expected_command_token"))
+
+    def kill_pid(self, device, pid):
+        self.calls.append(("app_process", pid))
+        return self.exact_result
+
+    def force_stop_package(self, device, package_name):
+        self.force_stops.append((device, package_name))
+        return True
+
+
 def snapshot(proxy=":null"):
     return DeviceSessionSnapshot(run_id="run", device_ref="masked", captured_at="t",
         initial_state=DeviceState(http_proxy=proxy))
@@ -75,6 +99,98 @@ def test_target_remaining_after_bounded_retry_is_not_success():
     assert outcome.status == "partial"
     assert outcome.diagnostics[0].reason_code == "target_process_still_running"
     assert len(actions.calls) == 2
+
+
+def test_owned_run_created_target_uses_one_bounded_package_fallback():
+    reg = ResourceOwnershipRegistry()
+    reg.mark_owned(
+        "app_process",
+        "target",
+        pid=100,
+        expected_command_token="com.phoenix.read",
+        preexisting=False,
+        created_by_run=True,
+    )
+    actions = PackageActions(package_states=[True, False], exact_result=False)
+
+    outcome = run(reg, actions)
+
+    assert actions.calls == [("app_process", 100)]
+    assert actions.force_stops == [("TARGET", "com.phoenix.read")]
+    assert outcome.status == "success"
+    assert outcome.diagnostics[0].verification_result == "verified"
+    assert outcome.diagnostics[0].retry_attempted is True
+
+
+def test_package_respawn_after_exact_kill_is_detected_by_final_verification():
+    reg = ResourceOwnershipRegistry()
+    reg.mark_owned(
+        "app_process",
+        "target",
+        pid=100,
+        expected_command_token="com.phoenix.read",
+        preexisting=False,
+        created_by_run=True,
+    )
+    # The first True represents replacement PID 101 after exact PID 100 was
+    # killed.  The second True proves it remained after the bounded force-stop.
+    actions = PackageActions(package_states=[True, True], exact_result=True)
+
+    outcome = run(reg, actions)
+
+    assert actions.force_stops == [("TARGET", "com.phoenix.read")]
+    assert outcome.status == "partial"
+    assert outcome.diagnostics[0].verification_result == "present"
+    assert outcome.diagnostics[0].reason_code == "target_process_still_running"
+
+
+def test_preexisting_external_target_is_never_force_stopped():
+    reg = ResourceOwnershipRegistry()
+    reg.mark_external(
+        "app_process",
+        "external-target",
+        pid=202,
+        expected_command_token="com.phoenix.read",
+        preexisting=True,
+        created_by_run=False,
+    )
+    actions = PackageActions(package_states=[], exact_result=False)
+
+    outcome = run(reg, actions)
+
+    assert actions.calls == []
+    assert actions.force_stops == []
+    assert outcome.status == "success"
+
+
+def test_production_target_probe_detects_replacement_package_pid(monkeypatch):
+    import app.main as main_module
+
+    commands = []
+    results = iter(
+        [
+            {"returncode": 0, "stdout": "101\n", "stderr": ""},
+            {"returncode": 1, "stdout": "", "stderr": ""},
+        ]
+    )
+
+    def fake_run_cmd(command, **_kwargs):
+        commands.append(command)
+        return next(results)
+
+    monkeypatch.setattr(main_module, "run_cmd", fake_run_cmd)
+    detail = {
+        "pid": 100,
+        "device_id": "DEVICE",
+        "expected_command_token": "com.phoenix.read",
+    }
+
+    assert main_module._m7b_resource_present("app_process", detail) is True
+    assert main_module._m7b_resource_present("app_process", detail) is False
+    assert commands == [
+        ["adb", "-s", "DEVICE", "shell", "pidof", "com.phoenix.read"],
+        ["adb", "-s", "DEVICE", "shell", "pidof", "com.phoenix.read"],
+    ]
 
 
 def test_owned_frida_helper_and_ports_must_disappear():

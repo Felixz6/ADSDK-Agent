@@ -809,7 +809,25 @@ class FullAnalysisSession:
                 and self._consent_state.status == "cancelled"
             ):
                 return "cancelled"
-            self._transit("dynamic_post_consent", "consent resolved")
+            consent_status = (
+                self._consent_state.status
+                if self._consent_state is not None
+                else "expired"
+            )
+            if consent_status == "awaiting":
+                outcome_failures.append("consent_checkpoint_unresolved")
+                self._transit(
+                    "failed",
+                    "consent checkpoint returned while still awaiting",
+                    error_code="consent_checkpoint_unresolved",
+                )
+                return "failed"
+            if consent_status == "expired":
+                outcome_failures.append("consent_checkpoint_expired")
+            self._transit(
+                "dynamic_post_consent",
+                f"consent {consent_status}",
+            )
 
         self._transit("ai_synthesis", "AI final report composed")
         return None
@@ -1021,6 +1039,10 @@ def build_full_analysis_acceptance(
     ):
         limitations.append(
             "consent UI was not reached; dynamic evidence is partial"
+        )
+    if transition.consent is not None and transition.consent.status == "expired":
+        limitations.append(
+            "operator consent checkpoint expired; dynamic evidence is partial"
         )
     if result is not None and result.status == "budget_exhausted":
         limitations.append(
