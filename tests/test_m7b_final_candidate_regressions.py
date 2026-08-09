@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
-from app.services.ai_task_service import AITaskService
+import pytest
+
+from app.services.ai_task_service import AITaskService, RunScopedExecution
 
 
 class _UnusedOrchestrator:
@@ -21,6 +24,11 @@ def test_unified_runner_context_is_claimed_once_when_static_then_dynamic(tmp_pat
             "status": "success",
             "dynamic_events": [],
             "execution_decision": {"policy": strategy},
+            "executor_strategy_receipt": {
+                "executor_received_strategy": strategy,
+                "executor_execution_strategy": "attach_existing",
+                "executor_provenance_source": "real_executor",
+            },
         }
 
     service = AITaskService(
@@ -38,8 +46,8 @@ def test_unified_runner_context_is_claimed_once_when_static_then_dynamic(tmp_pat
     assert calls == ["balanced"]
     assert service.executor_strategy_receipt == {
         "executor_received_strategy": "balanced",
-        "executor_execution_strategy": "balanced",
-        "executor_provenance_source": "AITaskService.unified_runner_with_strategy",
+        "executor_execution_strategy": "attach_existing",
+        "executor_provenance_source": "real_executor",
     }
 
 
@@ -48,3 +56,44 @@ def test_real_proxy_endpoint_is_not_canonicalized_to_none() -> None:
 
     assert _proxy_semantic(":null") == _proxy_semantic("null") == ""
     assert _proxy_semantic("127.0.0.1:8080") == "127.0.0.1:8080"
+
+
+def test_run_scoped_execution_single_flights_across_service_instances(tmp_path: Path) -> None:
+    calls: list[str] = []
+    entered = threading.Event()
+    release = threading.Event()
+
+    def runner(strategy: str) -> dict[str, object]:
+        calls.append(strategy)
+        entered.set()
+        assert release.wait(2)
+        return {"status": "success", "dynamic_events": []}
+
+    execution = RunScopedExecution(runner)
+    first = AITaskService(orchestrator=_UnusedOrchestrator(), run_dir=tmp_path / "r", unified_runner_with_strategy=execution)  # type: ignore[arg-type]
+    second = AITaskService(orchestrator=_UnusedOrchestrator(), run_dir=tmp_path / "r", unified_runner_with_strategy=execution)  # type: ignore[arg-type]
+    first._effective_dynamic_strategy = second._effective_dynamic_strategy = "balanced"
+    results: list[object] = []
+    threads = [threading.Thread(target=lambda: results.append(first.execute_tool("static_analysis", {}))), threading.Thread(target=lambda: results.append(second.execute_tool("dynamic_analysis", {})))]
+    for thread in threads: thread.start()
+    assert entered.wait(1)
+    release.set()
+    for thread in threads: thread.join(2)
+    assert len(results) == 2
+    assert calls == ["balanced"]
+
+
+def test_run_scoped_execution_shares_first_exception() -> None:
+    calls = 0
+
+    def runner(_strategy: str) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("first execution failed")
+
+    execution = RunScopedExecution(runner)
+    with pytest.raises(RuntimeError, match="first execution failed"):
+        execution("balanced")
+    with pytest.raises(RuntimeError, match="first execution failed"):
+        execution("balanced")
+    assert calls == 1
