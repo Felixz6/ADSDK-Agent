@@ -19,6 +19,9 @@ from __future__ import annotations
 from pathlib import Path
 import threading
 from typing import Any, Callable, Mapping
+from uuid import uuid4
+
+from app.core.artifacts import atomic_write_json
 
 from app.ai.context_builder import (
     AIContextBuilder,
@@ -109,24 +112,79 @@ class RunScopedExecution:
     in-flight failure with later consumers.
     """
 
-    def __init__(self, runner: Callable[[str], Mapping[str, Any]]) -> None:
+    def __init__(
+        self,
+        runner: Callable[[str], Mapping[str, Any]],
+        *,
+        task_id: str = "",
+        run_context_path: Path | str | None = None,
+        diagnostics_path: Path | str | None = None,
+    ) -> None:
         self._runner = runner
         self._condition = threading.Condition()
         self._running = False
         self._completed = False
         self._result: dict[str, Any] | None = None
         self._error: BaseException | None = None
+        self._task_id = task_id
+        self._run_context_path = str(run_context_path or "")
+        self._diagnostics_path = Path(diagnostics_path) if diagnostics_path else None
+        self._events: list[dict[str, Any]] = []
+        self._sequence = 0
 
-    def __call__(self, strategy: str) -> dict[str, Any]:
+    def _record(self, **event: Any) -> None:
+        self._sequence += 1
+        payload = {
+            "claim_sequence": self._sequence,
+            "run_id": self._task_id,
+            "task_id": self._task_id,
+            "execution_scope_id": self._task_id,
+            "single_flight_key": self._task_id,
+            "run_context_path": self._run_context_path,
+            **event,
+        }
+        self._events.append(payload)
+        if self._diagnostics_path is not None:
+            atomic_write_json(self._diagnostics_path, {
+                "schema_version": "run-context-claims-v1",
+                "events": self._events,
+            })
+
+    def request(self, strategy: str, *, caller_role: str, service_instance_token: str) -> dict[str, Any]:
         with self._condition:
-            while self._running:
-                self._condition.wait()
-            if self._completed:
+            if self._running:
+                self._record(phase="unified_execution", caller_role=caller_role,
+                    operation="reuse_existing_execution", single_flight_role="waiter",
+                    service_instance_token=service_instance_token, result="waiting")
+                while self._running:
+                    self._condition.wait()
                 if self._error is not None:
+                    self._record(phase="unified_execution", caller_role=caller_role,
+                        operation="reuse_same_failure", single_flight_role="reuser",
+                        service_instance_token=service_instance_token, result="failure",
+                        exception_type=type(self._error).__name__)
                     raise self._error
                 assert self._result is not None
+                self._record(phase="unified_execution", caller_role=caller_role,
+                    operation="reuse_existing_execution", single_flight_role="reuser",
+                    service_instance_token=service_instance_token, result="success")
+                return dict(self._result)
+            if self._completed:
+                if self._error is not None:
+                    self._record(phase="unified_execution", caller_role=caller_role,
+                        operation="reuse_same_failure", single_flight_role="reuser",
+                        service_instance_token=service_instance_token, result="failure",
+                        exception_type=type(self._error).__name__)
+                    raise self._error
+                assert self._result is not None
+                self._record(phase="unified_execution", caller_role=caller_role,
+                    operation="reuse_existing_execution", single_flight_role="reuser",
+                    service_instance_token=service_instance_token, result="success")
                 return dict(self._result)
             self._running = True
+            self._record(phase="run_context", caller_role=caller_role, operation="create",
+                single_flight_role="owner", service_instance_token=service_instance_token,
+                result="started")
         try:
             result = dict(self._runner(strategy))
         except BaseException as exc:
@@ -134,14 +192,24 @@ class RunScopedExecution:
                 self._error = exc
                 self._completed = True
                 self._running = False
+                self._record(phase="run_context", caller_role=caller_role, operation="create",
+                    single_flight_role="owner", service_instance_token=service_instance_token,
+                    result="failure", exception_type=type(exc).__name__,
+                    path_existed=Path(self._run_context_path).exists() if self._run_context_path else None)
                 self._condition.notify_all()
             raise
         with self._condition:
             self._result = result
             self._completed = True
             self._running = False
+            self._record(phase="run_context", caller_role=caller_role, operation="create",
+                single_flight_role="owner", service_instance_token=service_instance_token,
+                result="success")
             self._condition.notify_all()
         return dict(result)
+
+    def __call__(self, strategy: str) -> dict[str, Any]:
+        return self.request(strategy, caller_role="execution_owner", service_instance_token="direct")
 
 
 class AITaskService:
@@ -175,6 +243,7 @@ class AITaskService:
         # Cache of the report produced in-process so a later tool in the same
         # plan does not re-run an expensive pipeline.
         self._report_cache: dict[str, Any] | None = None
+        self._service_instance_token = uuid4().hex[:12]
 
     # -- public ---------------------------------------------------------
     def run(self, request: AIOrchestrationRequest) -> AIOrchestrationResult:
@@ -216,13 +285,15 @@ class AITaskService:
         """Receipt emitted by the tool executor after it selects a branch."""
         return dict(self._executor_strategy_receipt) if self._executor_strategy_receipt else None
 
-    def _run_unified_with_effective_strategy(self) -> dict[str, Any]:
+    def _run_unified_with_effective_strategy(self, caller_role: str) -> dict[str, Any]:
         if not self._effective_dynamic_strategy:
             raise RuntimeError("effective_dynamic_strategy_missing")
         if self._unified_runner_with_strategy is None:
             raise RuntimeError("unified_runner_missing")
         strategy = self._effective_dynamic_strategy
-        report = dict(self._unified_runner_with_strategy(strategy))
+        runner = self._unified_runner_with_strategy
+        request = getattr(runner, "request", None)
+        report = dict(request(strategy, caller_role=caller_role, service_instance_token=self._service_instance_token) if callable(request) else runner(strategy))
         receipt = report.get("executor_strategy_receipt")
         if isinstance(receipt, Mapping):
             self._executor_strategy_receipt = {
@@ -352,7 +423,7 @@ class AITaskService:
             if self._report_cache is not None:
                 report = self._report_cache
             elif self._unified_runner_with_strategy is not None:
-                report = self._run_unified_with_effective_strategy()
+                report = self._run_unified_with_effective_strategy("static_consumer")
             else:
                 assert self._static_runner is not None
                 report = dict(self._static_runner())
@@ -413,7 +484,7 @@ class AITaskService:
             if self._report_cache is not None:
                 report = self._report_cache
             elif self._unified_runner_with_strategy is not None:
-                report = self._run_unified_with_effective_strategy()
+                report = self._run_unified_with_effective_strategy("dynamic_consumer")
             elif self._dynamic_runner_with_strategy is not None:
                 if not self._effective_dynamic_strategy:
                     raise RuntimeError("effective_dynamic_strategy_missing")

@@ -3215,7 +3215,14 @@ def _run_m7b_full_analysis_session(
 
     # This object is task-scoped and injected into every consumer.  It is the
     # execution ownership boundary, not an instance-local AITaskService cache.
-    run_execution = RunScopedExecution(unified_runner)
+    run_execution = RunScopedExecution(
+        unified_runner,
+        task_id=task.id,
+        run_context_path=run_dir,
+        # Outside the run directory so a failed exclusive claim still leaves
+        # durable task-local evidence for forensic inspection.
+        diagnostics_path=Path(OUTPUT_DIR) / "state" / "task-diagnostics" / f"{task.id}.run-context-claims.json",
+    )
 
     def stop_registered_frida_session(ref: str) -> bool:
         stopper = frida_session_stoppers.pop(ref, None)
