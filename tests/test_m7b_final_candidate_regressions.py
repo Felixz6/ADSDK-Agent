@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import threading
+import json
 
 import pytest
 
@@ -97,3 +98,32 @@ def test_run_scoped_execution_shares_first_exception() -> None:
     with pytest.raises(RuntimeError, match="first execution failed"):
         execution("balanced")
     assert calls == 1
+
+
+def test_run_context_claim_provenance_persists_owner_reuser_and_failure(tmp_path: Path) -> None:
+    claims = tmp_path / "state" / "claims.json"
+    run_dir = tmp_path / "runs" / "RUN"
+    calls = 0
+
+    def runner(_strategy: str) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        run_dir.mkdir(parents=True, exist_ok=False)
+        raise FileExistsError(run_dir)
+
+    execution = RunScopedExecution(
+        runner, task_id="RUN", run_context_path=run_dir, diagnostics_path=claims
+    )
+    owner = AITaskService(orchestrator=_UnusedOrchestrator(), run_dir=run_dir, unified_runner_with_strategy=execution)  # type: ignore[arg-type]
+    reuser = AITaskService(orchestrator=_UnusedOrchestrator(), run_dir=run_dir, unified_runner_with_strategy=execution)  # type: ignore[arg-type]
+    owner._effective_dynamic_strategy = reuser._effective_dynamic_strategy = "balanced"
+    owner.execute_tool("static_analysis", {})
+    reuser.execute_tool("dynamic_analysis", {})
+
+    events = json.loads(claims.read_text(encoding="utf-8"))["events"]
+    assert calls == 1
+    assert events[0]["single_flight_role"] == "owner"
+    assert events[0]["caller_role"] == "static_consumer"
+    assert any(event["operation"] == "reuse_same_failure" for event in events)
+    assert any(event.get("exception_type") == "FileExistsError" for event in events)
+    assert {event["service_instance_token"] for event in events} >= {owner._service_instance_token, reuser._service_instance_token}
