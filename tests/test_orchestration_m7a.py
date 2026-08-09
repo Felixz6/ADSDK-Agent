@@ -15,6 +15,7 @@ is injected.
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
@@ -709,6 +710,26 @@ def test_consent_never_auto_confirms_on_timeout():
     assert out.status == "awaiting"
 
 
+def test_consent_bounded_wait_expires_without_manufacturing_confirmation():
+    svc = ConsentCheckpointService(clock=_TickClock())
+    svc.enter(task_id="t1", run_id="r1")
+    ticks = iter([0.0, 0.0, 1.0])
+
+    out = svc.wait(
+        task_id="t1",
+        sleep=lambda _seconds: None,
+        poll_interval=0.01,
+        timeout_seconds=0.5,
+        monotonic=lambda: next(ticks),
+    )
+
+    assert out.status == "expired"
+    assert out.resolved_by_action is None
+    with pytest.raises(ConsentCheckpointError) as exc:
+        svc.resolve(task_id="t1", action="confirmed")
+    assert exc.value.code == "checkpoint_already_resolved"
+
+
 def test_consent_heartbeat_refreshes():
     svc = ConsentCheckpointService(clock=_TickClock())
     svc.enter(task_id="t1", run_id="r1")
@@ -1098,6 +1119,10 @@ class _FakeEffects:
         self.actions_log.append(("kill_pid", device, pid))
         return True
 
+    def force_stop_package(self, device, package_name):
+        self.actions_log.append(("force_stop_package", device, package_name))
+        return True
+
     def stop_mitm_pid(self, pid):
         self.actions_log.append(("stop_mitm_pid", pid))
         return True
@@ -1120,6 +1145,7 @@ def _build_session(
     allow_dynamic: bool = True,
     confirmed_tools: frozenset[str] | None = None,
     registry: ResourceOwnershipRegistry | None = None,
+    consent: ConsentCheckpointService | None = None,
 ) -> FullAnalysisSession:
     clock = _FakeClock()
     lease = LeaseRegistry(clock=clock, stale_after_seconds=600)
@@ -1140,7 +1166,7 @@ def _build_session(
         token_budget=6000,
         report_language="zh-CN",
         lease=lease,
-        consent=ConsentCheckpointService(clock=lambda: "T"),
+        consent=consent or ConsentCheckpointService(clock=lambda: "T"),
         registry=registry or ResourceOwnershipRegistry(),
         effects=effects,  # type: ignore[arg-type]
     )
@@ -1156,6 +1182,86 @@ def test_session_success_completes_with_cleanup():
     assert ("delete_proxy", "127.0.0.1:16416") in effects.actions_log
     assert transition.orchestration_status == "completed"
     assert transition.events  # trace recorded
+    assert transition.consent is not None
+    assert transition.consent.status == "confirmed"
+    assert transition.consent.resolved_by_action == "confirmed"
+
+
+def test_session_consent_race_persists_confirmed_then_closes_checkpoint():
+    shared = ConsentCheckpointService(clock=_TickClock())
+
+    class _BlockingConsentEffects(_FakeEffects):
+        def enter_consent(self, task_id, run_id):
+            state = shared.enter(task_id=task_id, run_id=run_id)
+            self.consent_entered.append((task_id, run_id, state.status))
+            return state
+
+        def wait_consent(self, task_id):
+            self.consent_waited.append(task_id)
+            return shared.wait(
+                task_id=task_id,
+                sleep=lambda delay: time.sleep(min(delay, 0.005)),
+                poll_interval=0.01,
+                timeout_seconds=2.0,
+            )
+
+    effects = _BlockingConsentEffects(
+        orch_result=_make_orch_result(plan_uses_dynamic=True)
+    )
+    session = _build_session(effects, consent=shared)
+    transitions: list[SessionTransition] = []
+    worker = threading.Thread(target=lambda: transitions.append(session.run()))
+    worker.start()
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        checkpoint = shared.state("t1")
+        if checkpoint is not None and checkpoint.status == "awaiting":
+            break
+        time.sleep(0.001)
+    else:
+        pytest.fail("session checkpoint was not observable")
+
+    first = shared.resolve(task_id="t1", action="confirmed")
+    duplicate = shared.resolve(task_id="t1", action="confirmed")
+    worker.join(1.0)
+
+    assert not worker.is_alive()
+    assert first.status == duplicate.status == "confirmed"
+    assert len(transitions) == 1
+    transition = transitions[0]
+    assert transition.final_state == "completed"
+    assert transition.consent is not None
+    assert transition.consent.status == "confirmed"
+    assert transition.consent.resolved_by_action == "confirmed"
+    acceptance = build_full_analysis_acceptance(
+        transition=transition,
+        result=effects._orch_result,
+    )
+    assert acceptance.consent_outcome["status"] == "confirmed"
+    assert acceptance.consent_outcome["resolved_by_action"] == "confirmed"
+    assert shared.state("t1") is None
+
+
+def test_session_never_labels_an_awaiting_checkpoint_as_resolved():
+    class _StillAwaitingEffects(_FakeEffects):
+        def wait_consent(self, task_id):
+            self.consent_waited.append(task_id)
+            assert self.consent_svc is not None
+            state = self.consent_svc.state(task_id)
+            assert state is not None
+            return state
+
+    effects = _StillAwaitingEffects(
+        orch_result=_make_orch_result(plan_uses_dynamic=True)
+    )
+    transition = _build_session(effects).run()
+
+    assert transition.final_state == "failed"
+    assert transition.consent is not None
+    assert transition.consent.status == "awaiting"
+    assert "consent_checkpoint_unresolved" in transition.failures
+    assert not any(event.reason == "consent resolved" for event in transition.events)
 
 
 def test_session_static_only_does_not_take_lease():

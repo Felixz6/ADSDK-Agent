@@ -8,6 +8,7 @@ dynamic strategy inside the two-phase orchestration boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from app.ai.models import AIPlan
@@ -52,6 +53,10 @@ class ProductionSessionEffects:
     read_proxy_action: Callable[[str], str | None]
     resource_present_action: ResourceProbe
     resource_identity_matches_action: Callable[[str, dict[str, Any]], bool]
+    force_stop_package_action: Callable[[str, str], bool] | None = None
+    consent_wait_seconds: float = 900.0
+    consent_sleep: Callable[[float], None] = time.sleep
+    consent_monotonic: Callable[[], float] = time.monotonic
     plan_observer: Callable[[AIPlan, str], None] | None = None
     last_result: AIOrchestrationResult | None = field(default=None, init=False)
     last_executor_strategy_receipt: dict[str, str] | None = field(
@@ -108,7 +113,11 @@ class ProductionSessionEffects:
     def wait_consent(self, task_id: str) -> ConsentCheckpointState:
         return self.consent_service.wait(
             task_id=task_id,
+            sleep=self.consent_sleep,
             is_cancelled=self.is_cancelled,
+            heartbeat=lambda: self.consent_service.heartbeat(task_id=task_id),
+            timeout_seconds=self.consent_wait_seconds,
+            monotonic=self.consent_monotonic,
         )
 
     def notify_plan_built(self, plan: AIPlan, path: str) -> None:
@@ -123,6 +132,11 @@ class ProductionSessionEffects:
 
     def kill_pid(self, device: str, pid: int) -> bool:
         return bool(self.kill_pid_action(device, pid))
+
+    def force_stop_package(self, device: str, package_name: str) -> bool:
+        if self.force_stop_package_action is None:
+            return False
+        return bool(self.force_stop_package_action(device, package_name))
 
     def stop_mitm_pid(self, pid: int) -> bool:
         return bool(self.stop_mitm_pid_action(pid))

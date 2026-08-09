@@ -1233,6 +1233,7 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
             target_running=False,
             preflight_changed=False,
             cleanup=None,
+            consent=None,
         )
 
     def legacy_dynamic(_request):

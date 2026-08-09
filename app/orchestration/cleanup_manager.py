@@ -119,6 +119,7 @@ class CleanupActions(Protocol):
     def set_proxy(self, device: str, value: str) -> bool: ...
     def delete_proxy(self, device: str) -> bool: ...
     def kill_pid(self, device: str, pid: int) -> bool: ...
+    def force_stop_package(self, device: str, package_name: str) -> bool: ...
     def stop_mitm_pid(self, pid: int) -> bool: ...
     def stop_frida_session(self, ref: str) -> bool: ...
 
@@ -159,7 +160,7 @@ def _reason_for(kind: str, verification: str) -> str:
 
 
 class CleanupManager:
-    """Exact cleanup → snapshot verification → one exact retry → final status."""
+    """Exact cleanup, verify, one ownership-gated retry, then final verify."""
 
     def __init__(self, *, registry: ResourceOwnershipRegistry, actions: CleanupActions,
                  snapshot: DeviceSessionSnapshot, device_id: str | None) -> None:
@@ -189,6 +190,23 @@ class CleanupManager:
             return True  # port belongs to its registered managed process
         return None
 
+    def _bounded_retry(self, resource: OwnedResource) -> bool | None:
+        """Retry one exact action, or one ownership-gated package fallback."""
+        if resource.kind != _RESOURCE_KIND_APP:
+            return self._action(resource)
+
+        detail = resource.detail
+        package_name = str(detail.get("expected_command_token") or "").strip()
+        package_fallback_allowed = (
+            not bool(detail.get("preexisting", False))
+            and bool(detail.get("created_by_run", False))
+            and bool(package_name)
+        )
+        force_stop = getattr(self.actions, "force_stop_package", None)
+        if package_fallback_allowed and callable(force_stop):
+            return bool(force_stop(self.device_id or "", package_name))
+        return self._action(resource)
+
     def _record_resource(self, outcome: CleanupOutcome, resource: OwnedResource) -> None:
         identity_matches = getattr(self.actions, "resource_identity_matches", None)
         matches = True
@@ -203,7 +221,8 @@ class CleanupManager:
         retry = False
         if matches and present is True:
             retry = True
-            action = bool(self._action(resource)) and bool(action)
+            retry_action = self._bounded_retry(resource)
+            action = bool(retry_action) if retry_action is not None else action
             present = self._present(resource)
             verification = "unavailable" if present is None else ("present" if present else "verified")
         final = "success" if verification == "verified" else ("failed" if action is False else "partial")
