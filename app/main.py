@@ -1643,6 +1643,9 @@ def _session_status(session: Any, device: DeviceContext) -> dict[str, Any]:
         "device_proxy_host",
         "device_proxy_configured",
         "device_proxy_restored",
+        "proxy_reachable",
+        "proxy_probe_available",
+        "network_observation",
         "started_at",
         "ready_at",
         "stopped_at",
@@ -2237,6 +2240,7 @@ def _dynamic_analyze_v2(
                     listen_host=MITM_LISTEN_HOST,
                     device_proxy_host=MITM_DEVICE_PROXY_HOST,
                     stop_timeout=MITM_STOP_TIMEOUT_SECONDS,
+                    package_name=package_name,
                 )
 
         register_cleanup(frida_session.stop)
