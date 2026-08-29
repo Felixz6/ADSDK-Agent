@@ -254,7 +254,13 @@
         failed_hooks: ["java_runtime_pending"],
         metadata: {
             lifecycle_phase: "script_loaded",
-            monotonic_source: "frida_script_clock_pending"
+            monotonic_source: "frida_script_clock_pending",
+            java_runtime:
+                typeof Java === "undefined"
+                    ? "absent"
+                    : Java.available
+                      ? "available"
+                      : "pending"
         }
     });
     waitForJavaRuntime();

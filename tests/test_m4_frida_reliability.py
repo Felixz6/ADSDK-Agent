@@ -566,6 +566,65 @@ def test_server_actions_require_confirmation(tmp_path):
     assert result.error_code == "confirmation_required"
 
 
+def test_root_started_server_is_verified_alive_and_owned(tmp_path):
+    """A su-launched server must be probed under su, not by shell ``kill -0``.
+
+    Regression: the aliveness check used plain adb-shell ``kill -0``, which
+    fails with EPERM on the root process it just started, so every successful
+    start was misreported as ``frida_server_exited`` and ownership was never
+    registered.
+    """
+    commands = []
+
+    def runner(command, cwd=None, timeout=10):
+        commands.append(command)
+        text = " ".join(str(value) for value in command)
+        if "pidof frida-server" in text:
+            return {
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "",
+                "timed_out": False,
+                "cmd": command,
+            }
+        if "kill -0 4242" in text:
+            return {
+                "returncode": 0,
+                "stdout": "",
+                "stderr": "",
+                "timed_out": False,
+                "cmd": command,
+            }
+        if "& echo $!" in text:
+            return {
+                "returncode": 0,
+                "stdout": "4242\n",
+                "stderr": "",
+                "timed_out": False,
+                "cmd": command,
+            }
+        return diagnostic_runner(command, cwd, timeout)
+
+    manager = make_manager(tmp_path, runner)
+    result = manager.start(DeviceContext("SERIAL"), confirm=True)
+    assert result.status == "success"
+    assert result.owned is True
+    assert result.pid == 4242
+    alive_checks = [
+        command
+        for command in commands
+        if "kill -0 4242" in " ".join(str(value) for value in command)
+    ]
+    assert alive_checks, "aliveness must be probed after start"
+    assert any("su" in command for command in alive_checks), (
+        "aliveness probe must run under the same su context as the start"
+    )
+
+    stopped = manager.stop(DeviceContext("SERIAL"), confirm=True)
+    assert stopped.status == "success"
+    assert stopped.pid == 4242
+
+
 def test_unknown_running_server_is_never_stopped(tmp_path):
     commands = []
 
