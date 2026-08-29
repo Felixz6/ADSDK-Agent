@@ -3,6 +3,8 @@
 > 面向 Android APK 的本地隐私审计与合规分析平台。  
 > 通过 Web 控制台完成任务提交、环境诊断、静态分析、动态行为观测、网络流量采集、证据关联、隐私发现与 AI 辅助研判。
 
+**当前版本：v0.2.0（M7B Release）** —— M7B 真机验收完成：AI runtime 稳定、Traffic 诊断完备。
+
 ![AdSDK Agent Web 控制台](./docs/screenshots/01-home.png)
 
 > [!IMPORTANT]
