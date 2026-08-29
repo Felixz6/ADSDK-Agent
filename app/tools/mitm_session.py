@@ -19,6 +19,8 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+
+from app.frida.traffic_diagnostics import summarize_proc_net
 from pathlib import Path
 from typing import Any, Callable, Iterable, TextIO
 
@@ -307,6 +309,9 @@ class MitmSession:
     stop_timeout: float = 3.0
     addon_path: Path | None = None
     device_proxy_host: str | None = None
+    # M7B Phase C visibility observation: the target package (when provided)
+    # enables a per-uid socket-activity count at window end.
+    package_name: str | None = None
     command_runner: CommandRunner = field(default=run_cmd, repr=False)
 
     process: subprocess.Popen[str] | None = field(
@@ -328,6 +333,15 @@ class MitmSession:
     original_device_proxy: str | None = field(default=None, init=False)
     device_proxy_configured: bool = field(default=False, init=False)
     device_proxy_restored: bool | None = field(default=None, init=False)
+    # M7B Phase C — deterministic visibility facts gathered while the window
+    # is live: a device→proxy TCP probe (after the proxy is applied) and a
+    # /proc/net snapshot at window end. Counts/booleans only; raw rows,
+    # addresses and payloads are never stored.
+    proxy_reachable: bool | None = field(default=None, init=False)
+    proxy_probe_available: bool = field(default=True, init=False)
+    network_observation: dict[str, Any] = field(
+        default_factory=dict, init=False
+    )
     flow_path: Path = field(init=False)
     jsonl_path: Path = field(init=False)
     stderr_path: Path = field(init=False)
@@ -746,6 +760,13 @@ class MitmSession:
                 raise RuntimeError("mitm session is not ready")
             if self.device_proxy_host is not None:
                 self._configure_device_proxy()
+                # M7B Phase C: device→proxy TCP reachability, measured while
+                # the proxy is applied. A transport fact only — it never
+                # implies the target actually used the proxy.
+                try:
+                    self._probe_proxy_reachable()
+                except Exception:
+                    self.proxy_probe_available = False
             self.state = MitmSessionState.COLLECTING
 
     def _stderr_tail(self, *, max_lines: int = 20, max_chars: int = 2000) -> str:
@@ -757,6 +778,76 @@ class MitmSession:
             return ""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         return "\n".join(lines[-max_lines:])[-max_chars:]
+
+    def _probe_proxy_reachable(self) -> None:
+        """Device→proxy TCP probe run while the proxy is applied.
+
+        Reachability is judged by the connect result only (the proxy is an
+        HTTP server and will not echo). ``nc`` missing on the device marks the
+        probe unavailable instead of claiming unreachability.
+        """
+
+        if self.device_proxy_host is None or self.listen_port is None:
+            return
+        result = self.command_runner(
+            self.device.adb_command(
+                "shell",
+                "echo",
+                "PING",
+                "|",
+                "nc",
+                "-w",
+                "3",
+                self.device_proxy_host,
+                str(self.listen_port),
+            )
+        )
+        combined = f"{result.get('stderr') or ''}".casefold()
+        if result.get("returncode") == 127 or "not found" in combined:
+            self.proxy_probe_available = False
+            self.proxy_reachable = None
+            return
+        self.proxy_reachable = result.get("returncode") == 0
+
+    def _resolve_target_uid(self) -> int | None:
+        """Resolve the target package uid from /proc (no cached state)."""
+
+        if not self.package_name:
+            return None
+        pid_result = self.command_runner(
+            self.device.adb_command("shell", "pidof", self.package_name)
+        )
+        pid_text = str(pid_result.get("stdout") or "").strip().split()
+        if not pid_text or not pid_text[0].isdigit():
+            return None
+        status_result = self.command_runner(
+            self.device.adb_command(
+                "shell", "cat", f"/proc/{pid_text[0]}/status"
+            )
+        )
+        for line in str(status_result.get("stdout") or "").splitlines():
+            if line.startswith("Uid:"):
+                fields = line.split()
+                if len(fields) >= 2 and fields[1].isdigit():
+                    return int(fields[1])
+        return None
+
+    def _snapshot_network_observation(self) -> None:
+        """Summarize /proc/net tables into counts/booleans at window end."""
+
+        tables: dict[str, str | None] = {}
+        for name in ("tcp", "tcp6", "udp", "udp6"):
+            result = self.command_runner(
+                self.device.adb_command("shell", "cat", f"/proc/net/{name}")
+            )
+            tables[name] = (
+                str(result.get("stdout") or "")
+                if result.get("returncode") == 0
+                else None
+            )
+        summary = summarize_proc_net(**tables)
+        summary["target_uid"] = self._resolve_target_uid()
+        self.network_observation = summary
 
     def _configure_device_proxy(self) -> None:
         if self.device_proxy_configured:
@@ -824,6 +915,14 @@ class MitmSession:
             if self._stop_completed:
                 return self._stop_result
             preserve_failure = self.state is MitmSessionState.FAILED
+            if self.state is MitmSessionState.COLLECTING:
+                # M7B Phase C: end-of-window device network observation —
+                # counts/booleans only. Diagnostic-only: it must never break
+                # proxy restore or process teardown.
+                try:
+                    self._snapshot_network_observation()
+                except Exception:
+                    self.network_observation = {}
             if not preserve_failure:
                 self.state = MitmSessionState.STOPPING
             restored = self._restore_device_proxy()
@@ -873,6 +972,9 @@ class MitmSession:
             "device_proxy_host": self.device_proxy_host,
             "device_proxy_configured": self.device_proxy_configured,
             "device_proxy_restored": self.device_proxy_restored,
+            "proxy_reachable": self.proxy_reachable,
+            "proxy_probe_available": self.proxy_probe_available,
+            "network_observation": dict(self.network_observation),
             "traffic_dir": str(self.traffic_dir),
             "flow_file": str(self.flow_path),
             "jsonl_path": str(self.jsonl_path),
