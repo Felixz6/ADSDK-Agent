@@ -45,9 +45,17 @@ DEFAULT_MAX_ROUNDS = 2
 DEFAULT_MAX_TOOL_CALLS = 6
 DEFAULT_MAX_INPUT_TOKENS = 6000
 DEFAULT_MAX_OUTPUT_TOKENS = 1800
-DEFAULT_PLANNER_MAX_OUTPUT_TOKENS = 500
-DEFAULT_REPORT_MAX_OUTPUT_TOKENS = 1000
-DEFAULT_REPAIR_MAX_OUTPUT_TOKENS = 300
+# ai-plan-v1 demands 7 top-level keys plus per-step payloads (step_id,
+# tool_name, reason, arguments, depends_on, requires_confirmation); a
+# full-analysis plan measured past the old 500-token cap on deepseek-v4-flash
+# and truncated mid-JSON (finish_reason=length, validation missing steps).
+# 800 carries the largest valid plan with headroom (M7B Phase B measurement).
+DEFAULT_PLANNER_MAX_OUTPUT_TOKENS = 800
+DEFAULT_REPORT_MAX_OUTPUT_TOKENS = 1500
+# The repair round must re-emit a complete ai-plan-v1 object, so its cap can
+# never be smaller than the planner's; the old 300 cap truncated every repair
+# structurally (M7B Phase B: round 2 died at 301 tokens).
+DEFAULT_REPAIR_MAX_OUTPUT_TOKENS = 800
 DEFAULT_REQUEST_RETRIES = 1
 DEFAULT_RETRY_BASE_DELAY_MS = 200
 DEFAULT_MAX_RETRY_AFTER_SECONDS = 30

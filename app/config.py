@@ -196,14 +196,19 @@ AI_THINKING_MODE = os.getenv("AI_THINKING_MODE", "disabled").strip() or "disable
 # min(stage_cap, global AI_MAX_OUTPUT_TOKENS, remaining budget) so a stage can
 # never exceed the global ceiling, and each stage has its own bound that keeps
 # planner/report/repair answers tight (low-token acceptance).
+# M7B Phase B (real-device measurement, deepseek-v4-flash): the ai-plan-v1
+# object truncated at 500 (round finished length with no usable steps) and the
+# ai-report-v1 object truncated at 1000; a full repair must re-emit the whole
+# plan, so the old 300-token repair cap was structurally doomed. 800/1500/800
+# carry the measured outputs with headroom while staying low-token.
 AI_PLANNER_MAX_OUTPUT_TOKENS = _env_int_range(
-    "AI_PLANNER_MAX_OUTPUT_TOKENS", 500, 64, 4000
+    "AI_PLANNER_MAX_OUTPUT_TOKENS", 800, 64, 4000
 )
 AI_REPORT_MAX_OUTPUT_TOKENS = _env_int_range(
-    "AI_REPORT_MAX_OUTPUT_TOKENS", 1000, 128, 8000
+    "AI_REPORT_MAX_OUTPUT_TOKENS", 1500, 128, 8000
 )
 AI_REPAIR_MAX_OUTPUT_TOKENS = _env_int_range(
-    "AI_REPAIR_MAX_OUTPUT_TOKENS", 300, 64, 2000
+    "AI_REPAIR_MAX_OUTPUT_TOKENS", 800, 64, 2000
 )
 # Retry-with-backoff. At most 1 retry by default (capped at 3). Base delay in
 # ms; actual delay respects the server's Retry-After header up to

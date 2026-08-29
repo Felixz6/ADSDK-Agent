@@ -116,12 +116,15 @@ def build_plan_repair_contract(
         f"{schema_line}"
         f"Maximum steps: {max_steps}\n"
         "Rules: only tool_name values from the allowed list; no shell, adb, "
-        "frida, or mitmproxy commands; no filesystem paths; each reason <= 120 "
+        "frida, or mitmproxy commands; no filesystem paths; each reason <= 60 "
         "characters; depends_on references earlier step_ids only; no circular "
         "dependencies; no meaningless repeated tool calls.\n"
+        "Use the shortest valid plan and empty arrays for expected_outputs, "
+        "stop_conditions and limitations when nothing applies.\n"
         f"Allowed tool names: {allowed_line}\n"
         f"Rejected plan shape (summary only, no argument values): {plan_summary}\n"
-        "Return only the JSON object. No prose, no code fences, no reasoning."
+        "Return only the JSON object. No prose, no code fences, no reasoning. "
+        "Do not repeat the original plan outside the corrected JSON."
     )
 
 
