@@ -21,13 +21,15 @@
 - **AI 编排**：白名单工具、低 Token 两阶段调用、Evidence Digest、缓存、预算、引用校验与确定性降级。
 - **真机安全信封**：设备确认门、租约、资源所有权、Consent 人工检查点、`try/finally` 清理与状态恢复。
 
-最近一次 M7A 自动化验收基线：
+最近一次 M7B 真机验收基线（2026-08-29，MuMu 127.0.0.1:16416）：
 
 ```text
-后端：699 passed
-前端：30 test files / 325 tests passed
+后端：776 passed
+前端：30 test files / 325 tests passed（本阶段未改动前端）
 TypeScript：通过
 生产构建：通过
+pip check：无损坏依赖
+Frida：CLI / Python binding / 设备 frida-server 均为 17.16.4
 ```
 
 ## 系统架构
@@ -743,6 +745,30 @@ adsdk-agent/
 
 本项目采用 [Apache License 2.0](LICENSE)。
 
-## M7B AI runtime hardening (Phase A)
+## M7B AI runtime hardening（Phase A–D，真机验收完成）
 
-Phase A validates and diagnoses AI plans locally, including session runtime/freshness gates and Reports diagnostics. Automated coverage is complete; real-device acceptance is deliberately pending the MuMu read-only preflight. See `docs/M7B_AI_RUNTIME_HARDENING.md`.
+Phase A–D 已在真机（MuMu, Android 15, x86_64）完成完整链路验收，并修复三项 runtime 问题：
+
+- **Frida 17 Java Bridge**：Frida 17 不再内置 Java 桥；hook agent 改为 `frida-compile`
+  打包 `frida-java-bridge`（固定 artifact，离线加载，构建脚本
+  `scripts/build_frida_agent.py`）。真机验证 `installed_hooks=["android_id","clipboard"]`。
+- **AI Planner 稳定性**：planner/report/repair 输出预算提升为 800/1500/800 并加入
+  最小 JSON 骨架约束；真机验证 planner 1 轮成功、report 1 轮成功、`ai_validated`、零 repair。
+- **Traffic 可见性诊断**：`traffic-diagnostics-v1` 增加代理可达性探针与设备
+  `/proc/net` 窗口快照（仅计数/布尔），可确定区分「代理未配置 / 不可达 / 目标绕过
+  系统 HTTP 代理 / 窗口无流量」，不再把零请求解释为无网络行为。
+
+真机 Full Analysis（run `c77f57f3`）全链 PASS：static → dynamic → traffic → correlation →
+privacy-findings → deterministic report → ai synthesis → cleanup。
+
+已知限制（如实记录，非缺陷）：
+
+- MuMu `spawn_suspended` 在恢复后触发 Native Bridge（libhoudini）SIGSEGV，
+  已有证据标注 `native_bridge_compatibility_suspected`；`balanced` 策略按设计
+  回退 `launch_then_attach` 后一切正常。
+- 目标应用存在 socket 活动，但观测窗口内其流量不经过系统 HTTP 代理
+  （`traffic_socket_activity_without_http_requests`）；未观察到 UDP:443，
+  不推断 QUIC/HTTP3/SSL Pinning。需要解密 HTTPS 时由操作者自行部署受信 CA。
+- `NO_OBSERVATIONS` 不等于没有行为；`evidence_gap` 不等于安全；AI 不是事实来源。
+
+详见 `docs/M7B_AI_RUNTIME_HARDENING.md`。
