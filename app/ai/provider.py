@@ -198,6 +198,9 @@ class ProviderResponse:
     usage_source: str = "unavailable"
     finish_reason: str | None = None
     reasoning_content_present: bool = False
+    # M7B Phase B truncation diagnostics: length of the raw model content in
+    # characters. A count only — the content itself is never carried here.
+    content_chars: int | None = None
 
 
 @runtime_checkable
@@ -954,6 +957,7 @@ def _parse_chat_completion(
         usage_source = "unavailable"
     return ProviderResponse(
         content_json=parsed,
+        content_chars=len(content),
         usage=ProviderUsage(
             input_tokens=prompt_tokens if isinstance(prompt_tokens, int) else None,
             output_tokens=completion_tokens if isinstance(completion_tokens, int) else None,
@@ -1045,6 +1049,7 @@ class MockAIProvider:
         # provenance logic (real vs estimated) is exercised.
         return ProviderResponse(
             content_json=body,
+            content_chars=len(json.dumps(body, ensure_ascii=False)),
             usage=ProviderUsage(
                 input_tokens=max(1, len(_safe_truncate(user_prompt, 4096)) // 4),
                 output_tokens=max(1, len(json.dumps(body, ensure_ascii=False)) // 4),

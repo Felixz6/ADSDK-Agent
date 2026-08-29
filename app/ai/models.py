@@ -394,6 +394,11 @@ class AIPerRoundUsage(BaseModel):
     reasoning_content_present: bool = False
     retry_count: int = 0
     cache_hit: bool = False
+    # M7B Phase B truncation diagnostics: the output-token cap this round was
+    # given, and the model response length in characters (a count only — the
+    # response text itself is never persisted).
+    requested_output_tokens: int | None = None
+    response_chars: int | None = None
 
 
 class AITokenUsage(BaseModel):

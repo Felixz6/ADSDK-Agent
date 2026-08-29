@@ -27,6 +27,12 @@ from typing import Any
 
 import pytest
 
+from app.config import (
+    AI_PLANNER_MAX_OUTPUT_TOKENS,
+    AI_REPORT_MAX_OUTPUT_TOKENS,
+    AI_REPAIR_MAX_OUTPUT_TOKENS,
+)
+
 from app.ai.cache import AIResponseCache
 from app.ai.context_builder import AIContextBuilder
 from app.ai.models import (
@@ -142,9 +148,9 @@ class TestStageOutputCaps:
     def test_each_stage_uses_its_own_cap(self):
         orch = _orchestrator(MockAIProvider())
 
-        assert orch._stage_cap("plan") == 500
-        assert orch._stage_cap("report") == 1000
-        assert orch._stage_cap("repair") == 300
+        assert orch._stage_cap("plan") == AI_PLANNER_MAX_OUTPUT_TOKENS
+        assert orch._stage_cap("report") == AI_REPORT_MAX_OUTPUT_TOKENS
+        assert orch._stage_cap("repair") == AI_REPAIR_MAX_OUTPUT_TOKENS
 
     def test_stage_cap_is_clipped_by_the_global_output_ceiling(self):
         orch = _orchestrator(MockAIProvider(), max_output_tokens=120)
@@ -160,17 +166,24 @@ class TestStageOutputCaps:
         assert orch._stage_cap("plan") == 1
         assert orch._stage_cap("report", input_floor=1) == 1
 
-    def test_repair_cap_is_the_tightest_of_the_three(self):
+    def test_repair_cap_never_sits_below_the_planner_cap(self):
+        """M7B Phase B: the repair round re-emits the complete ai-plan-v1
+        object, so the old 300-token repair cap (below the planner's 500)
+        truncated every repair structurally. The repaired design requires
+        repair_cap >= planner_cap."""
+
         orch = _orchestrator(MockAIProvider())
 
         caps = [orch._stage_cap(s) for s in ("plan", "report", "repair")]
-        assert min(caps) == orch._stage_cap("repair")
+        assert caps[2] >= caps[0]
 
     def test_remaining_cap_equals_stage_cap_without_a_budget(self):
         orch = _orchestrator(MockAIProvider())
         usage = AITokenUsage()
 
-        assert orch._remaining_output_cap("report", _request(), usage) == 1000
+        assert orch._remaining_output_cap("report", _request(), usage) == (
+            AI_REPORT_MAX_OUTPUT_TOKENS
+        )
 
     def test_remaining_cap_shrinks_as_the_budget_is_consumed(self):
         orch = _orchestrator(MockAIProvider())
@@ -199,21 +212,28 @@ class TestStageOutputCaps:
         orch = _orchestrator(MockAIProvider())
         usage = AITokenUsage(input_tokens=10_000)
 
-        assert orch._remaining_output_cap("plan", _request(token_budget=0), usage) == 500
+        assert orch._remaining_output_cap(
+            "plan", _request(token_budget=0), usage
+        ) == AI_PLANNER_MAX_OUTPUT_TOKENS
 
     def test_stage_cap_still_bounds_a_generous_budget(self):
         orch = _orchestrator(MockAIProvider())
         request = _request(token_budget=1_000_000)
 
         # A huge budget must not lift a stage above its own cap.
-        assert orch._remaining_output_cap("plan", request, AITokenUsage()) == 500
+        assert orch._remaining_output_cap("plan", request, AITokenUsage()) == (
+            AI_PLANNER_MAX_OUTPUT_TOKENS
+        )
 
     def test_orchestrator_sends_the_stage_cap_to_the_provider(self):
         provider = RecordingProvider()
         _run(_orchestrator(provider), _request())
 
-        # Round 1 is planning (500), round 2 is reporting (1000).
-        assert provider.output_caps == [500, 1000]
+        # Round 1 is planning, round 2 is reporting — each at its own cap.
+        assert provider.output_caps == [
+            AI_PLANNER_MAX_OUTPUT_TOKENS,
+            AI_REPORT_MAX_OUTPUT_TOKENS,
+        ]
 
     def test_provider_caps_respect_a_low_global_ceiling(self):
         provider = RecordingProvider()
@@ -228,7 +248,7 @@ class TestStageOutputCaps:
         # The report_only tool set is fixed, so there is nothing to plan: the
         # normal path costs exactly one billed call.
         assert provider.call_count == 1
-        assert provider.output_caps == [1000]
+        assert provider.output_caps == [AI_REPORT_MAX_OUTPUT_TOKENS]
         assert [r.round_type for r in result.usage.rounds] == ["report"]
 
     def test_report_only_still_reaches_a_completed_report(self):

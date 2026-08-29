@@ -2,6 +2,8 @@ import importlib
 import os
 from pathlib import Path
 
+import dotenv
+
 from app import config
 
 
@@ -77,9 +79,18 @@ def test_mitm_listen_host_defaults_to_loopback_and_env_overrides():
     """MITM_LISTEN_HOST default keeps non-emulator behavior unchanged; the
     emulator override (0.0.0.0) must be honored. The value is read at import
     time, so we reload the module after setting/clearing the env var.
+
+    The reload must not re-apply the operator's local ``.env`` (this
+    deployment sets MITM_LISTEN_HOST=0.0.0.0 for MuMu capture), so
+    ``load_dotenv`` is stubbed for the code-default assertion and restored
+    before the final reload leaves the module in its original state.
     """
     # 1) default: no env set -> 127.0.0.1 (host loopback, non-emulator default)
     original = os.environ.pop("MITM_LISTEN_HOST", None)
+    # reload() re-executes ``from dotenv import load_dotenv``, so the stub must
+    # live on the dotenv module itself, not on the config namespace.
+    real_load_dotenv = dotenv.load_dotenv
+    dotenv.load_dotenv = lambda *args, **kwargs: None
     try:
         cfg_default = importlib.reload(config)
         assert cfg_default.MITM_LISTEN_HOST == "127.0.0.1"
@@ -99,4 +110,7 @@ def test_mitm_listen_host_defaults_to_loopback_and_env_overrides():
         os.environ.pop("MITM_LISTEN_HOST", None)
         if original is not None:
             os.environ["MITM_LISTEN_HOST"] = original
+        # Restore .env loading first so the final reload returns the module to
+        # its original (deployment-configured) state for subsequent tests.
+        dotenv.load_dotenv = real_load_dotenv
         importlib.reload(config)
