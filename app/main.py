@@ -203,7 +203,7 @@ from app.tools.traffic_parser import (
 )
 from app.tools.utils import ensure_dir, now_iso, run_cmd
 
-app = FastAPI(title="AdSDK Agent", version="0.1.0")
+app = FastAPI(title="AdSDK Agent", version="0.2.0")
 frida_diagnostics_service = FridaDiagnosticsService(
     project_root=Path(__file__).resolve().parent.parent,
     server_remote_path=FRIDA_SERVER_REMOTE_PATH,
