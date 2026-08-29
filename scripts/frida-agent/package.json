@@ -1,0 +1,9 @@
+{
+  "name": "adsdk-agent-frida-hook-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frida hook agent entry for AdSDK Agent. Bundles frida-java-bridge because Frida 17 no longer ships the Java bridge inside GumJS; the bundle restores the legacy globalThis.Java contract consumed by app/frida_hooks/sensitive_apis.js. Build with scripts/build_frida_agent.py.",
+  "dependencies": {
+    "frida-java-bridge": "7.0.13"
+  }
+}

@@ -373,6 +373,25 @@ _CRITICAL_STEPS = {
 }
 
 
+def resolve_frida_hook_script(hooks_dir: Path | None = None) -> Path:
+    """Pick the hook agent source injected into target processes.
+
+    Prefers the frida-compile bundle that restores ``globalThis.Java`` via
+    frida-java-bridge (Frida 17 no longer ships the Java bridge inside GumJS,
+    so the raw script would stay stuck in ``java_runtime_pending``). Falls
+    back to the raw script only when the artifact has not been built yet
+    (rebuild with ``scripts/build_frida_agent.py``).
+    """
+
+    directory = hooks_dir or (
+        Path(__file__).resolve().parent / "frida_hooks"
+    )
+    bundled = directory / "agent.compiled.js"
+    if bundled.is_file():
+        return bundled
+    return directory / "sensitive_apis.js"
+
+
 @app.get("/")
 def root():
     return {"ok": True, "message": "AdSDK Agent is running"}
@@ -2037,11 +2056,7 @@ def _dynamic_analyze_v2(
         del pid, ownership_source, created_by_run
 
     if install_ok and device_context is not None:
-        script_path = (
-            Path(__file__).resolve().parent
-            / "frida_hooks"
-            / "sensitive_apis.js"
-        )
+        script_path = resolve_frida_hook_script()
         if legacy_mode:
             frida_session = LegacyFridaAdapter(
                 run_id=context.run_id,

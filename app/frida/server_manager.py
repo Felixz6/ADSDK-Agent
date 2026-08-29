@@ -313,7 +313,13 @@ class FridaServerManager:
                 error_code=code,
                 message="frida-server 启动失败",
             )
-        alive = self._run(device.adb_command("shell", "kill", "-0", str(pid)))
+        # The server is launched through ``su -c`` and therefore runs as root;
+        # a plain adb-shell ``kill -0`` on it fails with EPERM even while the
+        # process is alive, which would misreport every successful start as
+        # ``frida_server_exited``. Probe aliveness under the same su context.
+        alive = self._run(
+            device.adb_command("shell", "su", "-c", f"kill -0 {pid}")
+        )
         if alive.get("returncode") != 0:
             return self._response(
                 "start",
