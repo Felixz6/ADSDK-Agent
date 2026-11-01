@@ -146,8 +146,8 @@ npm -v
 
 ```powershell
 # 克隆代码库
-git clone <your-repository-url>
-cd adsdk-agent
+git clone https://github.com/Felixz6/ADSDK-Agent.git
+cd ADSDK-Agent
 
 # 配置 Python 虚拟环境与依赖
 py -m venv .venv
