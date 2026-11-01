@@ -48,28 +48,26 @@
 ## 系统架构与技术栈
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        React 18 Web Console (Vite 6)                        │
-│   Home · Dashboard · NewAnalysis · Tasks · Static · Dynamic · Traffic       │
-│           Reports · Comparisons · Environment · Settings · SiteNav          │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ HTTP / REST / WebSocket
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│                            FastAPI Local Engine                             │
-│ ┌──────────────────────┐ ┌──────────────────────┐ ┌───────────────────────┐ │
-│ │     Task Center      │ │   Analyzers Engine   │ │     AI Controller     │ │
-│ │ SQLite / State / Log │ │ Manifest / Risk / SDK│ │ Whitelist Tools / DAG │ │
-│ │ Progress / Cleanup   │ │ Monotonic Consent    │ │ Evidence Digest / TTL │ │
-│ │ Retry / Cancellation │ │ Correlation-v1       │ │ DPAPI Secret Storage  │ │
-│ └──────────────────────┘ └──────────────────────┘ └───────────────────────┘ │
-└──────────────────────┬───────────────────────────────┬──────────────────────┘
-                       │                               │
-  ┌────────────────────▼───────────┐      ┌────────────▼──────────────────┐
-  │         Android Device         │      │     Local State & Artifacts   │
-  │  ADB Sessions · Frida 17 Agent │      │  SQLite Database (WAL Mode)   │
-  │  mitmproxy Zero-Leak Proxy     │      │  SHA-256 Unpack Cache         │
-  │  Monotonic Timing Baseline     │      │  output/runs/ Evidence Archive│
-  └────────────────────────────────┘      └───────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        React 18 Web 审计控制台 (Vite 6)                          │
+│   Home · Dashboard · NewAnalysis · Tasks · Static · Dynamic · Traffic · Reports │
+│               Comparisons · Environment · Settings · SiteNav (全景导航)          │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │ HTTP / REST / WebSocket (实时进度与日志)
+┌────────────────────────────────────────▼────────────────────────────────────────┐
+│                             FastAPI 本地取证引擎                                 │
+│ ┌──────────────────────┐ ┌──────────────────────┐ ┌───────────────────────────┐ │
+│ │     任务执行中心      │ │    确定性分析矩阵    │ │        受控 AI 编排       │ │
+│ │ SQLite 状态机 / 租约 │ │ Manifest / 权限分级  │ │  白名单工具 DAG / 预算控制 │ │
+│ │ 进度推送 / 优雅清理   │ │ SDK 指纹库 / 关联引擎 │ │ Evidence Digest / DPAPI   │ │
+│ └──────────────────────┘ └──────────────────────┘ └───────────────────────────┘ │
+└───────────────────────┬─────────────────────────────────┬───────────────────────┘
+                        │                                 │
+       ┌────────────────▼────────────────┐       ┌────────▼───────────────────────┐
+       │     Android 设备 / 模拟器        │       │        本地状态与产物          │
+       │  ADB 通信 · Frida 17 离线插桩    │       │ SQLite 数据库 · SHA-256 解包缓存│
+       │ mitmproxy 独立会话 (Zero-Leak)  │       │ output/runs/ 运行证据与合规报告 │
+       └─────────────────────────────────┘       └────────────────────────────────┘
 ```
 
 ### 技术栈一览
