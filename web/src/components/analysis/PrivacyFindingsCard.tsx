@@ -29,10 +29,10 @@ const SEVERITY_LABEL: Record<PrivacyFindingSeverity, string> = {
 }
 
 const SEVERITY_CLASS: Record<PrivacyFindingSeverity, string> = {
-  high: 'border-[rgba(242,139,155,0.45)] text-[var(--danger)]',
-  medium: 'border-[rgba(242,203,119,0.45)] text-[var(--warning)]',
-  low: 'border-[rgba(157,192,255,0.4)] text-[var(--accent-blue)]',
-  info: 'border-[rgba(127,147,186,0.45)] text-[var(--status-neutral)]',
+  high: 'border-[var(--danger-line)] text-[var(--danger)]',
+  medium: 'border-[var(--warning-line)] text-[var(--warning)]',
+  low: 'border-[var(--hairline)] text-[var(--text-secondary)]',
+  info: 'border-[var(--hairline)] text-[var(--status-neutral)]',
 }
 
 const CONFIDENCE_LABEL: Record<PrivacyFindingConfidence, string> = {
@@ -48,9 +48,9 @@ const TYPE_LABEL: Record<PrivacyFindingType, string> = {
 }
 
 const TYPE_CLASS: Record<PrivacyFindingType, string> = {
-  observed: 'border-[rgba(91,224,184,0.4)] text-[var(--success)]',
-  suspected: 'border-[rgba(178,140,255,0.45)] text-[var(--accent-purple)]',
-  evidence_gap: 'border-[rgba(127,147,186,0.45)] text-[var(--status-neutral)]',
+  observed: 'border-[var(--success-line)] text-[var(--success)]',
+  suspected: 'border-[var(--warning-line)] text-[var(--warning)]',
+  evidence_gap: 'border-[var(--hairline)] text-[var(--status-neutral)]',
 }
 
 const EVIDENCE_LABEL: Record<PrivacyEvidenceType, string> = {
@@ -242,7 +242,7 @@ function FindingRow({ finding }: { finding: PrivacyFinding }) {
           >
             {TYPE_LABEL[finding.finding_type]}
           </span>
-          <span className="rounded-full border border-[rgba(127,147,186,0.45)] px-2 py-0.5 text-[11px] text-[var(--text-tertiary)]">
+          <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[11px] text-[var(--text-tertiary)]">
             {CONFIDENCE_LABEL[finding.confidence]}
           </span>
         </div>

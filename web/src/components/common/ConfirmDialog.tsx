@@ -51,15 +51,15 @@ export function ConfirmDialog({
           aria-labelledby="confirm-dialog-title"
         >
           <div
-            className="absolute inset-0 bg-[rgba(3,8,22,0.62)] backdrop-blur-sm"
+            className="absolute inset-0 bg-[var(--scrim)]"
             onClick={onCancel}
             aria-hidden
           />
           <motion.div
-            initial={{ scale: 0.96, opacity: 0, y: 8 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.96, opacity: 0 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
+            initial={{ opacity: 0, transform: 'translateY(8px) scale(0.98)' }}
+            animate={{ opacity: 1, transform: 'translateY(0px) scale(1)' }}
+            exit={{ opacity: 0, transform: 'translateY(6px) scale(0.98)' }}
+            transition={{ type: 'spring', bounce: 0, duration: 0.28 }}
             className={cn('glass-strong relative w-full max-w-md p-5 rounded-[var(--radius-glass)]')}
           >
             <div className="flex items-start justify-between gap-3">
@@ -83,7 +83,7 @@ export function ConfirmDialog({
               <button
                 type="button"
                 onClick={onCancel}
-                className="px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--text-secondary)] hover:bg-[rgba(157,192,255,0.08)] transition-colors"
+                className="px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--text-secondary)] hover:bg-[var(--fill-hover)] transition-colors"
               >
                 {cancelLabel}
               </button>
@@ -94,7 +94,7 @@ export function ConfirmDialog({
                 className={cn(
                   'px-3.5 py-1.5 rounded-[10px] text-sm font-medium transition-colors',
                   tone === 'danger'
-                    ? 'bg-[var(--danger)] text-[#2a0d12] hover:brightness-110'
+                    ? 'bg-[var(--danger)] text-white hover:brightness-110'
                     : 'bg-[var(--accent-blue)] text-[var(--text-on-accent)] hover:brightness-110',
                 )}
               >

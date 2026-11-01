@@ -1,86 +1,137 @@
-/* =========================================================================
- * AdSDK Agent · 全局设计令牌
- * 所有颜色统一以 CSS Variables 暴露,禁止在页面中硬编码十六进制色值。
- * ========================================================================== */
+/* AdSDK Agent
+   High-contrast monochrome palette inspired by helloabdullah.com.
+   Black & white dominance with subtle, functional color accents only. */
 
 :root {
-  /* 浏览器原生控件(number spinner、select 弹出菜单、滚动条)跟随深色 */
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* 基底背景 */
-  --bg-deep: #071126;
-  --bg-panel: rgba(10, 22, 48, 0.62);
-  --bg-panel-strong: rgba(8, 17, 38, 0.82);
-  --bg-panel-elevated: rgba(12, 26, 56, 0.72);
-  /* 原生下拉菜单必须使用不透明色:操作系统弹出层不继承页面背景 */
-  --bg-menu: #101f3f;
-  --bg-menu-hover: #1a2e57;
+  --bg-deep: #ffffff;
+  --bg-soft: #f7f7f7;
+  --bg-ink: #0d0f17;
+  --bg-panel: #ffffff;
+  --bg-panel-strong: #ffffff;
+  --bg-panel-elevated: #f7f7f7;
+  --bg-menu: #ffffff;
+  --bg-menu-hover: #f7f7f7;
 
-  /* 边框 */
-  --border-soft: rgba(157, 192, 255, 0.18);
-  --border-active: rgba(145, 205, 255, 0.55);
-  --border-soft-purple: rgba(182, 161, 255, 0.22);
+  --hairline: rgba(13, 15, 23, 0.08);
+  --border-soft: rgba(13, 15, 23, 0.08);
+  --border-active: #0d0f17;
+  --border-soft-purple: rgba(13, 15, 23, 0.08);
 
-  /* 文字 */
-  --text-primary: #f5f7ff;
-  --text-secondary: #b9c5df;
-  --text-tertiary: #8593b4;
-  --text-on-accent: #051024;
+  --text-primary: #0d0f17;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  --text-on-accent: #ffffff;
+  --text-on-ink: #ffffff;
+  --text-on-ink-muted: #888888;
 
-  /* 强调色 */
-  --accent-blue: #78d8ff;
-  --accent-purple: #b6a1ff;
-  --accent-pink: #f5b8d7;
+  --accent-blue: #0d0f17;
+  --accent-blue-hover: #000000;
+  --accent-soft: rgba(13, 15, 23, 0.05);
+  --accent-purple: #0d0f17;
+  --accent-pink: #ff453a;
 
-  /* 状态色(柔和) */
-  --success: #79e0c3;
-  --warning: #f2cb77;
-  --danger: #f28b9b;
-  --status-neutral: #7f93ba;
+  --success: #29a464;
+  --warning: #ff9f0a;
+  --danger: #ff453a;
+  --status-neutral: #8e8e93;
 
-  /* 背景遮罩(左侧深,右侧轻,人物偏右) */
-  --bg-overlay: linear-gradient(
-    90deg,
-    rgba(4, 10, 28, 0.92) 0%,
-    rgba(6, 15, 38, 0.74) 42%,
-    rgba(8, 18, 45, 0.5) 100%
-  );
-  /* 顶部用于顶栏可读性的轻微压暗 */
-  --bg-overlay-top: linear-gradient(
-    180deg,
-    rgba(4, 10, 28, 0.78) 0%,
-    rgba(4, 10, 28, 0) 140px
-  );
+  --success-soft: rgba(41, 164, 100, 0.1);
+  --warning-soft: rgba(255, 159, 10, 0.12);
+  --danger-soft: rgba(255, 69, 58, 0.08);
+  --info-soft: rgba(13, 15, 23, 0.05);
+  --neutral-soft: rgba(142, 142, 147, 0.1);
 
-  /* 装饰光晕 */
-  --glow-blue: radial-gradient(40% 60% at 78% 30%, rgba(120, 216, 255, 0.18), transparent 70%);
-  --glow-purple: radial-gradient(50% 70% at 20% 80%, rgba(182, 161, 255, 0.14), transparent 72%);
+  --success-line: rgba(41, 164, 100, 0.28);
+  --warning-line: rgba(255, 159, 10, 0.32);
+  --danger-line: rgba(255, 69, 58, 0.28);
+  --info-line: rgba(13, 15, 23, 0.16);
+  --neutral-line: rgba(142, 142, 147, 0.28);
 
-  /* 半径与阴影 */
-  --radius-glass: 18px;
+  --fill-hover: rgba(13, 15, 23, 0.04);
+  --fill-quiet: rgba(13, 15, 23, 0.03);
+  --scrim: rgba(13, 15, 23, 0.48);
+
+  --bg-overlay: none;
+  --bg-overlay-top: none;
+  --glow-blue: none;
+  --glow-purple: none;
+
   --radius-control: 12px;
-  --shadow-glass: 0 8px 32px rgba(3, 8, 22, 0.45);
-  --shadow-glow: 0 0 0 1px var(--border-active), 0 0 24px rgba(120, 216, 255, 0.18);
+  --radius-glass: 18px;
+  --radius-pill: 980px;
 
-  /* 折叠侧边栏 */
-  --sidebar-w: 240px;
-  --sidebar-w-collapsed: 72px;
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-glass: var(--shadow-1);
+  --shadow-glow: none;
+
+  --nav-h: 80px;
+  --subnav-h: 44px;
   --topbar-h: 56px;
+  --sidebar-w: 0px;
+  --sidebar-w-collapsed: 0px;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC",
+    "Hiragino Sans GB", "Noto Sans SC", "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 
-/* 浅色主题(可选切换,保持低对比柔和) */
-html[data-theme='light'] {
-  color-scheme: light;
-  --bg-deep: #eef2fb;
-  --bg-overlay: linear-gradient(90deg, rgba(238, 242, 251, 0.94) 0%, rgba(238, 242, 251, 0.7) 60%, rgba(238, 242, 251, 0.4) 100%);
-  --text-primary: #0d1530;
-  --text-secondary: #3a4768;
-  --text-tertiary: #5b6990;
-  --bg-panel: rgba(226, 233, 250, 0.7);
-  --bg-panel-strong: rgba(214, 224, 245, 0.86);
-  --shadow-glass: 0 8px 32px rgba(20, 40, 90, 0.12);
-  --border-soft: rgba(40, 70, 140, 0.16);
-  --border-active: rgba(40, 110, 200, 0.5);
-  --bg-menu: #ffffff;
-  --bg-menu-hover: #dce6fa;
+@media (min-width: 768px) {
+  :root {
+    --nav-h: 96px;
+  }
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-deep: #0d0f17;
+  --bg-soft: #15171e;
+  --bg-ink: #0d0f17;
+  --bg-panel: #15171e;
+  --bg-panel-strong: #15171e;
+  --bg-panel-elevated: #1e212b;
+  --bg-menu: #15171e;
+  --bg-menu-hover: #1e212b;
+
+  --hairline: rgba(255, 255, 255, 0.08);
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --border-active: #ffffff;
+  --border-soft-purple: rgba(255, 255, 255, 0.08);
+
+  --text-primary: #ffffff;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #666666;
+  --text-on-accent: #0d0f17;
+  --text-on-ink: #ffffff;
+  --text-on-ink-muted: #a3a3a3;
+
+  --accent-blue: #ffffff;
+  --accent-blue-hover: #f0f0f0;
+  --accent-soft: rgba(255, 255, 255, 0.08);
+  --accent-purple: #ffffff;
+  --accent-pink: #ff453a;
+
+  --success: #30d158;
+  --warning: #ffd60a;
+  --danger: #ff453a;
+  --status-neutral: #8e8e93;
+
+  --success-soft: rgba(48, 209, 88, 0.12);
+  --warning-soft: rgba(255, 214, 10, 0.12);
+  --danger-soft: rgba(255, 69, 58, 0.12);
+  --info-soft: rgba(255, 255, 255, 0.08);
+  --neutral-soft: rgba(142, 142, 147, 0.14);
+
+  --success-line: rgba(48, 209, 88, 0.32);
+  --warning-line: rgba(255, 214, 10, 0.32);
+  --danger-line: rgba(255, 69, 58, 0.32);
+  --info-line: rgba(255, 255, 255, 0.18);
+  --neutral-line: rgba(142, 142, 147, 0.32);
+
+  --fill-hover: rgba(255, 255, 255, 0.06);
+  --fill-quiet: rgba(255, 255, 255, 0.04);
+  --scrim: rgba(0, 0, 0, 0.65);
 }

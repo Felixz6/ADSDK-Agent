@@ -13,7 +13,7 @@ function formatTimestamp(ms: number | undefined): string {
 }
 
 const TITLE_MAP: Record<string, { title: string; sub: string }> = {
-  '/': { title: '首页', sub: '星穹主题安全分析控制台' },
+  '/': { title: '首页', sub: '本地隐私合规审计系统' },
   '/dashboard': { title: '仪表盘', sub: '历史任务与分析统计' },
   '/analysis/new': { title: '新建分析', sub: '四步提交向导' },
   '/tasks': { title: '任务列表', sub: '本地历史记录' },
@@ -51,7 +51,7 @@ export function Topbar() {
     >
       <button
         type="button"
-        className="md:hidden w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[rgba(157,192,255,0.08)]"
+        className="md:hidden w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--fill-hover)]"
         onClick={() => setMobileOpen(true)}
         aria-label="打开导航"
       >
@@ -70,9 +70,9 @@ export function Topbar() {
           aria-label="后端连接状态"
           data-stale={stale}
           style={{
-            borderColor: reachable ? 'rgba(121,224,195,0.42)' : 'rgba(242,139,155,0.42)',
+            borderColor: reachable ? 'var(--success-line)' : 'var(--danger-line)',
             color: reachable ? 'var(--success)' : 'var(--danger)',
-            background: reachable ? 'rgba(121,224,195,0.12)' : 'rgba(242,139,155,0.12)',
+            background: reachable ? 'var(--success-soft)' : 'var(--danger-soft)',
           }}
           title={reachable ? `后端在线 · ${formatTimestamp(health.dataUpdatedAt)}` : '后端未连接'}
         >
@@ -89,12 +89,12 @@ export function Topbar() {
           onClick={toggleTheme}
           aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
           title={theme === 'dark' ? '浅色主题' : '深色主题'}
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[rgba(157,192,255,0.08)]"
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--fill-hover)]"
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
 
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center text-[var(--accent-blue)] border border-[var(--border-soft)] bg-[rgba(120,216,255,0.08)]">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center text-[var(--accent-blue)] border border-[var(--border-soft)] bg-[var(--accent-soft)]">
           <SatelliteDish size={18} />
         </div>
       </div>

@@ -314,16 +314,16 @@ function Row({ row }: { row: Row }) {
   const status = row.status
   const tone =
     status === 'ok'
-      ? 'border-[rgba(121,224,195,0.4)] bg-[rgba(121,224,195,0.06)]'
+      ? 'border-[var(--success-line)] bg-[var(--success-soft)]'
       : status === 'bad'
-        ? 'border-[rgba(242,139,155,0.4)] bg-[rgba(242,139,155,0.05)]'
+        ? 'border-[var(--danger-line)] bg-[var(--danger-soft)]'
         : 'border-[var(--border-soft)] bg-transparent'
   const iconTone =
     status === 'ok'
-      ? 'text-[var(--success)] bg-[rgba(121,224,195,0.10)]'
+      ? 'text-[var(--success)] bg-[var(--success-soft)]'
       : status === 'bad'
-        ? 'text-[var(--danger)] bg-[rgba(242,139,155,0.10)]'
-        : 'text-[var(--text-tertiary)] bg-[rgba(127,147,186,0.08)]'
+        ? 'text-[var(--danger)] bg-[var(--danger-soft)]'
+        : 'text-[var(--text-tertiary)] bg-[var(--fill-quiet)]'
   const label = row.customLabel ?? STATUS_LABEL[status]
   return (
     <div

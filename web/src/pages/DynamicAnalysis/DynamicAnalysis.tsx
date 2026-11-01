@@ -194,7 +194,7 @@ function EventRow({ event }: { event: DynamicEvent }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-[var(--text-primary)] font-mono truncate">{api}</span>
           {idType && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[rgba(182,161,255,0.10)] text-[var(--accent-purple)] border border-[var(--border-soft-purple)] inline-flex items-center gap-1">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[var(--fill-quiet)] text-[var(--accent-purple)] border border-[var(--border-soft-purple)] inline-flex items-center gap-1">
               <Eye size={11} /> {idType}{idPresent === false ? '(未见)' : ''}
             </span>
           )}

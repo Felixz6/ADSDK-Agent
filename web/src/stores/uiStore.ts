@@ -50,7 +50,7 @@ export const useUIStore = create<UIState>()(
       mobileDrawerOpen: false,
       setMobileDrawerOpen: (v) => set({ mobileDrawerOpen: v }),
 
-      theme: 'dark',
+      theme: 'light',
       setTheme: (t) => set({ theme: t }),
       toggleTheme: () => set((s) => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })),
 
@@ -73,9 +73,9 @@ export const useUIStore = create<UIState>()(
   ),
 )
 
-/** 应用主题到 <html data-theme> */
+/** 浅色是默认表面。深色写入 data-theme="dark"。 */
 export function applyTheme(theme: Theme): void {
   const root = document.documentElement
-  if (theme === 'light') root.setAttribute('data-theme', 'light')
+  if (theme === 'dark') root.setAttribute('data-theme', 'dark')
   else root.removeAttribute('data-theme')
 }

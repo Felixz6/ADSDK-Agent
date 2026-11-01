@@ -42,11 +42,10 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => vo
   const Icon = KIND_ICON[toast.kind]
   return (
     <motion.div
-      layout
-      initial={{ opacity: 0, x: 40, scale: 0.96 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, x: 40, scale: 0.96 }}
-      transition={{ duration: 0.18, ease: 'easeOut' }}
+      initial={{ opacity: 0, transform: 'translateX(16px) scale(0.98)' }}
+      animate={{ opacity: 1, transform: 'translateX(0px) scale(1)' }}
+      exit={{ opacity: 0, transform: 'translateX(16px) scale(0.98)' }}
+      transition={{ type: 'spring', bounce: 0, duration: 0.28 }}
       className="glass-strong rounded-[14px] px-3.5 py-3 flex items-start gap-2.5 shadow-[var(--shadow-glass)]"
       role="status"
       aria-live="polite"

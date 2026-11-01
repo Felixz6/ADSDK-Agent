@@ -22,9 +22,9 @@ const CONFIDENCE_LABEL: Record<CorrelationConfidence, string> = {
 }
 
 const CONFIDENCE_CLASS: Record<CorrelationConfidence, string> = {
-  high: 'border-[rgba(91,224,184,0.4)] text-[var(--success)]',
-  medium: 'border-[rgba(242,203,119,0.45)] text-[var(--warning)]',
-  low: 'border-[rgba(127,147,186,0.45)] text-[var(--status-neutral)]',
+  high: 'border-[var(--success-line)] text-[var(--success)]',
+  medium: 'border-[var(--warning-line)] text-[var(--warning)]',
+  low: 'border-[var(--hairline)] text-[var(--status-neutral)]',
 }
 
 export function EvidenceCorrelationCard({

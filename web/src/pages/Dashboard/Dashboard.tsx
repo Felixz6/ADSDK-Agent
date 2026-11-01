@@ -61,8 +61,8 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="控制台"
-        description="AdSDK Agent 状态总览:后端健康、本地任务统计与最近活动。"
+        title="概览"
+        description="后端健康、本地任务与最近一次分析。"
         eyebrow="概览"
       />
 
@@ -116,12 +116,12 @@ export default function Dashboard() {
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(127,147,186,0.12)" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={{ stroke: 'rgba(127,147,186,0.2)' }} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={{ stroke: 'var(--hairline)' }} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip
-                    cursor={{ fill: 'rgba(157,192,255,0.06)' }}
-                    contentStyle={{ background: 'rgba(13,20,48,0.92)', border: '1px solid var(--border-soft)', borderRadius: 10, fontSize: 12, color: 'var(--text-primary)' }}
+                    cursor={{ fill: 'var(--fill-quiet)' }}
+                    contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--hairline)', borderRadius: 12, fontSize: 12, color: 'var(--text-primary)' }}
                   />
                   <Bar dataKey="value" radius={[6, 6, 0, 0]} />
                 </BarChart>
@@ -186,7 +186,7 @@ function QuickAction({ icon, label, onClick }: { icon: ReactNode; label: string;
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] border border-[var(--border-soft)] hover:border-[var(--border-active)] hover:bg-[rgba(157,192,255,0.06)] transition-colors text-left"
+      className="flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] border border-[var(--border-soft)] hover:border-[var(--border-active)] hover:bg-[var(--fill-hover)] transition-colors text-left"
     >
       <span className="text-[var(--accent-blue)]">{icon}</span>
       <span className="text-sm text-[var(--text-secondary)] flex-1">{label}</span>

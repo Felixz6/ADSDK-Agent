@@ -7,10 +7,10 @@ import { cn } from '@/utils'
 export type RiskLevel = 'high' | 'medium' | 'low' | 'unknown'
 
 const toneClass: Record<RiskLevel, string> = {
-  high: 'bg-[rgba(242,139,155,0.16)] text-[var(--danger)] border-[rgba(242,139,155,0.46)]',
-  medium: 'bg-[rgba(242,203,119,0.16)] text-[var(--warning)] border-[rgba(242,203,119,0.46)]',
-  low: 'bg-[rgba(121,224,195,0.14)] text-[var(--success)] border-[rgba(121,224,195,0.42)]',
-  unknown: 'bg-[rgba(127,147,186,0.14)] text-[var(--status-neutral)] border-[rgba(127,147,186,0.4)]',
+  high: 'bg-[var(--danger-soft)] text-[var(--danger)] border-[var(--danger-line)]',
+  medium: 'bg-[var(--warning-soft)] text-[var(--warning)] border-[var(--warning-line)]',
+  low: 'bg-[var(--success-soft)] text-[var(--success)] border-[var(--success-line)]',
+  unknown: 'bg-[var(--neutral-soft)] text-[var(--status-neutral)] border-[var(--neutral-line)]',
 }
 
 const labelMap: Record<RiskLevel, string> = {

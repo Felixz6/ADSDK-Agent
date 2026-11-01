@@ -37,8 +37,43 @@ describe('Home — 后端已连接', () => {
   it('点击「静态分析」特性卡导航至 /static', async () => {
     const user = userEvent.setup()
     const { router } = renderWithProviders(<Home />)
-    await user.click(await screen.findByRole('button', { name: /静态分析/ }))
+    await user.click(await screen.findByRole('button', { name: /^静态分析$/ }))
     expect(router.state.location.pathname).toBe('/static')
+  })
+
+  it('点击「动态分析」特性卡导航至 /dynamic', async () => {
+    const user = userEvent.setup()
+    const { router } = renderWithProviders(<Home />)
+    await user.click(await screen.findByRole('button', { name: /^动态分析$/ }))
+    expect(router.state.location.pathname).toBe('/dynamic')
+  })
+
+  it('点击「流量观测」特性卡导航至 /traffic', async () => {
+    const user = userEvent.setup()
+    const { router } = renderWithProviders(<Home />)
+    await user.click(await screen.findByRole('button', { name: /^流量观测$/ }))
+    expect(router.state.location.pathname).toBe('/traffic')
+  })
+
+  it('点击「打开报告」特性卡导航至 /reports', async () => {
+    const user = userEvent.setup()
+    const { router } = renderWithProviders(<Home />)
+    await user.click(await screen.findByRole('button', { name: /^打开报告$/ }))
+    expect(router.state.location.pathname).toBe('/reports')
+  })
+
+  it('点击「环境检测」按钮导航至 /environment', async () => {
+    const user = userEvent.setup()
+    const { router } = renderWithProviders(<Home />)
+    await user.click(await screen.findByRole('button', { name: /^环境检测$/ }))
+    expect(router.state.location.pathname).toBe('/environment')
+  })
+
+  it('点击「查看任务」按钮导航至 /tasks', async () => {
+    const user = userEvent.setup()
+    const { router } = renderWithProviders(<Home />)
+    await user.click(await screen.findByRole('button', { name: /^查看任务$/ }))
+    expect(router.state.location.pathname).toBe('/tasks')
   })
 
   it('最近有本地记录时显示在「最近提交」', async () => {
@@ -109,7 +144,7 @@ describe('Home — 后端已连接', () => {
     expect(screen.getByText('低风险')).toBeInTheDocument()
     expect(screen.getAllByText('静态分析').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: '查看报告' })).toBeInTheDocument()
-    expect(screen.getByText('完成于')).toBeInTheDocument()
+    expect(screen.getByText(/完成于/)).toBeInTheDocument()
   })
 })
 

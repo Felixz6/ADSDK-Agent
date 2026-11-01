@@ -31,7 +31,7 @@ export function NoActiveResult({ expected }: { expected: 'static' | 'dynamic' })
           <button
             type="button"
             onClick={() => navigate('/tasks')}
-            className="px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--text-secondary)] hover:bg-[rgba(157,192,255,0.08)]"
+            className="px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--text-secondary)] hover:bg-[var(--fill-hover)]"
           >
             查看历史
           </button>

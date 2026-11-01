@@ -16,13 +16,13 @@ export function PageHeader({ title, description, actions, eyebrow, className }: 
     <div className={cn('flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between', className)}>
       <div className="min-w-0">
         {eyebrow && (
-          <div className="text-xs text-[var(--text-tertiary)] mb-1 tracking-wide">{eyebrow}</div>
+          <div className="mb-2 text-[13px] text-[var(--text-tertiary)]">{eyebrow}</div>
         )}
-        <h1 className="text-xl sm:text-2xl font-semibold text-[var(--text-primary)] tracking-tight">
+        <h1 className="text-[clamp(1.75rem,3vw,2.5rem)] font-semibold leading-[1.1] tracking-[-0.03em] text-[var(--text-primary)]">
           {title}
         </h1>
         {description && (
-          <p className="text-sm text-[var(--text-secondary)] mt-1.5 max-w-2xl">{description}</p>
+          <p className="mt-3 max-w-2xl text-[17px] leading-[1.47] text-[var(--text-secondary)]">{description}</p>
         )}
       </div>
       {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}

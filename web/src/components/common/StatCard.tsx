@@ -26,14 +26,7 @@ export function StatCard({ label, value, hint, icon, tone = 'default', className
     <GlassCard padding="md" highlight className={cn('min-w-0', className)}>
       <div className="flex items-start gap-3">
         {icon && (
-          <div
-            className={cn(
-              'flex items-center justify-center w-10 h-10 rounded-[10px]',
-              'bg-[rgba(120,216,255,0.08)] border border-[var(--border-soft)]',
-              toneColor[tone],
-            )}
-            aria-hidden
-          >
+          <div className={cn('mt-1 shrink-0', toneColor[tone])} aria-hidden>
             {icon}
           </div>
         )}

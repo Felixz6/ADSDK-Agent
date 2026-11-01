@@ -63,7 +63,7 @@ export function TrafficRequestDrawer({ record, onClose }: TrafficRequestDrawerPr
           >
             <header className="flex items-center justify-between gap-2 px-4 h-[var(--topbar-h)] border-b border-[var(--border-soft)]">
               <div className="flex items-center gap-2 min-w-0">
-                {record.scheme === 'https' ? <Lock size={16} className="text-[var(--success)]" /> : <Globe size={16} className="text-[var(--accent-blue)]" />}
+                {record.scheme === 'https' ? <Lock size={16} className="text-[var(--success)]" /> : <Globe size={16} className="text-[var(--text-secondary)]" />}
                 <span className="text-sm font-semibold text-[var(--text-primary)] truncate">
                   {record.method} · {record.hostname ?? '(主机未记录)'}
                 </span>
@@ -100,7 +100,7 @@ function Banner({ record }: { record: HttpRequestRecord }) {
         'rounded-[12px] px-3 py-2.5 border flex items-center gap-2 text-xs',
         hasError
           ? 'border-[rgba(242,139,155,0.4)] bg-[rgba(242,139,155,0.08)] text-[var(--danger)]'
-          : 'border-[var(--border-soft)] bg-[rgba(120,216,255,0.06)] text-[var(--text-secondary)]',
+          : 'border-[var(--border-soft)] bg-[var(--accent-soft)] text-[var(--text-secondary)]',
       )}
     >
       {hasError ? <X size={14} /> : <ShieldOff size={14} className="text-[var(--warning)]" />}

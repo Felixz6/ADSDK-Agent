@@ -89,8 +89,8 @@ export function ConsentCheckpointCard({
             className={cn(
               'shrink-0 rounded-full border px-2.5 py-0.5 text-xs',
               awaiting
-                ? 'border-[rgba(242,203,119,0.45)] text-[var(--warning)]'
-                : 'border-[rgba(127,147,186,0.45)] text-[var(--status-neutral)]',
+                ? 'border-[var(--warning-line)] text-[var(--warning)]'
+                : 'border-[var(--hairline)] text-[var(--status-neutral)]',
             )}
           >
             {state.status}

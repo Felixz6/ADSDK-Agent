@@ -18,17 +18,17 @@ const ICON: Record<StepStatus, LucideIcon> = {
 }
 
 const COLOR: Record<StepStatus, string> = {
-  success: 'text-[var(--success)] border-[rgba(121,224,195,0.5)]',
-  partial: 'text-[var(--warning)] border-[rgba(242,203,119,0.5)]',
-  failed: 'text-[var(--danger)] border-[rgba(242,139,155,0.5)]',
-  skipped: 'text-[var(--status-neutral)] border-[rgba(127,147,186,0.45)]',
+  success: 'text-[var(--success)] border-[var(--success-line)]',
+  partial: 'text-[var(--warning)] border-[var(--warning-line)]',
+  failed: 'text-[var(--danger)] border-[var(--danger-line)]',
+  skipped: 'text-[var(--status-neutral)] border-[var(--neutral-line)]',
 }
 
 const LINE: Record<StepStatus, string> = {
-  success: 'bg-[rgba(121,224,195,0.5)]',
-  partial: 'bg-[rgba(242,203,119,0.5)]',
-  failed: 'bg-[rgba(242,139,155,0.5)]',
-  skipped: 'bg-[rgba(127,147,186,0.35)]',
+  success: 'bg-[var(--success)]',
+  partial: 'bg-[var(--warning)]',
+  failed: 'bg-[var(--danger)]',
+  skipped: 'bg-[var(--hairline)]',
 }
 
 /** 简短中文步骤名翻译(仅用于展示;后端原始 name 在副标题保留) */

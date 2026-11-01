@@ -2,8 +2,6 @@ import { useState, type ReactNode } from 'react'
 import {
   Sun,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   Trash2,
   Server,
   Info,
@@ -26,8 +24,6 @@ import { cn } from '@/utils'
 export default function Settings() {
   const theme = useUIStore((s) => s.theme)
   const setTheme = useUIStore((s) => s.setTheme)
-  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
-  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
   const clearActive = useAnalysisStore((s) => s.clear)
   const pushToast = useUIStore((s) => s.pushToast)
   const health = useServiceHealth()
@@ -40,7 +36,7 @@ export default function Settings() {
   function changeTheme(t: Theme) {
     setTheme(t)
     applyTheme(t)
-    pushToast({ kind: 'success', message: t === 'dark' ? '已切换至深空主题。' : '已切换至亮色主题。', duration: 2000 })
+    pushToast({ kind: 'success', message: t === 'dark' ? '已切换至深色。' : '已切换至浅色。', duration: 2000 })
   }
 
   function handleClearTasks() {
@@ -68,10 +64,10 @@ export default function Settings() {
           <Sun size={15} /> 主题
         </h3>
         <div className="flex items-center gap-2">
-          <ThemeOption current={theme} value="dark" label="深空" icon={<Moon size={16} />} onSelect={changeTheme} />
-          <ThemeOption current={theme} value="light" label="亮色" icon={<Sun size={16} />} onSelect={changeTheme} />
+          <ThemeOption current={theme} value="light" label="浅色" icon={<Sun size={16} />} onSelect={changeTheme} />
+          <ThemeOption current={theme} value="dark" label="深色" icon={<Moon size={16} />} onSelect={changeTheme} />
         </div>
-        <p className="text-[11px] text-[var(--text-tertiary)] mt-2">推荐使用深空主题以呈现「星空控制台」视觉效果。</p>
+        <p className="text-[11px] text-[var(--text-tertiary)] mt-2">浅色是默认表面。深色保留同一套层级，只切换明暗。</p>
       </GlassCard>
 
       <GlassCard padding="md" highlight>
@@ -89,21 +85,6 @@ export default function Settings() {
       </GlassCard>
 
       <AISettingsCard />
-
-      <GlassCard padding="md" highlight>
-        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-1.5">
-          <PanelLeftClose size={15} /> 侧边栏
-        </h3>
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-          {sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-        </button>
-        <p className="text-[11px] text-[var(--text-tertiary)] mt-2">也可使用快捷键 Ctrl/⌘ + B 切换。</p>
-      </GlassCard>
 
       <GlassCard padding="md" highlight>
         <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-1.5">
@@ -156,9 +137,8 @@ export default function Settings() {
           <Info size={15} /> 关于
         </h3>
         <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-          AdSDK Agent Web —— 星空视觉安全分析控制台。前端采用 React 18 + TypeScript + Vite + Tailwind,
-          与本地 FastAPI Agent 后端对接,提供静态/动态分析与隐私合规取证可视化。
-          所有敏感标识(设备标识、Cookie、鉴权令牌、原始 URL)一律脱敏或不予展示。
+          AdSDK Agent 在本地完成 Android APK 的隐私审计。前端使用 React 18、TypeScript 与 Vite，
+          对接本机 FastAPI。设备标识、Cookie、鉴权令牌与原始 URL 一律脱敏或不予展示。
         </p>
         <div className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)]">
           <Github size={13} /> 版本 1.0.0 · schema 1.0

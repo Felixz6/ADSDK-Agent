@@ -181,7 +181,7 @@ export default function Tasks() {
         <GlassCard padding="none" highlight className="min-w-0 overflow-hidden">
           <div className="hidden overflow-x-auto xl:block" data-testid="task-desktop-table">
             <table className="w-full min-w-[980px] text-left">
-              <thead className="border-b border-[rgba(157,192,255,0.09)] text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">
+              <thead className="border-b border-[var(--hairline)] text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">
                 <tr>
                   {['应用 / APK', '类型', '设备', '状态', '阶段与进度', '风险', '创建时间', '操作'].map((label) => (
                     <th key={label} className="px-4 py-3.5 font-medium">{label}</th>
@@ -196,13 +196,13 @@ export default function Tasks() {
             </table>
           </div>
 
-          <div className="divide-y divide-[rgba(157,192,255,0.07)] xl:hidden" data-testid="task-mobile-list">
+          <div className="divide-y divide-[var(--hairline)] xl:hidden" data-testid="task-mobile-list">
             {tasks.data.items.map((task) => (
               <TaskCard key={task.id} task={task} {...renderActions(task)} />
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[rgba(157,192,255,0.08)] px-4 py-3 text-xs text-[var(--text-tertiary)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] px-4 py-3 text-xs text-[var(--text-tertiary)]">
             <span>共 {tasks.data.total} 条 · 第 {tasks.data.page} / {Math.max(1, tasks.data.pages)} 页</span>
             <div className="flex gap-2">
               <button type="button" aria-label="上一页" title="上一页" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="control-icon"><ChevronLeft size={15} /></button>
@@ -224,7 +224,7 @@ export default function Tasks() {
           {showLegacy && (
             <ul className="mt-3 flex flex-col gap-2">
               {legacy.map((task) => (
-                <li key={task.local_id} className="rounded-[10px] border border-[rgba(157,192,255,0.1)] px-3 py-2">
+                <li key={task.local_id} className="rounded-[10px] border border-[var(--hairline)] px-3 py-2">
                   <p className="truncate text-sm text-[var(--text-primary)]">{task.package_name || task.apk_path}</p>
                   <p className="text-[11px] text-[var(--text-tertiary)]">浏览器旧记录 · {formatDateTime(task.created_at)}</p>
                 </li>
@@ -261,7 +261,7 @@ type TaskActions = {
 
 function TaskRow({ task, ...actions }: { task: TaskRecord } & TaskActions) {
   return (
-    <tr className="border-b border-[rgba(157,192,255,0.07)] transition-colors last:border-b-0 hover:bg-[rgba(157,192,255,0.035)]">
+    <tr className="border-b border-[var(--hairline)] transition-colors last:border-b-0 hover:bg-[var(--fill-hover)]">
       <td className="max-w-[280px] px-4 py-4">
         <ApplicationIdentity task={task} onOpen={actions.onOpen} />
       </td>
@@ -280,7 +280,7 @@ function TaskRow({ task, ...actions }: { task: TaskRecord } & TaskActions) {
 
 function TaskCard({ task, ...actions }: { task: TaskRecord } & TaskActions) {
   return (
-    <article className="min-w-0 px-4 py-4 transition-colors hover:bg-[rgba(157,192,255,0.035)]">
+    <article className="min-w-0 px-4 py-4 transition-colors hover:bg-[var(--fill-hover)]">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <ApplicationIdentity task={task} onOpen={actions.onOpen} />
         <ActionButtons task={task} {...actions} />

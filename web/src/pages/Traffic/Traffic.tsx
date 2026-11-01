@@ -55,9 +55,9 @@ export default function Traffic() {
       <div
         role="note"
         aria-live="polite"
-        className="glass rounded-[12px] border border-[var(--border-active)] bg-[rgba(91,205,255,0.06)] px-4 py-3 flex items-start gap-2.5"
+        className="glass rounded-[12px] border border-[var(--border-soft)] bg-[var(--fill-quiet)] px-4 py-3 flex items-start gap-2.5"
       >
-        <Info size={18} className="text-[var(--accent-blue)] shrink-0 mt-0.5" aria-hidden="true" />
+        <Info size={18} className="text-[var(--text-secondary)] shrink-0 mt-0.5" aria-hidden="true" />
         <div className="text-[13px] leading-relaxed text-[var(--text-secondary)] space-y-1">
           <p>
             <strong className="text-[var(--text-primary)]">本页展示的是 <code className="font-mono">/traffic/check</code> 环境自检结果,不是某次 APK 动态采集任务的流量。</strong>

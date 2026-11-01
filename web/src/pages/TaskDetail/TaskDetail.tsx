@@ -203,7 +203,7 @@ export default function TaskDetail() {
           <StatusBadge tone={statusTone(task.status)} label={STATUS_LABEL[task.status]} />
         </div>
         <div className="h-2.5 rounded-full bg-[rgba(127,147,186,0.2)] overflow-hidden">
-          <span className="block h-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] transition-[width] duration-300" style={{ width: `${task.progress_percent}%` }} />
+          <span className="block h-full bg-[var(--accent-blue)] transition-[width] duration-300" style={{ width: `${task.progress_percent}%` }} />
         </div>
       </GlassCard>
 
@@ -333,7 +333,7 @@ export default function TaskDetail() {
                       <>
                         <p className="mt-1 text-xs text-[var(--text-secondary)]">{friendlyStepMessage(step.message)}</p>
                         {isTechnicalStepMessage(step.message) && (
-                          <details className="mt-2 rounded-[8px] border border-[rgba(157,192,255,0.08)] px-2.5 py-1.5">
+                          <details className="mt-2 rounded-[8px] border border-[var(--hairline)] px-2.5 py-1.5">
                             <summary className="cursor-pointer text-[11px] text-[var(--text-tertiary)]">技术详情</summary>
                             <p className="mt-1.5 break-all font-mono text-[11px] text-[var(--text-tertiary)]">{step.message}</p>
                           </details>
@@ -359,7 +359,7 @@ export default function TaskDetail() {
           <h3 className="text-sm font-semibold text-[var(--danger)] flex items-center gap-2"><ShieldAlert size={16} /> 诊断信息</h3>
           <p className="text-sm text-[var(--text-secondary)] mt-2">{task.error_message ?? '任务执行未完成，请查看步骤时间线。'}</p>
           {task.error_code && (
-            <details className="mt-3 rounded-[10px] border border-[rgba(157,192,255,0.08)] px-3 py-2">
+            <details className="mt-3 rounded-[10px] border border-[var(--hairline)] px-3 py-2">
               <summary className="cursor-pointer text-xs text-[var(--text-tertiary)]">技术详情</summary>
               <p className="mt-2 break-all font-mono text-xs text-[var(--text-secondary)]">{task.error_code}</p>
             </details>

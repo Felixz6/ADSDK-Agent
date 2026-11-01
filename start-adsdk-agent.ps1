@@ -92,7 +92,7 @@ $Command
 }
 
 if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
-    throw "未找到虚拟环境：$VenvPython`n请先执行：py -3.14 -m venv .venv"
+    throw "未找到虚拟环境：$VenvPython`n请先执行：py -m venv .venv"
 }
 
 if (-not (Test-Path -LiteralPath $PackageJson -PathType Leaf)) {

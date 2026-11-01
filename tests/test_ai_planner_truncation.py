@@ -41,6 +41,17 @@ from app.ai.tool_registry import AIToolRegistry
 # ---------------------------------------------------------------------------
 # Helpers.
 # ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _enable_ai_for_truncation_tests(monkeypatch: pytest.MonkeyPatch):
+    orig_init = AIOrchestrator.__init__
+
+    def _init(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("enabled", True)
+        orig_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(AIOrchestrator, "__init__", _init)
+
+
 def _step(step_id: str, tool: str, **kwargs: Any) -> dict[str, Any]:
     return {
         "step_id": step_id,

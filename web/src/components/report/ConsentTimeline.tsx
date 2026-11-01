@@ -22,11 +22,11 @@ const MARKERS = [
 ]
 
 const toneClass: Record<'accent' | 'info' | 'warning' | 'neutral' | 'danger', string> = {
-  accent: 'text-[var(--accent-purple)] border-[rgba(182,161,255,0.5)]',
-  info: 'text-[var(--accent-blue)] border-[rgba(120,216,255,0.5)]',
-  warning: 'text-[var(--warning)] border-[rgba(242,203,119,0.5)]',
-  neutral: 'text-[var(--status-neutral)] border-[rgba(127,147,186,0.45)]',
-  danger: 'text-[var(--danger)] border-[rgba(242,139,155,0.5)]',
+  accent: 'text-[var(--text-primary)] border-[var(--border-soft)]',
+  info: 'text-[var(--text-secondary)] border-[var(--border-soft)]',
+  warning: 'text-[var(--warning)] border-[var(--warning-line)]',
+  neutral: 'text-[var(--status-neutral)] border-[var(--neutral-line)]',
+  danger: 'text-[var(--danger)] border-[var(--danger-line)]',
 }
 
 export function ConsentTimeline({ timeline, consentMonotonicMs, preSeconds, postSeconds, eventCount }: ConsentTimelineProps) {

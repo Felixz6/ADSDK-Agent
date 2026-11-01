@@ -1,24 +1,10 @@
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import {
-  ShieldCheck,
-  PlusCircle,
-  Cpu,
-  Activity,
-  Network,
-  ArrowRight,
-  Sparkles,
-  ListChecks,
-  GitCompareArrows,
-  FileText,
-} from 'lucide-react'
-import { GlassCard } from '@/components/common/GlassCard'
 import { useServiceHealth } from '@/hooks/useApi'
 import { useTasks } from '@/hooks/useTasks'
 import { listLocalTasks } from '@/api/tasks'
-import { StatCard } from '@/components/common/StatCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { RiskBadge } from '@/components/common/RiskBadge'
+import { HeroConsole } from '@/components/home/HeroConsole'
 import { formatDateTime } from '@/utils'
 import {
   riskBadgeLevel,
@@ -28,10 +14,19 @@ import {
   taskTypeLongLabel,
 } from '@/utils/taskPresentation'
 
-const FEATURES = [
-  { icon: Cpu, title: '静态分析', desc: '解包识别 AndroidManifest 与广告 SDK 指纹', to: '/static' },
-  { icon: Activity, title: '动态分析', desc: '同意前/同意后敏感 API 行为取证与红脱敏', to: '/dynamic' },
-  { icon: Network, title: '流量观测', desc: '记录网络外发请求样本,键值脱敏不留痕', to: '/traffic' },
+const STAGES = [
+  { n: '01', title: '环境检查', body: '确认 ADB、Frida、mitmproxy 与输出目录是否就绪。', to: '/environment', go: '环境' },
+  { n: '02', title: '静态分析', body: '校验 APK、解析 Manifest 与权限，识别 SDK 指纹。', to: '/static', go: '静态' },
+  { n: '03', title: '动态分析', body: '用单调时钟划分同意前、同意后与时间不明。', to: '/dynamic', go: '动态' },
+  { n: '04', title: '网络流量', body: '记录请求元数据。不保存认证头、Cookie 与正文。', to: '/traffic', go: '流量' },
+  { n: '05', title: '报告', body: '规则给出观察、疑似与证据缺口。AI 只整理叙述。', to: '/reports', go: '报告' },
+]
+
+const SPECS = [
+  ['包名与版本', '应用信息、versionName 与 versionCode'],
+  ['权限与组件', 'Manifest 中声明的权限、活动与服务'],
+  ['SDK 指纹', '广告、统计、推送、归因、定位与社交'],
+  ['完整性', '路径校验、ZIP 与 SHA-256 快照'],
 ]
 
 export default function Home() {
@@ -47,188 +42,235 @@ export default function Home() {
   const reachable = Boolean(health.data?.ok)
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Hero */}
-      <GlassCard strong highlight padding="lg" className="flex flex-col gap-4 min-h-[340px] justify-center">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="flex flex-col gap-3 max-w-2xl"
-        >
-          <span className="inline-flex items-center gap-1.5 text-xs text-[var(--accent-blue)] tracking-wider">
-            <Sparkles size={14} /> AdSDK Agent · 隐私合规取证控制台
-          </span>
-          <h1 className="text-3xl sm:text-4xl font-semibold text-[var(--text-primary)] tracking-tight leading-tight">
-            星穹之下的守望
-            <br className="hidden sm:block" />
-            <span className="text-[var(--accent-blue)]"> 安全分析控制台</span>
+    <>
+      <section className="hero">
+        <div className="hero-copy">
+          <p className="kicker">AdSDK Agent</p>
+          <h1 className="display">
+            隐私审计，
+            <br />
+            留在本机。
           </h1>
-          <p className="text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
-            面向安卓广告 SDK 的隐私合规取证工具。对 APK 进行静态清单与 SDK 识别、动态同意前后行为采集、
-            网络外发观测与严格规则判定。所有原始敏感标识一律 HMAC 脱敏,可在本地合规留存证据。
+          <p className="lede">
+            面向已授权的 Android APK。静态清单、动态行为、网络流量与证据关联都在这台电脑上完成。事实由确定性工具产生。
           </p>
-          <div className="flex items-center gap-3 flex-wrap mt-1">
-            <button
-              type="button"
-              onClick={() => navigate('/analysis/new')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[12px] font-medium text-[var(--text-on-accent)] bg-[var(--accent-blue)] hover:brightness-110 transition-all shadow-[var(--shadow-glow)]"
-            >
-              <PlusCircle size={18} /> 新建分析
+          <div className="hero-actions">
+            <button type="button" className="pill pill-lg" onClick={() => navigate('/analysis/new')}>
+              新建分析
             </button>
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[12px] font-medium text-[var(--text-primary)] glass border-[var(--border-soft)] hover:border-[var(--border-active)] transition-colors"
-            >
-              查看仪表盘 <ArrowRight size={16} />
-            </button>
-            <button type="button" onClick={() => navigate('/tasks')} className="control-button">
-              <ListChecks size={16} /> 任务中心
-            </button>
-            <button type="button" onClick={() => navigate('/comparisons')} className="control-button">
-              <GitCompareArrows size={16} /> 版本对比
+            <button type="button" className="pill-quiet pill-lg" onClick={() => navigate('/tasks')}>
+              查看任务
             </button>
           </div>
-        </motion.div>
-      </GlassCard>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="静态分析" value={staticQuery.data?.total ?? '—'} tone="success" icon={<Cpu size={18} />} />
-        <StatCard label="动态分析" value={dynamicQuery.data?.total ?? '—'} tone="warning" icon={<Network size={18} />} />
-        <StatCard label="版本对比" value={comparisonQuery.data?.total ?? '—'} tone="default" icon={<GitCompareArrows size={18} />} />
-        <StatCard label="运行中任务" value={runningQuery.data?.total ?? '—'} tone="accent" icon={<Activity size={18} />} />
-      </div>
-
-      {/* Backend status banner */}
-      <GlassCard padding="md" className="flex items-center gap-3">
-        <ShieldCheck
-          size={20}
-          className={reachable ? 'text-[var(--success)]' : 'text-[var(--danger)]'}
-        />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-[var(--text-primary)] font-medium">
-            {reachable ? '已连接 AdSDK Agent 后端' : '后端未连接 · 部分功能不可用'}
-          </p>
-          <p className="text-xs text-[var(--text-tertiary)] truncate">
-            {reachable
-              ? `服务运行中 · 健康检查于 ${fmtMs(health.dataUpdatedAt)}`
-              : '请启动本地 FastAPI(127.0.0.1:8000)后再提交分析任务。'}
-          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate('/environment')}
-          className="text-xs px-3 py-1.5 rounded-[10px] border border-[var(--border-soft)] text-[var(--text-secondary)] hover:bg-[rgba(157,192,255,0.08)]"
-        >
-          环境检测
-        </button>
-      </GlassCard>
+        <HeroConsole />
+      </section>
 
-      {/* Feature cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {FEATURES.map((f, i) => {
-          const Icon = f.icon
-          return (
-            <motion.button
-              key={f.to}
-              type="button"
-              onClick={() => navigate(f.to)}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 + i * 0.08, duration: 0.3 }}
-              className="text-left focus:outline-none"
-            >
-              <GlassCard padding="md" highlight className="h-full hover:border-[var(--border-active)] transition-colors">
-                <div className="flex items-center gap-2.5 mb-2">
-                  <span className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-[rgba(120,216,255,0.10)] text-[var(--accent-blue)] border border-[var(--border-soft)]">
-                    <Icon size={20} />
+      <section className="chapter chapter-ink" aria-labelledby="pipeline-title">
+        <div className="chapter-inner">
+          <h2 id="pipeline-title">证据先于叙述。</h2>
+          <p className="lede">一次任务按固定顺序取证。模型不能改写其中的计数、风险或证据。</p>
+          <ol className="stage-list">
+            {STAGES.map((stage) => (
+              <li key={stage.n}>
+                <a href={stage.to} onClick={(event) => { event.preventDefault(); navigate(stage.to) }}>
+                  <span className="num">{stage.n}</span>
+                  <span>
+                    <strong>{stage.title}</strong>
+                    <span className="stage-body">{stage.body}</span>
                   </span>
-                  <span className="text-sm font-semibold text-[var(--text-primary)]">{f.title}</span>
-                </div>
-                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{f.desc}</p>
-                <span className="inline-flex items-center gap-1 text-xs text-[var(--accent-blue)] mt-3">
-                  进入 <ArrowRight size={13} />
-                </span>
-              </GlassCard>
-            </motion.button>
-          )
-        })}
-      </div>
-
-      {/* Recent tasks */}
-      <GlassCard padding="md">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">最近提交</h2>
-          <button
-            type="button"
-            onClick={() => navigate('/tasks')}
-            className="text-xs text-[var(--text-secondary)] hover:text-[var(--accent-blue)]"
-          >
-            查看全部
-          </button>
+                  <span className="go">{stage.go}</span>
+                </a>
+              </li>
+            ))}
+          </ol>
         </div>
-        {recent.length === 0 && legacyRecent.length === 0 ? (
-          <p className="text-sm text-[var(--text-tertiary)] py-6 text-center">尚无持久化任务。点击「新建分析」开始。</p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-[rgba(157,192,255,0.07)]">
-            {recent.map((t) => (
-              <li key={t.id} className="flex min-w-0 items-center gap-2 rounded-[10px] px-2 py-3 transition-colors hover:bg-[rgba(157,192,255,0.045)]">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/tasks/${t.id}`)}
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                  title={`任务 ID：${t.id}`}
-                >
-                  <StatusBadge
-                    className="hidden min-w-[68px] justify-center sm:inline-flex"
-                    tone={t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : t.status === 'cancelled' ? 'neutral' : 'warning'}
-                    label={t.status === 'completed' ? '已完成' : t.status === 'failed' ? '失败' : t.status === 'running' ? '分析中' : t.status === 'cancelled' ? '已取消' : '排队中'}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-[var(--text-primary)]">{taskTitle(t)}</span>
-                    <span className="mt-1 block truncate text-[11px] text-[var(--text-tertiary)]">{taskSubtitle(t)}</span>
-                  </span>
-                </button>
-                <div className="hidden shrink-0 items-center gap-2 md:flex">
-                  <StatusBadge tone="info" label={taskTypeLongLabel(t.task_type)} dot={false} />
-                  <RiskBadge level={riskBadgeLevel(t.risk_level)} label={riskLevelLabel(t.risk_level)} />
-                </div>
-                <div className="hidden shrink-0 text-right text-[11px] text-[var(--text-tertiary)] lg:block">
-                  <p>{t.completed_at ? '完成于' : '提交于'}</p>
-                  <p className="mt-0.5">{formatDateTime(t.completed_at || t.created_at)}</p>
-                </div>
-                {t.report_json_path && (
-                  <button
-                    type="button"
-                    aria-label="查看报告"
-                    title="查看报告"
-                    onClick={() => navigate(`/reports?task_id=${t.id}`)}
-                    className="control-icon shrink-0"
-                  >
-                    <FileText size={14} />
+      </section>
+
+      <section className="chapter" aria-labelledby="static-title">
+        <div className="chapter-inner split">
+          <div>
+            <h2 id="static-title">先读清单。</h2>
+            <p>
+              在设备被改动之前，先确认包里有什么。解包按 SHA-256 缓存。某一维证据失败时，其余部分仍然保留。
+            </p>
+            <div className="hero-actions">
+              <button type="button" className="pill" onClick={() => navigate('/static')}>
+                静态分析
+              </button>
+            </div>
+          </div>
+          <dl className="spec">
+            {SPECS.map(([term, detail]) => (
+              <div key={term}>
+                <dt>{term}</dt>
+                <dd>{detail}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <section className="chapter chapter-soft" aria-labelledby="consent-title">
+        <div className="chapter-inner">
+          <h2 id="consent-title">同意，用时间划分。</h2>
+          <p className="prose">不靠文案顺序猜测用户是否已经同意。只比较事件与人工检查点的单调时钟。</p>
+          <div className="trio">
+            <article>
+              <h3>同意前</h3>
+              <p>事件早于确认点。</p>
+            </article>
+            <article>
+              <h3>同意后</h3>
+              <p>事件不早于确认点。</p>
+            </article>
+            <article>
+              <h3>时间不明</h3>
+              <p>缺少可信时间。相关规则记为未评估。</p>
+            </article>
+          </div>
+          <div className="hero-actions">
+            <button type="button" className="pill" onClick={() => navigate('/dynamic')}>
+              动态分析
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="chapter" aria-labelledby="traffic-title">
+        <div className="chapter-inner">
+          <h2 id="traffic-title">看见请求，不留下秘密。</h2>
+          <div className="pair">
+            <div>
+              <h3>会留下</h3>
+              <ul>
+                <li>主机与路径形态</li>
+                <li>时间与观察窗口</li>
+                <li>零请求也是一种结果</li>
+              </ul>
+            </div>
+            <div>
+              <h3>不会留下</h3>
+              <ul>
+                <li>认证头与 Cookie</li>
+                <li>请求和响应正文</li>
+                <li>完整的 query 值</li>
+              </ul>
+            </div>
+          </div>
+          <div className="hero-actions">
+            <button type="button" className="pill" onClick={() => navigate('/traffic')}>
+              流量观测
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="chapter chapter-ink" aria-labelledby="limit-title">
+        <div className="chapter-inner">
+          <h2 id="limit-title" className="quote-block">未观察到，不是安全。</h2>
+          <p className="quote-follow">时间接近，不是因果。</p>
+          <div className="hero-actions">
+            <button type="button" className="pill" onClick={() => navigate('/reports')}>
+              打开报告
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="chapter chapter-soft" aria-labelledby="recent-title">
+        <div className="chapter-inner">
+          <div className="workbench-head">
+            <h2 id="recent-title">最近提交</h2>
+            <button type="button" className="pill-quiet" onClick={() => navigate('/dashboard')}>
+              查看仪表盘
+            </button>
+          </div>
+          <div className="status-row">
+            <p className="status-line" role="status">
+              {reachable ? '已连接 AdSDK Agent 后端' : '后端未连接 · 部分功能不可用'}
+              {reachable
+                ? ` · 健康检查于 ${fmtMs(health.dataUpdatedAt)}`
+                : '。请启动本地 FastAPI(127.0.0.1:8000)后再提交分析任务。'}
+            </p>
+            <button type="button" className="pill-quiet" onClick={() => navigate('/environment')}>
+              环境检测
+            </button>
+          </div>
+          <dl className="stats">
+            <div>
+              <dt>静态分析</dt>
+              <dd className={staticQuery.data ? undefined : 'stat-empty'}>{staticQuery.data?.total ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>动态分析</dt>
+              <dd className={dynamicQuery.data ? undefined : 'stat-empty'}>{dynamicQuery.data?.total ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>版本对比</dt>
+              <dd className={comparisonQuery.data ? undefined : 'stat-empty'}>{comparisonQuery.data?.total ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>运行中任务</dt>
+              <dd className={runningQuery.data ? undefined : 'stat-empty'}>{runningQuery.data?.total ?? '—'}</dd>
+            </div>
+          </dl>
+          {recent.length === 0 && legacyRecent.length === 0 ? (
+            <p className="prose">尚无持久化任务。点击「新建分析」开始。</p>
+          ) : (
+            <ul className="recent">
+              {recent.map((task) => (
+                <li key={task.id}>
+                  <button type="button" className="linkish" onClick={() => navigate(`/tasks/${task.id}`)} title={`任务 ID：${task.id}`}>
+                    <StatusBadge
+                      className="hidden min-w-[68px] justify-center sm:inline-flex"
+                      tone={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : task.status === 'running' ? 'info' : task.status === 'cancelled' ? 'neutral' : 'warning'}
+                      label={task.status === 'completed' ? '已完成' : task.status === 'failed' ? '失败' : task.status === 'running' ? '分析中' : task.status === 'cancelled' ? '已取消' : '排队中'}
+                    />
+                    <span className="min-w-0">
+                      <span className="title">{taskTitle(task)}</span>
+                      <span className="meta">{taskSubtitle(task)}</span>
+                    </span>
                   </button>
-                )}
-              </li>
-            ))}
-            {recent.length === 0 && legacyRecent.map((t) => (
-              <li key={t.local_id} className="rounded-[10px] px-3 py-2 border border-[var(--border-soft)]">
-                <p className="text-sm text-[var(--text-primary)] truncate">{t.apk_path}</p>
-                <p className="text-[11px] text-[var(--text-tertiary)]">浏览器旧记录 · {formatDateTime(t.created_at)}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </GlassCard>
-    </div>
+                  <span className="meta when">{taskTypeLongLabel(task.task_type)}</span>
+                  <RiskBadge level={riskBadgeLevel(task.risk_level)} label={riskLevelLabel(task.risk_level)} />
+                  <span className="meta when">
+                    <span>{task.completed_at ? '完成于' : '提交于'}</span>
+                    <span>{formatDateTime(task.completed_at || task.created_at)}</span>
+                  </span>
+                  {task.report_json_path && (
+                    <button
+                      type="button"
+                      aria-label="查看报告"
+                      title="查看报告"
+                      className="control-icon"
+                      onClick={() => navigate(`/reports?task_id=${task.id}`)}
+                    >
+                      <span aria-hidden>→</span>
+                    </button>
+                  )}
+                </li>
+              ))}
+              {recent.length === 0 && legacyRecent.map((task) => (
+                <li key={task.local_id}>
+                  <span className="min-w-0">
+                    <span className="title">{task.apk_path}</span>
+                    <span className="meta">浏览器旧记录 · {formatDateTime(task.created_at)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+    </>
   )
 }
 
-/** 毫秒时间戳 -> "2026-07-25 16:30:09" 本地时间,dataUpdatedAt 为数字 */
 function fmtMs(ms: number | undefined): string {
   if (!ms || Number.isNaN(ms)) return '—'
-  const d = new Date(ms)
-  if (Number.isNaN(d.getTime())) return '—'
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return '—'
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }

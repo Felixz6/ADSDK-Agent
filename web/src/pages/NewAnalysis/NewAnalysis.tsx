@@ -219,7 +219,7 @@ export default function NewAnalysis() {
                 <>
                   {!aiAvailable && (
                     <div
-                      className="rounded-[10px] border border-[var(--border-soft)] bg-[rgba(157,192,255,0.06)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]"
+                      className="rounded-[10px] border border-[var(--border-soft)] bg-[var(--fill-quiet)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]"
                       data-testid="ai-disabled-notice"
                     >
                       {aiStatus.data?.enabled === false
@@ -265,7 +265,7 @@ export default function NewAnalysis() {
                           className={cn(
                             'min-w-0 rounded-[12px] border p-3 text-left transition',
                             analysisScope === value
-                              ? 'border-[var(--border-active)] bg-[rgba(120,216,255,0.08)]'
+                              ? 'border-[var(--border-active)] bg-[var(--accent-soft)]'
                               : 'border-[var(--border-soft)]',
                           )}
                         >
@@ -347,7 +347,7 @@ export default function NewAnalysis() {
                         className={cn(
                           'min-w-0 rounded-[12px] border p-3 text-left transition',
                           dynamicPolicy === value
-                            ? 'border-[var(--border-active)] bg-[rgba(120,216,255,0.08)]'
+                            ? 'border-[var(--border-active)] bg-[var(--accent-soft)]'
                             : 'border-[var(--border-soft)]',
                         )}
                       >
@@ -419,7 +419,7 @@ export default function NewAnalysis() {
                     : ([] as [string, string][])),
                 ]}
               />
-              <div className="rounded-[10px] border border-[var(--border-soft)] bg-[rgba(120,216,255,0.06)] px-3 py-2 text-xs text-[var(--text-secondary)] leading-relaxed">
+              <div className="rounded-[10px] border border-[var(--border-soft)] bg-[var(--accent-soft)] px-3 py-2 text-xs text-[var(--text-secondary)] leading-relaxed">
                 提交后将进入任务详情页；任务在后台运行，可实时查看真实步骤。
                 动态任务会独占所选设备，离开页面不会中断分析。
               </div>
@@ -486,7 +486,7 @@ function Stepper({ current }: { current: number }) {
               i === current ? 'glass-strong border-[var(--border-active)] text-[var(--text-primary)]' : i < current ? 'text-[var(--success)]' : 'text-[var(--text-tertiary)]',
             )}
           >
-            <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-semibold', i === current ? 'bg-[var(--accent-blue)] text-[var(--text-on-accent)]' : i < current ? 'bg-[rgba(121,224,195,0.18)] text-[var(--success)]' : 'bg-[rgba(127,147,186,0.16)] text-[var(--text-tertiary)]')}>
+            <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-semibold', i === current ? 'bg-[var(--accent-blue)] text-[var(--text-on-accent)]' : i < current ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--fill-quiet)] text-[var(--text-tertiary)]')}>
               {i + 1}
             </span>
             <span className="truncate">{s.title}</span>
@@ -532,7 +532,7 @@ function ToggleField({ id, label, value, onChange, disabled }: { id: string; lab
         onClick={() => onChange(!value)}
         className={cn(
           'relative w-10 h-6 rounded-full transition-colors',
-          value ? 'bg-[var(--accent-blue)]' : 'bg-[rgba(127,147,186,0.3)]',
+          value ? 'bg-[var(--accent-blue)]' : 'bg-[var(--hairline)]',
         )}
       >
         <span className={cn('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform', value && 'translate-x-4')} />

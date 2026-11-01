@@ -27,8 +27,8 @@ export function Checkbox({
         className={cn(
           'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border transition-all',
           checked
-            ? 'border-[var(--accent-blue)] bg-[rgba(120,216,255,0.18)] text-[var(--accent-blue)] shadow-[0_0_14px_rgba(120,216,255,0.18)]'
-            : 'border-[rgba(157,192,255,0.24)] bg-[rgba(7,18,38,0.52)] text-transparent',
+            ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)] text-[var(--text-on-accent)]'
+            : 'border-[var(--hairline)] bg-[var(--bg-panel)] text-transparent',
         )}
       >
         <Check size={13} strokeWidth={3} />

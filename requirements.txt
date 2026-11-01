@@ -1,6 +1,6 @@
 fastapi==0.140.0
 uvicorn==0.35.0
-pydantic==2.13.4
+pydantic==2.11.10
 python-dotenv==1.1.1
 
 # --- 开发/测试依赖(可选,运行时不需要) ---

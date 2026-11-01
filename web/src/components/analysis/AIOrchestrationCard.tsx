@@ -184,7 +184,7 @@ export function AIOrchestrationCard({ section, loading }: Props) {
                     </span>
                     <span className="flex shrink-0 items-center gap-1.5">
                       {executed?.reused && (
-                        <span className="rounded-[6px] bg-[rgba(121,224,195,0.14)] px-1.5 py-0.5 text-[10px] text-[var(--success)]">
+                        <span className="rounded-[6px] bg-[var(--success-soft)] px-1.5 py-0.5 text-[10px] text-[var(--success)]">
                           已复用
                         </span>
                       )}
@@ -363,7 +363,7 @@ function RoundRow({ round }: { round: AIPerRoundUsage }) {
       </span>
       <span className="flex flex-wrap items-center gap-1.5">
         {round.cache_hit && (
-          <span className="rounded-[6px] bg-[rgba(121,224,195,0.14)] px-1.5 py-0.5 text-[10px] text-[var(--success)]">
+          <span className="rounded-[6px] bg-[var(--success-soft)] px-1.5 py-0.5 text-[10px] text-[var(--success)]">
             命中缓存
           </span>
         )}

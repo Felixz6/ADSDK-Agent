@@ -31,7 +31,17 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', '"Noto Sans SC"', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
+        sans: [
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"SF Pro Text"',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Noto Sans SC"',
+          '"Segoe UI"',
+          '"Microsoft YaHei"',
+          'sans-serif',
+        ],
       },
       borderRadius: {
         glass: '18px',
@@ -40,8 +50,8 @@ export default {
         glass: '18px',
       },
       boxShadow: {
-        glass: '0 8px 32px rgba(3, 8, 22, 0.45)',
-        glow: '0 0 0 1px var(--border-active), 0 0 24px rgba(120, 216, 255, 0.18)',
+        glass: '0 1px 2px rgba(0, 0, 0, 0.04)',
+        glow: 'none',
       },
       keyframes: {
         breathe: {

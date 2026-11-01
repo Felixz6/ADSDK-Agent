@@ -30,7 +30,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: '总览',
     items: [
-      { to: '/', label: '首页', icon: Home, desc: '星空分析控制台', end: true },
+      { to: '/', label: '首页', icon: Home, desc: '产品概览与演示', end: true },
       { to: '/dashboard', label: '仪表盘', icon: LayoutDashboard, desc: '历史与统计' },
     ],
   },
@@ -72,8 +72,8 @@ function NavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
           'group flex items-center gap-3 rounded-[12px] px-3 py-2 text-sm transition-colors relative',
           collapsed && 'justify-center px-0',
           isActive
-            ? 'bg-[rgba(120,216,255,0.12)] text-[var(--text-primary)] border border-[var(--border-active)]'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[rgba(157,192,255,0.08)] border border-transparent',
+            ? 'bg-[var(--accent-soft)] text-[var(--text-primary)] border border-[var(--border-active)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--fill-hover)] border border-transparent',
         )
       }
       title={collapsed ? item.label : undefined}
@@ -103,7 +103,7 @@ export function Sidebar() {
       )}
     >
       <div className="flex items-center gap-2.5 px-4 h-[var(--topbar-h)] border-b border-[var(--border-soft)]">
-        <div className="w-9 h-9 rounded-[12px] bg-[rgba(120,216,255,0.12)] border border-[var(--border-active)] flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-[12px] bg-[var(--accent-soft)] border border-[var(--border-active)] flex items-center justify-center shrink-0">
           <ShieldCheck size={20} className="text-[var(--accent-blue)]" />
         </div>
         {!collapsed && (
@@ -118,7 +118,7 @@ export function Sidebar() {
           aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
           className={cn(
             'ml-auto w-7 h-7 rounded-lg flex items-center justify-center',
-            'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[rgba(157,192,255,0.08)]',
+            'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--fill-hover)]',
             collapsed && 'mx-auto ml-0',
           )}
           aria-expanded={!collapsed}
@@ -172,7 +172,7 @@ export function MobileSidebar() {
       <div className="absolute inset-0 bg-[rgba(3,8,22,0.6)] backdrop-blur-sm" onClick={() => setOpen(false)} />
       <aside className="absolute left-0 top-0 h-full w-[280px] max-w-[86vw] glass-strong border-r border-[var(--border-soft)] flex flex-col">
         <div className="flex items-center gap-2.5 px-4 h-[var(--topbar-h)] border-b border-[var(--border-soft)]">
-          <div className="w-9 h-9 rounded-[12px] bg-[rgba(120,216,255,0.12)] border border-[var(--border-active)] flex items-center justify-center">
+          <div className="w-9 h-9 rounded-[12px] bg-[var(--accent-soft)] border border-[var(--border-active)] flex items-center justify-center">
             <ShieldCheck size={20} className="text-[var(--accent-blue)]" />
           </div>
           <div className="flex flex-col leading-tight">

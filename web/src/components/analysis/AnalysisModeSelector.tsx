@@ -39,8 +39,8 @@ export function AnalysisModeSelector({ value, onChange, disabled }: AnalysisMode
               className={cn(
                 'cursor-pointer rounded-[12px] p-3 border transition-colors flex flex-col gap-1.5',
                 active
-                  ? 'glass-strong border-[var(--border-active)] bg-[rgba(120,216,255,0.10)]'
-                  : 'glass border-[var(--border-soft)] hover:bg-[rgba(157,192,255,0.08)]',
+                  ? 'glass-strong border-[var(--border-active)] bg-[var(--accent-soft)]'
+                  : 'glass border-[var(--border-soft)] hover:bg-[var(--fill-hover)]',
                 disabled && 'opacity-60 cursor-not-allowed',
               )}
             >

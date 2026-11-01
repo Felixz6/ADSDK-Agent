@@ -4,12 +4,12 @@ import type { StepStatus, RuleEvaluationStatus } from '@/types/api'
 type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info' | 'accent'
 
 const toneClass: Record<Tone, string> = {
-  success: 'bg-[rgba(121,224,195,0.14)] text-[var(--success)] border-[rgba(121,224,195,0.4)]',
-  warning: 'bg-[rgba(242,203,119,0.14)] text-[var(--warning)] border-[rgba(242,203,119,0.4)]',
-  danger: 'bg-[rgba(242,139,155,0.14)] text-[var(--danger)] border-[rgba(242,139,155,0.42)]',
-  neutral: 'bg-[rgba(127,147,186,0.16)] text-[var(--status-neutral)] border-[rgba(127,147,186,0.4)]',
-  info: 'bg-[rgba(120,216,255,0.12)] text-[var(--accent-blue)] border-[rgba(120,216,255,0.4)]',
-  accent: 'bg-[rgba(182,161,255,0.14)] text-[var(--accent-purple)] border-[rgba(182,161,255,0.42)]',
+  success: 'bg-[var(--success-soft)] text-[var(--success)] border-[var(--success-line)]',
+  warning: 'bg-[var(--warning-soft)] text-[var(--warning)] border-[var(--warning-line)]',
+  danger: 'bg-[var(--danger-soft)] text-[var(--danger)] border-[var(--danger-line)]',
+  neutral: 'bg-[var(--neutral-soft)] text-[var(--status-neutral)] border-[var(--neutral-line)]',
+  info: 'bg-[var(--info-soft)] text-[var(--accent-blue)] border-[var(--info-line)]',
+  accent: 'bg-[var(--fill-quiet)] text-[var(--text-primary)] border-[var(--hairline)]',
 }
 
 const dotClass: Record<Tone, string> = {
@@ -18,7 +18,7 @@ const dotClass: Record<Tone, string> = {
   danger: 'bg-[var(--danger)]',
   neutral: 'bg-[var(--status-neutral)]',
   info: 'bg-[var(--accent-blue)]',
-  accent: 'bg-[var(--accent-purple)]',
+  accent: 'bg-[var(--text-primary)]',
 }
 
 export interface StatusBadgeProps {

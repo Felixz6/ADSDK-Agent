@@ -167,7 +167,7 @@ function ComparisonWelcome() {
     <GlassCard padding="lg" className="overflow-hidden" highlight>
       <div className="mx-auto max-w-5xl">
         <div className="mx-auto max-w-2xl text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgba(120,216,255,0.24)] bg-[rgba(120,216,255,0.08)] text-[var(--accent-blue)] shadow-[0_0_32px_rgba(120,216,255,0.1)]">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border-soft)] bg-[var(--fill-quiet)] text-[var(--text-primary)] shadow-none">
             <GitCompareArrows size={24} />
           </span>
           <h2 className="mt-4 text-base font-semibold text-[var(--text-primary)]">选择两个版本，建立清晰的变化视图</h2>
@@ -179,7 +179,7 @@ function ComparisonWelcome() {
           {CAPABILITIES.map(({ icon: Icon, label, description }, index) => (
             <div
               key={label}
-              className={`rounded-[14px] border border-[rgba(157,192,255,0.1)] bg-[rgba(7,18,38,0.32)] p-3.5 ${index === CAPABILITIES.length - 1 ? 'col-span-2 md:col-span-1' : ''}`}
+              className={`rounded-[14px] border border-[var(--hairline)] bg-[var(--bg-soft)] p-3.5 ${index === CAPABILITIES.length - 1 ? 'col-span-2 md:col-span-1' : ''}`}
             >
               <Icon size={17} className="text-[var(--accent-purple)]" />
               <p className="mt-2 text-sm font-medium text-[var(--text-primary)]">{label}</p>
@@ -223,10 +223,10 @@ function RecentComparisons({
               <button
                 type="button"
                 onClick={() => onOpen(item)}
-                className="group flex w-full min-w-0 items-center gap-3 rounded-[12px] border border-[rgba(157,192,255,0.09)] bg-[rgba(7,18,38,0.28)] px-3 py-3 text-left transition-colors hover:border-[rgba(120,216,255,0.25)] hover:bg-[rgba(120,216,255,0.045)]"
+                className="group flex w-full min-w-0 items-center gap-3 rounded-[12px] border border-[var(--hairline)] bg-[var(--bg-soft)] px-3 py-3 text-left transition-colors hover:border-[var(--border-active)] hover:bg-[var(--fill-hover)]"
                 title={`对比 ID：${item.id}`}
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[rgba(182,161,255,0.1)] text-[var(--accent-purple)]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--fill-quiet)] text-[var(--accent-purple)]">
                   <GitCompareArrows size={17} />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -297,7 +297,7 @@ function ComparisonResultView({ result }: { result: ComparisonResult }) {
         </div>
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {result.highlights.length
-            ? result.highlights.map((item) => <li key={item} className="rounded-[10px] border border-[rgba(157,192,255,0.09)] px-3 py-2 text-sm text-[var(--text-secondary)]">{item}</li>)
+            ? result.highlights.map((item) => <li key={item} className="rounded-[10px] border border-[var(--hairline)] px-3 py-2 text-sm text-[var(--text-secondary)]">{item}</li>)
             : <li className="text-sm text-[var(--text-tertiary)]">暂无显著变化摘要。</li>}
         </ul>
       </GlassCard>
@@ -330,7 +330,7 @@ function VersionSummary({ label, summary }: { label: string; summary: Record<str
     packageName: asString(summary.package_name),
   })
   return (
-    <div className="rounded-[12px] border border-[rgba(157,192,255,0.1)] p-4">
+    <div className="rounded-[12px] border border-[var(--hairline)] p-4">
       <p className="mb-2 text-xs text-[var(--accent-blue)]">{label}</p>
       <p className="text-sm font-medium text-[var(--text-primary)]">{appName}</p>
       <p className="mt-1 break-all font-mono text-xs text-[var(--text-tertiary)]">{value(summary.package_name)}</p>
