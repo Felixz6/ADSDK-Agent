@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 620" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#57606a" />
+    </marker>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-opacity="0.06" />
+    </filter>
+  </defs>
+
+  <!-- Step 01 -->
+  <g filter="url(#shadow)">
+    <rect x="180" y="20" width="180" height="44" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="270" y="47" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1f2328">01. 环境检测</text>
+    <text x="380" y="47" font-size="12.5" fill="#57606a">确认 ADB、设备连接、Frida 及 mitmproxy 正常</text>
+  </g>
+
+  <path d="M 270 64 L 270 94" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- Step 02 -->
+  <g filter="url(#shadow)">
+    <rect x="180" y="96" width="180" height="44" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="270" y="123" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1f2328">02. 新建分析</text>
+    <text x="380" y="123" font-size="12.5" fill="#57606a">放置 APK 至 samples/，选择分析模式与参数</text>
+  </g>
+
+  <!-- Branch Fork -->
+  <path d="M 270 140 L 270 166 M 150 166 L 390 166 M 150 166 L 150 188 M 390 166 L 390 188" stroke="#57606a" stroke-width="1.5" fill="none" />
+  <path d="M 150 180 L 150 190" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" />
+  <path d="M 390 180 L 390 190" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- Static Box -->
+  <g filter="url(#shadow)">
+    <rect x="50" y="192" width="200" height="118" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="150" y="218" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1f2328">静态模式</text>
+    <text x="80" y="244" font-size="12" fill="#57606a">• 安全解包与缓存</text>
+    <text x="80" y="268" font-size="12" fill="#57606a">• 清单解析与组件审计</text>
+    <text x="80" y="292" font-size="12" fill="#57606a">• 敏感权限与 SDK 识别</text>
+  </g>
+
+  <!-- Dynamic Box -->
+  <g filter="url(#shadow)">
+    <rect x="290" y="192" width="200" height="118" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="390" y="218" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1f2328">动态模式</text>
+    <text x="320" y="244" font-size="12" fill="#57606a">• 进程启动与分层监控</text>
+    <text x="320" y="268" font-size="12" fill="#57606a">• 授权检查 (Consent 门)</text>
+    <text x="320" y="292" font-size="12" fill="#57606a">• 敏感 API 拦截与抓包</text>
+    <text x="506" y="268" font-size="12" fill="#0969da">← 手动完成设备交互</text>
+  </g>
+
+  <!-- Branch Join -->
+  <path d="M 150 310 L 150 336 M 390 310 L 390 336 M 150 336 L 390 336 M 270 336 L 270 360" stroke="#57606a" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+
+  <!-- Step 03 -->
+  <g filter="url(#shadow)">
+    <rect x="180" y="364" width="180" height="44" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="270" y="391" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1f2328">03. 关联分析</text>
+    <text x="380" y="391" font-size="12.5" fill="#57606a">运行 correlation-v1 关联行为与流量</text>
+  </g>
+
+  <path d="M 270 408 L 270 438" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- Step 04 -->
+  <g filter="url(#shadow)">
+    <rect x="180" y="440" width="180" height="44" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="270" y="467" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1f2328">04. 隐私发现</text>
+    <text x="380" y="467" font-size="12.5" fill="#57606a">汇总 observed / suspected / evidence_gap</text>
+  </g>
+
+  <path d="M 270 484 L 270 514" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- Step 05 -->
+  <g filter="url(#shadow)">
+    <rect x="180" y="516" width="180" height="44" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.5"/>
+    <text x="270" y="543" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1f2328">05. 报告研判</text>
+    <text x="380" y="543" font-size="12.5" fill="#57606a">确定性规则评估 + 可选 AI 叙述，导出 HTML/JSON</text>
+  </g>
+</svg>
