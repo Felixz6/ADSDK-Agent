@@ -39,6 +39,8 @@ SCHEMA_VERSION = "ai-settings-v1"
 # Mirrors app/config.py defaults so behavior is identical when nothing is saved.
 # ---------------------------------------------------------------------------
 DEFAULT_PROVIDER = "openai_compatible"
+DEFAULT_BASE_URL = "https://api.deepseek.com"
+DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_DEFAULT_TOKEN_BUDGET = 6000
 DEFAULT_MAX_ROUNDS = 2

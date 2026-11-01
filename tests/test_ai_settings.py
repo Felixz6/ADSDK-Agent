@@ -97,6 +97,18 @@ def test_default_no_local_config(ai_store: AISettingsService):
     assert payload["schema_version"] == "ai-settings-v1"
     assert payload["locked_fields"] == []
     assert payload["provider"] == "openai_compatible"
+    assert payload["base_url"] == "https://api.deepseek.com"
+    assert payload["model"] == "deepseek-chat"
+
+
+def test_save_deepseek_provider(ai_store: AISettingsService):
+    out = ai_store.save_settings(
+        {"enabled": True, "provider": "deepseek",
+         "base_url": "https://api.deepseek.com", "model": "deepseek-chat",
+         "timeout_seconds": 60}
+    )
+    assert out["provider"] == "deepseek"
+    assert out["model"] == "deepseek-chat"
 
 
 def test_save_plain_config_without_key(ai_store: AISettingsService):
@@ -212,7 +224,8 @@ def test_corrupt_settings_degrades_to_defaults(
     # Should not raise; falls back to defaults.
     payload = ai_store.get_effective_settings()
     assert payload["schema_version"] == "ai-settings-v1"
-    assert payload["model"] == ""
+    assert payload["model"] == "deepseek-chat"
+    assert payload["base_url"] == "https://api.deepseek.com"
 
 
 def test_corrupt_secret_degrades(ai_store: AISettingsService, tmp_path: Path):

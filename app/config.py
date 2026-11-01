@@ -170,8 +170,10 @@ AI_PROVIDER = os.getenv("AI_PROVIDER", "openai_compatible").strip() or (
 
 # API key: env var only. Never read a literal value here; never log it.
 AI_API_KEY = os.getenv("AI_API_KEY", "")
-AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip()
-AI_MODEL = os.getenv("AI_MODEL", "").strip()
+AI_BASE_URL = (
+    os.getenv("AI_BASE_URL", "").strip() or "https://api.deepseek.com"
+)
+AI_MODEL = os.getenv("AI_MODEL", "").strip() or "deepseek-chat"
 AI_TIMEOUT_SECONDS = _env_int_range("AI_TIMEOUT_SECONDS", 60, 1, 600)
 AI_MAX_ROUNDS = _env_int_range("AI_MAX_ROUNDS", 2, 1, 6)
 AI_MAX_TOOL_CALLS = _env_int_range("AI_MAX_TOOL_CALLS", 6, 1, 20)

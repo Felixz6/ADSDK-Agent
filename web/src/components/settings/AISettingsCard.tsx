@@ -392,7 +392,7 @@ export function AISettingsCard() {
           value={form.provider}
           locked={locked.has('provider')}
           onChange={(v) => update('provider', v)}
-          hint="当前仅支持 openai_compatible"
+          hint="支持 openai_compatible 或 deepseek（默认使用 DeepSeek）"
         />
 
         <TextField
@@ -401,7 +401,7 @@ export function AISettingsCard() {
           value={form.base_url}
           locked={locked.has('base_url')}
           error={errors.base_url}
-          placeholder="https://example.com/v1"
+          placeholder="https://api.deepseek.com"
           onChange={(v) => update('base_url', v)}
         />
 
@@ -411,6 +411,7 @@ export function AISettingsCard() {
           value={form.model}
           locked={locked.has('model')}
           error={errors.model}
+          placeholder="deepseek-chat"
           onChange={(v) => update('model', v)}
         />
 

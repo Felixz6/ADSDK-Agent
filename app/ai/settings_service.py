@@ -106,7 +106,7 @@ _RANGES = {
     "max_output_tokens": (100, 10000),
     "cache_ttl_seconds": (60, 604800),
 }
-_ALLOWED_PROVIDERS = {"openai_compatible"}
+_ALLOWED_PROVIDERS = {"openai_compatible", "deepseek"}
 _ALLOWED_LANGUAGES = {"zh-CN", "en-US"}
 _API_KEY_MAX_LENGTH = 4096
 
@@ -285,7 +285,7 @@ class AIProviderFactory:
         provider_name = effective["provider"]
         if provider_name == "mock" and self._allow_mock:
             return MockAIProvider()
-        if provider_name != "openai_compatible" and provider_name != "mock":
+        if provider_name not in {"openai_compatible", "deepseek", "mock"}:
             return None
         # Even if AI is disabled we can still *build* a provider (so /test
         # works while disabled). Disabling only gates orchestration, not the
@@ -303,6 +303,7 @@ class AIProviderFactory:
             api_key=api_key,
             model=model,
             timeout_seconds=float(timeout),
+            provider_profile="deepseek" if provider_name == "deepseek" else None,
         )
 
 # Fields whose env value is authoritative when present.
@@ -370,7 +371,7 @@ def resolve_effective_ai_settings(store: AISettingsStore) -> dict[str, Any]:
         api_key_source=api_key_source,
         api_key_configured=api_key_source != "none",
         configured=(
-            values["provider"] == "openai_compatible"
+            values["provider"] in {"openai_compatible", "deepseek"}
             and bool(values["base_url"])
             and bool(values["model"])
             and bool(api_key)
@@ -535,6 +536,13 @@ class AISettingsService:
             result.update(status="reachable", safe_message="mock provider", latency_ms=0)
             return result
 
+        if provider_name not in {"openai_compatible", "deepseek"}:
+            result.update(
+                status="invalid_configuration",
+                safe_message=f"不支持的 provider: {provider_name}",
+            )
+            return result
+
         if not (base_url and model and api_key):
             result.update(
                 status="invalid_configuration",
@@ -547,6 +555,7 @@ class AISettingsService:
             api_key=api_key,
             model=model,
             timeout_seconds=timeout_f,
+            provider_profile="deepseek" if provider_name == "deepseek" else None,
         )
         return provider.probe_reachable(timeout_seconds=timeout_f)
 
@@ -566,7 +575,7 @@ class AISettingsService:
             if provider_value not in _ALLOWED_PROVIDERS:
                 raise AISettingsValidationError(
                     "invalid_provider",
-                    "provider 当前只允许 openai_compatible",
+                    "provider 当前仅支持 openai_compatible 或 deepseek",
                     field="provider",
                 )
 
