@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -8,11 +9,11 @@ class AnalyzeRequest(BaseModel):
 
 class DynamicAnalyzeRequest(BaseModel):
     apk_path: str = Field(..., description="Absolute path to the APK on Windows")
-    package_name: Optional[str] = Field(
+    package_name: str | None = Field(
         default=None,
         description="Android package name; if empty, parse from AndroidManifest.xml",
     )
-    device_id: Optional[str] = Field(
+    device_id: str | None = Field(
         default=None,
         max_length=256,
         description="ADB/Frida device serial; required when multiple devices are online",
@@ -59,7 +60,7 @@ class EvidenceRef(BaseModel):
     source_type: str
     relative_path: str
     detector: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 RiskLevel = Literal["low", "medium", "high", "critical"]
@@ -68,31 +69,31 @@ ConsentState = Literal["pre_consent", "post_consent", "unknown"]
 
 
 class SDKHit(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     sdk_name: str
     package: str
-    vendor: Optional[str] = None
-    category: Optional[str] = None
-    risk_level: Optional[RiskLevel] = None
+    vendor: str | None = None
+    category: str | None = None
+    risk_level: RiskLevel | None = None
     confidence: float = 0.8
-    version: Optional[str] = None
-    evidence: List[EvidenceRef] = Field(default_factory=list)
-    capabilities: List[str] = Field(default_factory=list)
+    version: str | None = None
+    evidence: list[EvidenceRef] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)
     static_only: bool = True
     dynamic_correlated: bool = False
 
 
 class AppInfo(BaseModel):
-    package_name: Optional[str] = None
-    version_name: Optional[str] = None
-    version_code: Optional[str] = None
-    application_label: Optional[str] = None
-    permissions: List[str] = Field(default_factory=list)
-    declared_permissions: List[str] = Field(default_factory=list)
-    custom_permissions: List[str] = Field(default_factory=list)
-    component_permissions: List[str] = Field(default_factory=list)
-    sensitive_permissions: List[str] = Field(default_factory=list)
-    high_attention_permissions: List[str] = Field(default_factory=list)
+    package_name: str | None = None
+    version_name: str | None = None
+    version_code: str | None = None
+    application_label: str | None = None
+    permissions: list[str] = Field(default_factory=list)
+    declared_permissions: list[str] = Field(default_factory=list)
+    custom_permissions: list[str] = Field(default_factory=list)
+    component_permissions: list[str] = Field(default_factory=list)
+    sensitive_permissions: list[str] = Field(default_factory=list)
+    high_attention_permissions: list[str] = Field(default_factory=list)
 
 
 class RiskCategoryScore(BaseModel):
@@ -107,7 +108,7 @@ class TopRisk(BaseModel):
     title: str
     severity: RiskLevel
     score: int = Field(ge=0, le=100)
-    evidence_refs: List[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
 
 
 class RiskSummary(BaseModel):
@@ -116,31 +117,31 @@ class RiskSummary(BaseModel):
     confidence: RiskConfidence
     evaluated_rule_count: int = Field(ge=0)
     unevaluated_rule_count: int = Field(ge=0)
-    category_scores: List[RiskCategoryScore] = Field(default_factory=list)
-    top_risks: List[TopRisk] = Field(default_factory=list)
-    confidence_reasons: List[str] = Field(default_factory=list)
+    category_scores: list[RiskCategoryScore] = Field(default_factory=list)
+    top_risks: list[TopRisk] = Field(default_factory=list)
+    confidence_reasons: list[str] = Field(default_factory=list)
     calculation_version: str = "risk-v1"
 
 
 class TimelineEvent(BaseModel):
     id: str
-    relative_ms: Optional[int] = Field(default=None, ge=0)
-    timestamp_utc: Optional[str] = None
+    relative_ms: int | None = Field(default=None, ge=0)
+    timestamp_utc: str | None = None
     source: Literal["frida", "network", "system", "control"]
     category: str
     title: str
     description: str
     consent_state: ConsentState
     severity: RiskLevel
-    evidence_ref: Optional[str] = None
+    evidence_ref: str | None = None
 
 
 class BehaviorTimeline(BaseModel):
-    start_monotonic: Optional[float] = None
-    consent_monotonic: Optional[float] = None
+    start_monotonic: float | None = None
+    consent_monotonic: float | None = None
     timing_reliable: bool = False
-    warnings: List[str] = Field(default_factory=list)
-    events: List[TimelineEvent] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    events: list[TimelineEvent] = Field(default_factory=list)
     timeline_version: str = "timeline-v1"
 
 
@@ -149,7 +150,7 @@ class ComplianceFinding(BaseModel):
     severity: RiskLevel
     summary: str
     recommendation: str
-    evidence_refs: List[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
 
 
 class PriorityAction(BaseModel):
@@ -160,9 +161,9 @@ class PriorityAction(BaseModel):
 
 class ComplianceInsight(BaseModel):
     overall_assessment: str
-    key_findings: List[ComplianceFinding] = Field(default_factory=list)
-    priority_actions: List[PriorityAction] = Field(default_factory=list)
-    limitations: List[str] = Field(default_factory=list)
+    key_findings: list[ComplianceFinding] = Field(default_factory=list)
+    priority_actions: list[PriorityAction] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
     generator_version: str = "insight-v1"
 
 
@@ -180,59 +181,59 @@ class AnalyzeResponse(BaseModel):
     ok: bool
     apk_path: str
     schema_version: str = "1.0"
-    run_id: Optional[str] = None
-    apk_sha256: Optional[str] = None
-    apk_snapshot: Optional[Dict[str, Any]] = None
-    normalized_apk_name: Optional[str] = None
-    analysis_started_at: Optional[str] = None
-    status: Optional[str] = None
-    steps: List[Dict[str, Any]] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
-    device: Optional[Dict[str, Any]] = None
-    artifacts: List[Dict[str, Any]] = Field(default_factory=list)
-    app_info: Optional[AppInfo] = None
+    run_id: str | None = None
+    apk_sha256: str | None = None
+    apk_snapshot: dict[str, Any] | None = None
+    normalized_apk_name: str | None = None
+    analysis_started_at: str | None = None
+    status: str | None = None
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    device: dict[str, Any] | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    app_info: AppInfo | None = None
     sdk_count: int = 0
-    sdks: List[SDKHit] = Field(default_factory=list)
-    output_dir: Optional[str] = None
-    hook_log: Optional[str] = None
-    events_json: Optional[str] = None
-    events_raw_jsonl: Optional[str] = None
-    consent_time: Optional[str] = None
-    traffic_dir: Optional[str] = None
-    traffic_summary_json: Optional[str] = None
-    traffic_jsonl: Optional[str] = None
-    sessions_json: Optional[str] = None
-    report_json: Optional[str] = None
-    report_md: Optional[str] = None
-    report_html: Optional[str] = None
-    dynamic_events: Optional[List[Dict[str, Any]]] = None
-    dynamic_findings: Optional[Dict[str, Any]] = None
-    strict_dynamic_findings: Optional[Dict[str, Any]] = None
-    traffic_summary: Optional[Dict[str, Any]] = None
-    pre_consent_seconds: Optional[int] = None
-    post_consent_seconds: Optional[int] = None
-    enable_traffic: Optional[bool] = None
-    enable_ui_stimulation: Optional[bool] = None
-    collection_timeout_seconds: Optional[int] = None
-    collection_status: Optional[str] = None
-    dynamic_validation_level: Optional[str] = None
-    dynamic_execution: Optional[Dict[str, Any]] = None
-    environment_capabilities: Optional[Dict[str, Any]] = None
-    dynamic_task_result: Optional[Dict[str, Any]] = None
-    dynamic_evidence_quality: Optional[Dict[str, Any]] = None
-    frida_diagnostics: Optional[Dict[str, Any]] = None
-    process_diagnostics: Optional[Dict[str, Any]] = None
-    traffic_diagnostics: Optional[Dict[str, Any]] = None
-    traffic_coverage: Optional[str] = None
-    dynamic_timeline: Optional[Dict[str, Any]] = None
-    collector_sessions: Optional[Dict[str, Any]] = None
-    manifest_evidence: Optional[Dict[str, Any]] = None
-    evidence_correlation: Optional[Dict[str, Any]] = None
-    privacy_findings: Optional[Dict[str, Any]] = None
-    risk_summary: Optional[RiskSummary] = None
-    timeline: Optional[BehaviorTimeline] = None
-    compliance_insight: Optional[ComplianceInsight] = None
-    diagnostics: Optional[AnalysisDiagnostics] = None
-    error: Optional[str] = None
-    error_code: Optional[str] = None
-    limitations: List[str] = Field(default_factory=list)
+    sdks: list[SDKHit] = Field(default_factory=list)
+    output_dir: str | None = None
+    hook_log: str | None = None
+    events_json: str | None = None
+    events_raw_jsonl: str | None = None
+    consent_time: str | None = None
+    traffic_dir: str | None = None
+    traffic_summary_json: str | None = None
+    traffic_jsonl: str | None = None
+    sessions_json: str | None = None
+    report_json: str | None = None
+    report_md: str | None = None
+    report_html: str | None = None
+    dynamic_events: list[dict[str, Any]] | None = None
+    dynamic_findings: dict[str, Any] | None = None
+    strict_dynamic_findings: dict[str, Any] | None = None
+    traffic_summary: dict[str, Any] | None = None
+    pre_consent_seconds: int | None = None
+    post_consent_seconds: int | None = None
+    enable_traffic: bool | None = None
+    enable_ui_stimulation: bool | None = None
+    collection_timeout_seconds: int | None = None
+    collection_status: str | None = None
+    dynamic_validation_level: str | None = None
+    dynamic_execution: dict[str, Any] | None = None
+    environment_capabilities: dict[str, Any] | None = None
+    dynamic_task_result: dict[str, Any] | None = None
+    dynamic_evidence_quality: dict[str, Any] | None = None
+    frida_diagnostics: dict[str, Any] | None = None
+    process_diagnostics: dict[str, Any] | None = None
+    traffic_diagnostics: dict[str, Any] | None = None
+    traffic_coverage: str | None = None
+    dynamic_timeline: dict[str, Any] | None = None
+    collector_sessions: dict[str, Any] | None = None
+    manifest_evidence: dict[str, Any] | None = None
+    evidence_correlation: dict[str, Any] | None = None
+    privacy_findings: dict[str, Any] | None = None
+    risk_summary: RiskSummary | None = None
+    timeline: BehaviorTimeline | None = None
+    compliance_insight: ComplianceInsight | None = None
+    diagnostics: AnalysisDiagnostics | None = None
+    error: str | None = None
+    error_code: str | None = None
+    limitations: list[str] = Field(default_factory=list)

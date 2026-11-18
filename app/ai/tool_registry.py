@@ -22,7 +22,8 @@ Risk levels:
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 

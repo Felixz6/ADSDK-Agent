@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from html import escape
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from app.core.artifacts import atomic_write_text
 

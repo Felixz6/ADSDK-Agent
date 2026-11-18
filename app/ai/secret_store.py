@@ -70,7 +70,7 @@ def _posix_key(salt: bytes) -> bytes:
         node = platform.node()
     except Exception:
         node = "localhost"
-    seed = f"{user}@{node}".encode("utf-8")
+    seed = f"{user}@{node}".encode()
     return hashlib.sha256(seed + salt).digest()
 
 

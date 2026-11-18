@@ -8,9 +8,10 @@ import platform
 import shutil
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from app.core.device import DeviceContext
 from app.tools.utils import run_cmd
@@ -20,9 +21,9 @@ from .models import (
     DiagnosticCheck,
     DiagnosticIssue,
     DiagnosticSection,
-    FridaEnvironmentCapabilities,
     FridaDiagnosticsRequest,
     FridaDiagnosticsResponse,
+    FridaEnvironmentCapabilities,
 )
 
 
@@ -33,7 +34,7 @@ class CommandRunner(Protocol):
 
 
 def _utc_text() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
     )
 

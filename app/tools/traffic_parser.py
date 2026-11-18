@@ -2,7 +2,7 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import urlparse
 
 from app.config import SCHEMA_VERSION
@@ -19,12 +19,12 @@ REQUEST_PATTERN = re.compile(
 )
 
 
-def parse_traffic_text(traffic_text_path: str) -> List[Dict[str, Any]]:
+def parse_traffic_text(traffic_text_path: str) -> list[dict[str, Any]]:
     if not traffic_text_path or not os.path.exists(traffic_text_path):
         return []
 
-    records: List[Dict[str, Any]] = []
-    with open(traffic_text_path, "r", encoding="utf-8", errors="strict") as f:
+    records: list[dict[str, Any]] = []
+    with open(traffic_text_path, encoding="utf-8", errors="strict") as f:
         for line in f:
             match = REQUEST_PATTERN.search(line)
             if not match:
@@ -45,11 +45,11 @@ def parse_traffic_text(traffic_text_path: str) -> List[Dict[str, Any]]:
 
 
 def build_traffic_summary(
-    records: List[Dict[str, Any]],
+    records: list[dict[str, Any]],
     *,
     source_available: bool = True,
     collection_outcome: str | TrafficCollectionOutcome | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     host_counter = Counter(
         record.get("hostname") or record.get("host")
         for record in records
@@ -103,11 +103,11 @@ def build_traffic_summary(
     }
 
 
-def write_traffic_summary(summary: Dict[str, Any], output_path: str):
+def write_traffic_summary(summary: dict[str, Any], output_path: str):
     atomic_write_json(output_path, summary)
 
 
-def parse_traffic_to_summary_json(traffic_text_path: str, output_path: str) -> Dict[str, Any]:
+def parse_traffic_to_summary_json(traffic_text_path: str, output_path: str) -> dict[str, Any]:
     if not traffic_text_path or not os.path.isfile(traffic_text_path):
         raise FileNotFoundError(f"traffic evidence is missing: {traffic_text_path}")
     records = parse_traffic_text(traffic_text_path)
@@ -118,7 +118,7 @@ def parse_traffic_to_summary_json(traffic_text_path: str, output_path: str) -> D
 
 def build_structured_traffic_summary(
     collection: TrafficCollectionResult,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     records = [
         record.model_dump(mode="json")
         for record in collection.records
@@ -151,7 +151,7 @@ def parse_structured_traffic_to_summary_json(
     run_id: str,
     session_id: str,
     process_ready: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Validate owned JSONL and keep the legacy summary artifact contract."""
 
     source = Path(jsonl_path)

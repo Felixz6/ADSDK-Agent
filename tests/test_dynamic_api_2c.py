@@ -29,7 +29,6 @@ from app.tools.traffic_events import (
     TrafficCollectionResult,
 )
 
-
 # Keep the fixture value out of assertion introspection.  A leak failure only
 # reports artifact names, never the sensitive value itself.
 _RAW_ANDROID_ID = "stage2c-android-id-9f4b19a73d2e4c88"
@@ -58,8 +57,8 @@ class _EventEnvelope(dict[str, Any]):
 class _Scenario:
     calls: list[str] = field(default_factory=list)
     tool_apk_paths: list[Path] = field(default_factory=list)
-    frida_instances: list["_FakeFridaSession"] = field(default_factory=list)
-    mitm_instances: list["_FakeMitmSession"] = field(default_factory=list)
+    frida_instances: list[_FakeFridaSession] = field(default_factory=list)
+    mitm_instances: list[_FakeMitmSession] = field(default_factory=list)
     collection_configs: list[Any] = field(default_factory=list)
     mitm_failure: str | None = None
     frida_failure: str | None = None

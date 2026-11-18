@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
-import threading
 import json
+import threading
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -79,10 +79,10 @@ def test_run_scoped_execution_single_flights_across_service_instances(tmp_path: 
     first._effective_dynamic_strategy = second._effective_dynamic_strategy = "balanced"
     results: list[object] = []
     threads = [threading.Thread(target=lambda: results.append(first.execute_tool("static_analysis", {}))), threading.Thread(target=lambda: results.append(second.execute_tool("dynamic_analysis", {})))]
-    for thread in threads: thread.start()
+    for thread in threads: thread.start()  # noqa: E701
     assert entered.wait(1)
     release.set()
-    for thread in threads: thread.join(2)
+    for thread in threads: thread.join(2)  # noqa: E701
     assert len(results) == 2
     assert calls == ["balanced"]
 
@@ -144,7 +144,7 @@ def test_launch_then_attach_failure_never_leaks_private_datetime() -> None:
         def stop(self) -> None:
             return None
 
-    launched_at = datetime(2026, 8, 8, 8, 0, tzinfo=timezone.utc)
+    launched_at = datetime(2026, 8, 8, 8, 0, tzinfo=UTC)
     execution = PolicyFridaSession(
         policy=DynamicModePolicy.BALANCED,
         session_factory=lambda _mode: _UnavailableSession(),
@@ -198,7 +198,7 @@ def test_frida_failure_result_retains_receipt_and_single_flight_result(
                 "launch_requested_at": "2026-08-08T08:00:00.000Z",
                 "target_pid": 31163,
                 "_launch_requested_datetime": datetime(
-                    2026, 8, 8, 8, 0, tzinfo=timezone.utc
+                    2026, 8, 8, 8, 0, tzinfo=UTC
                 ),
             },
         )

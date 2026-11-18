@@ -6,16 +6,16 @@ import importlib
 import json
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from app.core.device import DeviceContext
 from app.core.redaction import Redactor
 
-from .utils import run_cmd
 from .frida_events import (
     FridaControlEvent,
     FridaEventValidationError,
@@ -30,6 +30,7 @@ from .timeline_rules import (
     SystemTimelineClock,
     TimelineClock,
 )
+from .utils import run_cmd
 
 
 class FridaSessionState(str, Enum):
@@ -101,8 +102,8 @@ def _safe_datetime(value: str) -> datetime:
     text = value[:-1] + "+00:00" if value.endswith("Z") else value
     parsed = datetime.fromisoformat(text)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 @dataclass
@@ -457,7 +458,7 @@ class FridaSession:
             else:
                 self.state = FridaSessionState.READY
 
-    def start(self) -> "FridaSession":
+    def start(self) -> FridaSession:
         """Spawn suspended and load hooks; readiness remains a separate gate."""
 
         if self.state in {
@@ -707,7 +708,7 @@ class FridaSession:
         # Publish the collection baseline while the spawned app is still
         # suspended.  This makes the ordering provable:
         # hook_ready -> collection_started -> resume.
-        collection_start = self.emit_collection_started()
+        self.emit_collection_started()
 
         with self._lock:
             self._resumed = True
@@ -939,12 +940,12 @@ class FridaSession:
             "crash": self.crash,
             "post_resume_survival_ms": self.post_resume_survival_ms,
             "attach_started_at": (
-                self.attach_started_at.astimezone(timezone.utc).isoformat()
+                self.attach_started_at.astimezone(UTC).isoformat()
                 if self.attach_started_at is not None
                 else None
             ),
             "attach_completed_at": (
-                self.attach_completed_at.astimezone(timezone.utc).isoformat()
+                self.attach_completed_at.astimezone(UTC).isoformat()
                 if self.attach_completed_at is not None
                 else None
             ),

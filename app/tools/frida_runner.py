@@ -1,6 +1,6 @@
 import os
 import subprocess
-from typing import Any, Dict
+from typing import Any
 
 from app.core.device import DeviceContext
 
@@ -13,7 +13,7 @@ def spawn_and_inject(
     script_path: str,
     log_path: str,
     device_context: DeviceContext | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Historical entry point retained for injected compatibility fixtures.
 
     Real collection must use ``FridaSession`` so the target is spawned
@@ -34,7 +34,7 @@ def spawn_and_inject(
     }
 
 
-def check_frida_connection(device_id: str | None = None) -> Dict[str, Any]:
+def check_frida_connection(device_id: str | None = None) -> dict[str, Any]:
     cmd = ["frida-ps", "-U"]
     if device_id:
         cmd = ["frida-ps", "-D", device_id]
@@ -64,7 +64,7 @@ def check_frida_connection(device_id: str | None = None) -> Dict[str, Any]:
         }
 
 
-def check_frida_device_runtime(device_id: str | None) -> Dict[str, Any]:
+def check_frida_device_runtime(device_id: str | None) -> dict[str, Any]:
     """Probe device ABI and an already-running frida-server without mutation."""
 
     if not device_id:

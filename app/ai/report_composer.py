@@ -18,7 +18,8 @@ deterministic template built here — which is code-generated, never AI-authored
 from __future__ import annotations
 
 import re
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from .context_builder import sanitize_untrusted_text
 from .models import (

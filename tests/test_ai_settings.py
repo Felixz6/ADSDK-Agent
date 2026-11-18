@@ -24,7 +24,6 @@ import logging
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import httpx
 import pytest
@@ -35,14 +34,11 @@ from app.ai import secret_store as secret_store_module
 from app.ai.provider import OpenAICompatibleProvider
 from app.ai.secret_store import DPAPIError, SecretStore
 from app.ai.settings_service import (
-    AIProviderFactory,
     AISettingsService,
     AISettingsValidationError,
 )
 from app.ai.settings_store import (
     AISettingsStore,
-    LocalSettings,
-    SettingsCorruptionError,
 )
 from app.repositories import TaskRepository
 

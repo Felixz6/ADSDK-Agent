@@ -286,8 +286,8 @@ def test_html_report_is_printable_and_escapes_untrusted_content(tmp_path: Path):
 def test_recover_interrupted_tasks_on_restart(tmp_path: Path):
     repository = _repository(tmp_path)
     running_task = _create_task(repository, task_id="orphan-1", status="running")
-    queued_task = _create_task(repository, task_id="orphan-2", status="queued")
-    completed_task = _create_task(repository, task_id="normal-3", status="completed")
+    queued_task = _create_task(repository, task_id="orphan-2", status="queued")  # noqa: F841
+    completed_task = _create_task(repository, task_id="normal-3", status="completed")  # noqa: F841
 
     repository.upsert_step(
         running_task.id,

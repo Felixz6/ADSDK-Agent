@@ -17,12 +17,11 @@ import pytest
 
 from app.ai.cache import AIResponseCache
 from app.ai.context_builder import AIContextBuilder
-from app.ai.models import AIPerRoundUsage
+from app.ai.models import PlanValidationIssue
 from app.ai.orchestrator import AIOrchestrationRequest, AIOrchestrator
 from app.ai.plan_parser import parse_plan_response
 from app.ai.plan_repair import build_plan_repair_contract
 from app.ai.plan_validator import PlanValidationResult
-from app.ai.models import PlanValidationIssue
 from app.ai.provider import (
     MockAIProvider,
     ProviderError,
@@ -30,7 +29,6 @@ from app.ai.provider import (
     ProviderUsage,
     _extract_json_object,
 )
-from app.ai.secret_store import SecretStore
 from app.ai.settings_store import (
     DEFAULT_PLANNER_MAX_OUTPUT_TOKENS,
     DEFAULT_REPAIR_MAX_OUTPUT_TOKENS,

@@ -8,9 +8,10 @@ real collection process.
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 try:  # pragma: no cover - exercised only when mitmproxy is installed.
     from mitmproxy import ctx as _mitm_ctx
@@ -26,7 +27,7 @@ from app.tools.traffic_events import (
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class SafeTrafficAddon:

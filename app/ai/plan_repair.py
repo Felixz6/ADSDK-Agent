@@ -27,14 +27,12 @@ The model call itself stays in the orchestrator so token accounting and the
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
-from .models import AI_PLAN_SCHEMA_VERSION, AIPlan, PlanStep
+from .models import AI_PLAN_SCHEMA_VERSION, AIPlan
 from .plan_validator import (
     PlanValidationResult,
-    STAGE_DAG,
-    STAGE_SCHEMA,
-    STAGE_WHITELIST,
     validate_plan,
 )
 from .tool_registry import AIToolRegistry

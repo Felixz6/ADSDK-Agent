@@ -7,7 +7,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 _FATAL_SIGNAL = re.compile(
     r"Fatal signal\s+(?P<number>\d+)\s+\((?P<signal>SIG[A-Z0-9]+)\),"
     r"\s+code\s+(?P<code_number>-?\d+)\s+\((?P<signal_code>[A-Z0-9_]+)\)"

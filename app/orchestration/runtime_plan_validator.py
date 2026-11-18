@@ -30,7 +30,6 @@ deterministic fallback", "block + cleanup (device left the run's world)", or
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
 
 from app.ai.models import AIPlan
 

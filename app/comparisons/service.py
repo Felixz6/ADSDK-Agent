@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from uuid import uuid4
 
-from app.core.application_names import stable_application_name
 from app.comparisons.models import (
     ComparisonCreateRequest,
     ComparisonResult,
     DifferenceSet,
 )
+from app.core.application_names import stable_application_name
 from app.repositories.task_repository import TaskRepository, utc_now
 
 

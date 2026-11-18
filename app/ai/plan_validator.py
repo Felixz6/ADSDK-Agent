@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from pydantic import ValidationError
 
-from .models import AIPlan, PlanStep as _PlanStep, PlanValidationIssue, ToolCandidate, ToolRiskLevel
+from .models import AIPlan, PlanStep as _PlanStep, PlanValidationIssue
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -215,7 +216,7 @@ def validate_plan(
 # ---------------------------------------------------------------------------
 # Cycle detection (Kahn's algorithm - O(V+E))
 # ---------------------------------------------------------------------------
-def _find_cycle(steps: list[PlanStep]) -> str | None:
+def _find_cycle(steps: list[_PlanStep]) -> str | None:
     """Return a step_id in a cycle, or None when acyclic."""
     id_set = {s.step_id for s in steps}
     in_degree: dict[str, int] = defaultdict(int)

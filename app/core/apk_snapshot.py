@@ -8,16 +8,15 @@ that earlier digest.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import os
-from pathlib import Path
 import re
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, BinaryIO
 
 from .paths import PathInput, sha256_file
-
 
 DEFAULT_CHUNK_SIZE = 1024 * 1024
 SNAPSHOT_RELATIVE_PATH = Path("input") / "app.apk"

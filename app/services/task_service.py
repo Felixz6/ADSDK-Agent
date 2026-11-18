@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from fastapi.responses import JSONResponse
@@ -26,7 +26,6 @@ from app.tasks.runtime import (
     request_cancel,
     reset_task_context,
 )
-
 
 TaskRunner = Callable[[TaskRecord], dict[str, Any] | JSONResponse]
 

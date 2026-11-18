@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable, Pattern
-
+from re import Pattern
+from typing import Any
 
 KNOWLEDGE_BASE_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "sdk_knowledge_base.json"

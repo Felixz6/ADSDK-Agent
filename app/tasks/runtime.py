@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from threading import Event, RLock
-from typing import Callable
 
 
 class TaskCancelled(RuntimeError):

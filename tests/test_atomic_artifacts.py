@@ -28,7 +28,7 @@ def test_atomic_write_text_completely_replaces_existing_content(tmp_path: Path) 
     atomic_write_text(target, "# new\n")
 
     assert target.read_text(encoding="utf-8") == "# new\n"
-    assert target.stat().st_size == len("# new\n".encode("utf-8"))
+    assert target.stat().st_size == len(b"# new\n")
 
 
 @pytest.mark.parametrize("artifact_kind", ["markdown", "json"])

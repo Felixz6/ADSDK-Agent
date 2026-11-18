@@ -16,22 +16,22 @@ import subprocess
 import threading
 import time
 import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-
-from app.frida.traffic_diagnostics import summarize_proc_net
 from pathlib import Path
-from typing import Any, Callable, Iterable, TextIO
+from typing import Any, TextIO
 
 from app.config import DEFAULT_MITM_PORT
 from app.core.device import DeviceContext
-from app.tools.utils import run_cmd
+from app.frida.traffic_diagnostics import summarize_proc_net
 from app.tools.traffic_events import (
     TrafficCollectionResult,
     load_traffic_jsonl,
     validate_traffic_jsonl,
 )
+from app.tools.utils import run_cmd
 
 ProcessFactory = Callable[..., subprocess.Popen[str]]
 PortAvailabilityProbe = Callable[[str, int], bool]
@@ -201,7 +201,7 @@ DEFAULT_PORT_POOL = _default_port_pool()
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def terminate_process_tree(

@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from app.tasks.models import (
     TaskListResponse,
@@ -16,7 +17,7 @@ from app.tasks.models import (
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace(
         "+00:00",
         "Z",
     )

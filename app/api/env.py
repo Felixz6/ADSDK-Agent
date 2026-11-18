@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from typing import Any
-from fastapi import APIRouter, HTTPException, Query
+
+from fastapi import APIRouter, Query
 
 from app.config import DEFAULT_MITM_PORT
 from app.frida import (

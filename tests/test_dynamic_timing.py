@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.tools.hook_parser import parse_hook_to_events_json
 from app.tools.timeline_rules import (
@@ -11,7 +11,7 @@ from app.tools.timeline_rules import (
 
 class FakeClock:
     def __init__(self) -> None:
-        self.wall = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        self.wall = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
         self.monotonic_value = 100.0
 
     def utc_now(self) -> datetime:

@@ -29,17 +29,17 @@ import httpx
 import pytest
 
 from app.ai.provider import (
-    OpenAICompatibleProvider,
     PROFILE_DEEPSEEK,
     PROFILE_GENERIC_OPENAI,
+    OpenAICompatibleProvider,
     ProviderError,
-    ProviderResponse,
     _balanced_object_slice,
     _detect_profile,
     _extract_json_object,
     _parse_chat_completion,
     _thinking_disabled_for,
 )
+
 # ``_classify_http`` and ``_parse_retry_after``/``_retry_delay_seconds`` are
 # bound methods on OpenAICompatibleProvider, exercised via instance calls
 # below. ``_balanced_object_slice``/``_extract_json_object``/

@@ -26,22 +26,21 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
 from app.config import (
     AI_API_KEY,
     AI_BASE_URL,
-    AI_MAX_INPUT_TOKENS,
-    AI_MAX_OUTPUT_TOKENS,
     AI_MAX_RETRY_AFTER_SECONDS,
     AI_MODEL,
     AI_PROVIDER,
     AI_PROVIDER_PROFILE,
-    AI_RETRY_BASE_DELAY_MS,
     AI_REQUEST_RETRIES,
+    AI_RETRY_BASE_DELAY_MS,
     AI_THINKING_MODE,
     AI_TIMEOUT_SECONDS,
 )
@@ -445,14 +444,14 @@ class OpenAICompatibleProvider:
                         headers=self._auth_headers(),
                         timeout=self._timeout,
                     )
-            except httpx.TimeoutException as exc:
+            except httpx.TimeoutException:
                 last_error = ProviderError(
                     "ai_provider_timeout",
                     "AI provider call timed out",
                     retryable=True,
                     stage="provider_call",
                 )
-            except httpx.HTTPError as exc:
+            except httpx.HTTPError:
                 last_error = ProviderError(
                     "ai_provider_unreachable",
                     "AI provider is unreachable",

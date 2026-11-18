@@ -16,12 +16,11 @@ No analysis logic is re-implemented here. ``static_analysis`` and
 
 from __future__ import annotations
 
-from pathlib import Path
 import threading
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
-
-from app.core.artifacts import atomic_write_json
 
 from app.ai.context_builder import (
     AIContextBuilder,
@@ -31,6 +30,7 @@ from app.ai.context_builder import (
     read_json_list_artifact,
 )
 from app.ai.models import (
+    AIPlan,
     EvidenceDigestArtifactRef,
     ToolCompactResult,
     ToolErrorDetail,
@@ -39,10 +39,10 @@ from app.ai.orchestrator import (
     AIOrchestrationRequest,
     AIOrchestrationResult,
     AIOrchestrator,
+    PreparedPlan,
     write_ai_artifacts,
 )
-from app.ai.orchestrator import PreparedPlan
-from app.ai.models import AIPlan
+from app.core.artifacts import atomic_write_json
 from app.orchestration.dynamic_strategy import DynamicStrategyDecision
 
 # A deterministic runner produces the full report dict for the run.

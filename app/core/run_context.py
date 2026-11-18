@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
 import re
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from .paths import PathInput, sha256_file
-
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 _UNSAFE_NAME_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
@@ -109,10 +108,10 @@ def _normalize_apk_name(apk_path: Path) -> str:
 
 def _normalize_started_at(value: datetime | None) -> datetime:
     if value is None:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     if value.tzinfo is None:
         raise ValueError("started_at must include timezone information")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 def create_analysis_run_context(

@@ -13,8 +13,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from app.analyzers.evidence_correlation import build_evidence_correlations
 from app.core.device import DeviceContext
 from app.frida.traffic_diagnostics import (

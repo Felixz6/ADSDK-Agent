@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 @dataclass
 class FakeClock:
-    wall: datetime = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    wall: datetime = datetime(2026, 7, 24, tzinfo=UTC)
     monotonic_value: float = 100.0
 
     def utc_now(self) -> datetime:

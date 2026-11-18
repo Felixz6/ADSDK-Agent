@@ -56,8 +56,8 @@ copied into the result verbatim and never mutated.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 # Source-of-truth literal set, kept here so this module can be reasoned about
 # without importing the Pydantic model chain (Phase A tests build plain dicts).

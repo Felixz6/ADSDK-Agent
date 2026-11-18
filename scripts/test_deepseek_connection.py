@@ -26,16 +26,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from app.ai.provider import (
-    OpenAICompatibleProvider,
+from app.ai.provider import (  # noqa: E402
     PROFILE_DEEPSEEK,
+    OpenAICompatibleProvider,
 )
-from app.ai.secret_store import SecretStore
-from app.ai.settings_store import AISettingsStore
+from app.ai.settings_store import AISettingsStore  # noqa: E402
 
 
 def mask_key(key: str) -> str:
@@ -128,7 +127,7 @@ def main() -> int:
     models_supported = probe_result.get("models_endpoint_supported", False)
     safe_msg = probe_result.get("safe_message", "")
 
-    print(f"\n[探测结果]")
+    print("\n[探测结果]")
     print(f"  状态: {status}")
     print(f"  耗时: {latency} ms")
     print(f"  /models 端点支持: {models_supported}")
@@ -156,7 +155,7 @@ def main() -> int:
             max_output_tokens=100,
         )
         chat_latency = int((time.perf_counter() - start_t) * 1000)
-        print(f"[+] 推理测试成功！")
+        print("[+] 推理测试成功！")
         print(f"  耗时: {chat_latency} ms")
         print(f"  响应 JSON: {json.dumps(test_resp.content_json, ensure_ascii=False)}")
         if test_resp.usage.input_tokens is not None:

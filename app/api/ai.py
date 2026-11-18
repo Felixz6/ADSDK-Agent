@@ -5,23 +5,24 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from fastapi import APIRouter, HTTPException, Query
+
+from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
+from app.ai.settings_service import (
+    AISettingsValidationError,
+    resolve_effective_ai_settings,
+)
 from app.config import OUTPUT_DIR
 from app.tasks.models import (
-    AIStatusResponse,
     AISettingsDeleteKeyResponse,
     AISettingsResponse,
     AISettingsSaveRequest,
     AISettingsTestRequest,
     AISettingsTestResponse,
+    AIStatusResponse,
     TaskAIArtifactResponse,
     TaskAIArtifactSummary,
-)
-from app.ai.settings_service import (
-    AISettingsValidationError,
-    resolve_effective_ai_settings,
 )
 
 router = APIRouter(tags=["ai"])

@@ -7,7 +7,6 @@ from app.models import (
     RiskSummary,
 )
 
-
 RECOMMENDATIONS = {
     "privacy": "将相关 SDK 初始化和敏感信息读取延迟至用户明确同意后，并增加调用门禁。",
     "network": "在同意状态确认前阻断外发请求，并复核明文 HTTP 与传输加密配置。",

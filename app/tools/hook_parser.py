@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from app.config import REDACTION_HMAC_KEY, SCHEMA_VERSION
 from app.core.artifacts import atomic_write_json
@@ -32,7 +32,7 @@ _IDENTIFIER_NAMES = {
 }
 
 
-def _base_event() -> Dict[str, Any]:
+def _base_event() -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "timestamp": None,
@@ -56,7 +56,7 @@ def _extract_timestamp(line: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _parse_line(line: str) -> Dict[str, Any] | None:
+def _parse_line(line: str) -> dict[str, Any] | None:
     text = line.strip()
     if not text:
         return None
@@ -114,9 +114,9 @@ def _parse_line(line: str) -> Dict[str, Any] | None:
 
 
 def _redact_event_text(
-    event: Dict[str, Any],
+    event: dict[str, Any],
     sensitive_identifiers: dict[str, str] | None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if not sensitive_identifiers:
         return event
     for key, value in tuple(event.items()):
@@ -128,7 +128,7 @@ def _redact_event_text(
     return event
 
 
-def _parse_structured_line(text: str) -> Dict[str, Any] | None:
+def _parse_structured_line(text: str) -> dict[str, Any] | None:
     """Parse one new-protocol JSONL line without promoting errors to evidence."""
 
     try:
@@ -166,12 +166,12 @@ def parse_hook_log(
     log_path: str,
     *,
     sensitive_identifiers: dict[str, str] | None = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     if not os.path.exists(log_path):
         raise FileNotFoundError(f"hook evidence is missing: {log_path}")
 
-    events: List[Dict[str, Any]] = []
-    with open(log_path, "r", encoding="utf-8", errors="strict") as f:
+    events: list[dict[str, Any]] = []
+    with open(log_path, encoding="utf-8", errors="strict") as f:
         for line in f:
             stripped = line.strip()
             if stripped.startswith("{"):
@@ -185,7 +185,7 @@ def parse_hook_log(
     return events
 
 
-def write_events_json(events: List[Dict[str, Any]], output_path: str):
+def write_events_json(events: list[dict[str, Any]], output_path: str):
     atomic_write_json(output_path, events)
 
 
@@ -194,7 +194,7 @@ def parse_hook_to_events_json(
     output_path: str,
     *,
     sensitive_identifiers: dict[str, str] | None = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     events = parse_hook_log(
         log_path,
         sensitive_identifiers=sensitive_identifiers,

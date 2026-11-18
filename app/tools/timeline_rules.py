@@ -6,8 +6,8 @@ import json
 import math
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Protocol
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol
 
 
 class TimelineClock(Protocol):
@@ -18,7 +18,7 @@ class TimelineClock(Protocol):
 
 class SystemTimelineClock:
     def utc_now(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     def monotonic(self) -> float:
         return time.monotonic()
@@ -33,7 +33,7 @@ class EvidenceTimestamp:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "timestamp_utc": self.timestamp_utc.astimezone(timezone.utc)
+            "timestamp_utc": self.timestamp_utc.astimezone(UTC)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z"),
             "monotonic_ms": self.monotonic_ms,
@@ -58,9 +58,9 @@ class DynamicTimeline:
     def _now(self) -> EvidenceTimestamp:
         wall = self.clock.utc_now()
         if wall.tzinfo is None:
-            wall = wall.replace(tzinfo=timezone.utc)
+            wall = wall.replace(tzinfo=UTC)
         else:
-            wall = wall.astimezone(timezone.utc)
+            wall = wall.astimezone(UTC)
         monotonic_value = float(self.clock.monotonic()) * 1000.0
         if not math.isfinite(monotonic_value) or monotonic_value < 0:
             raise ValueError("clock returned an invalid monotonic value")
@@ -165,12 +165,12 @@ def _parse_iso(ts: str | None) -> datetime | None:
     except (TypeError, ValueError):
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
-def _load_events(events_json_path: str) -> List[Dict[str, Any]]:
-    with open(events_json_path, "r", encoding="utf-8") as f:
+def _load_events(events_json_path: str) -> list[dict[str, Any]]:
+    with open(events_json_path, encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, list):
         return [item for item in data if isinstance(item, dict)]
@@ -184,8 +184,8 @@ def _load_events(events_json_path: str) -> List[Dict[str, Any]]:
 
 
 def _find_consent_event(
-    events: List[Dict[str, Any]],
-) -> Dict[str, Any] | None:
+    events: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     for event in events:
         if (
             event.get("type") == "control"
@@ -196,7 +196,7 @@ def _find_consent_event(
 
 
 def _find_legacy_consent_index(
-    events: List[Dict[str, Any]],
+    events: list[dict[str, Any]],
 ) -> int | None:
     for idx, event in enumerate(events):
         result_text = str(event.get("result", ""))
@@ -205,13 +205,13 @@ def _find_legacy_consent_index(
     return None
 
 
-def _is_sensitive_event(event: Dict[str, Any]) -> bool:
+def _is_sensitive_event(event: dict[str, Any]) -> bool:
     from app.analyzers.privacy_findings import SENSITIVE_APIS
 
     return event.get("api") in SENSITIVE_APIS
 
 
-def _is_android_id_event(event: Dict[str, Any]) -> bool:
+def _is_android_id_event(event: dict[str, Any]) -> bool:
     return (
         event.get("api") == "Settings.Secure.getString"
         and (
@@ -227,7 +227,7 @@ def evaluate_timeline_rules(
     pre_consent_seconds: int = 10,
     post_consent_seconds: int = 10,
     evidence_available: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Evaluate strict pre-consent rules.
 
     New structured evidence is classified exclusively by the monotonic

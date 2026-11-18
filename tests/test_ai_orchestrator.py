@@ -44,10 +44,10 @@ from app.ai.provider import (
     OpenAICompatibleProvider,
     ProviderError,
 )
+from app.ai.report_composer import FIXED_DISCLAIMER, AIReportComposer
 from app.ai.secret_store import SecretStore
 from app.ai.settings_service import AISettingsService
 from app.ai.settings_store import AISettingsStore
-from app.ai.report_composer import AIReportComposer, FIXED_DISCLAIMER
 from app.ai.tool_registry import (
     AIToolRegistry,
     InvalidToolArgumentsError,

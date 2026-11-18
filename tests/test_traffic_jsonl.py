@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,7 +20,7 @@ def _writer_with_ready(path: Path) -> TrafficJSONLWriter:
         event="mitm_ready",
         run_id="run-a",
         session_id="session-a",
-        timestamp_utc=datetime(2026, 7, 24, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 7, 24, tzinfo=UTC),
     )
     return writer
 
@@ -35,7 +35,7 @@ def test_structured_record_drops_query_values_headers_and_bodies(
         flow_id="flow-1",
         run_id="run-a",
         session_id="session-a",
-        timestamp_utc=datetime(2026, 7, 24, 23, 59, 59, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 7, 24, 23, 59, 59, tzinfo=UTC),
         method="POST",
         url=(
             "https://API.Example.COM./v1/collect"
@@ -243,7 +243,7 @@ def test_addon_emits_ready_and_safe_request_without_mitmproxy(
         run_id="run-a",
         session_id="session-a",
         jsonl_path=path,
-        utc_now=lambda: datetime(2026, 7, 24, tzinfo=timezone.utc),
+        utc_now=lambda: datetime(2026, 7, 24, tzinfo=UTC),
     )
     addon.running()
 
@@ -295,7 +295,7 @@ def test_addon_sanitizes_raw_flow_error(tmp_path: Path) -> None:
         run_id="run-a",
         session_id="session-a",
         jsonl_path=path,
-        utc_now=lambda: datetime(2026, 7, 24, tzinfo=timezone.utc),
+        utc_now=lambda: datetime(2026, 7, 24, tzinfo=UTC),
     )
     addon.running()
     raw_token = "ERROR_TOKEN_582b40"

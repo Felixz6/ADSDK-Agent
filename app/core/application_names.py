@@ -4,7 +4,6 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-
 _NAMED_STRING_REFERENCE = re.compile(
     r"^@(?:\*?[A-Za-z0-9_.]+:)?string/(?P<name>[A-Za-z0-9_.-]+)$"
 )

@@ -16,8 +16,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from typing import Any
 
 import pytest
 
@@ -25,23 +24,20 @@ from app.ai.cache import AIResponseCache
 from app.ai.context_builder import AIContextBuilder
 from app.ai.models import (
     AIPlan,
-    AITokenUsage,
     AIReport,
+    AITokenUsage,
     EvidenceDigest,
     PlanStep,
     PreparedPlan,
     ToolCompactResult,
 )
 from app.ai.orchestrator import (
-    AIOrchestrationRequest,
     AIOrchestrationResult,
     AIOrchestrator,
 )
 from app.ai.provider import MockAIProvider
 from app.orchestration.cleanup_manager import (
     CleanupManager,
-    CleanupOutcome,
-    OwnedResource,
     ResourceOwnershipRegistry,
 )
 from app.orchestration.consent_checkpoint import (
@@ -54,16 +50,11 @@ from app.orchestration.device_lease import (
 )
 from app.orchestration.device_session import (
     DeviceSessionSnapshot,
-    DeviceState,
     build_snapshot,
     mask_device_ref,
 )
 from app.orchestration.full_analysis_session import (
-    FullAnalysisAcceptance,
     FullAnalysisSession,
-    PlanValidationError,
-    SessionEvent,
-    SessionState,
     SessionTransition,
     build_default_plan,
     build_full_analysis_acceptance,
@@ -855,7 +846,7 @@ def test_validate_rejects_duplicate_steps():
     assert out[1] == "default"
 
 
-def test_validate_rejects_tool_not_in_dag():
+def test_validate_rejects_tool_not_in_dag():  # noqa: F811
     plan = _ai_plan([("s1", "environment_check"), ("s2", "shell_exec")])
     out = build_full_analysis_plan(
         objective="o", strategy="full_analysis", allow_dynamic=True,
@@ -1339,7 +1330,7 @@ def test_session_consent_not_found_yields_partial_limitation():
     acceptance = build_full_analysis_acceptance(
         transition=transition, result=effects._orch_result,
     )
-    assert any("consent UI was not reached" in l for l in acceptance.limitations)
+    assert any("consent UI was not reached" in l for l in acceptance.limitations)  # noqa: E741
 
 
 def test_session_orchestration_failure_falls_to_failed_with_cleanup():
@@ -1368,7 +1359,7 @@ def test_session_budget_exhausted_yields_partial_acceptance_limitation():
         transition=transition, result=effects._orch_result,
     )
     assert acceptance.orchestration_status == "budget_exhausted"
-    assert any("budget exhausted" in l for l in acceptance.limitations)
+    assert any("budget exhausted" in l for l in acceptance.limitations)  # noqa: E741
 
 
 def test_session_cleanup_always_runs_in_finally_on_exception():
@@ -1462,7 +1453,7 @@ def test_failure_contracts_lease_released_and_cleanup_ran(fail_at):
     assert transition.cleanup is not None
     assert transition.cleanup.evidence_retained is True
     # No infinite retry: orchestration called at most once.
-    orch_calls = sum(
+    orch_calls = sum(  # noqa: F841
         1 for c in effects.snapshots if False
     )  # snapshots != orch; orch is one-shot by construction above.
 

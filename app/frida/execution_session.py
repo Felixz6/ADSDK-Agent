@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
+from typing import Any
 
 from .execution_modes import DynamicModePolicy, ExecutionAttempt, ExecutionMode
 
@@ -11,7 +12,7 @@ from .execution_modes import DynamicModePolicy, ExecutionAttempt, ExecutionMode
 def _utc_text(value: Any) -> str | None:
     if not isinstance(value, datetime):
         return None
-    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace(
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace(
         "+00:00",
         "Z",
     )
@@ -144,7 +145,7 @@ class PolicyFridaSession:
             self.attempts[-1].timestamps = dict(self.launch_timing)
         return session
 
-    def start(self) -> "PolicyFridaSession":
+    def start(self) -> PolicyFridaSession:
         last_error: BaseException | None = None
         modes = self._modes()
         for index, mode in enumerate(modes):

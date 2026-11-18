@@ -2,8 +2,7 @@ import os
 import shutil
 import signal
 import subprocess
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from app.config import ADB_TIMEOUT
 
@@ -18,7 +17,7 @@ def now_iso() -> str:
     Single source of truth for timestamps written into hook.log; matches the
     ISO_TS_PATTERN consumed by hook_parser.
     """
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def command_exists(cmd: str) -> bool:
@@ -26,7 +25,7 @@ def command_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
-def _resolve_spawn_argv(cmd: List[str]) -> List[str]:
+def _resolve_spawn_argv(cmd: list[str]) -> list[str]:
     """Build the argv actually passed to ``subprocess`` while keeping the
     caller-visible ``cmd`` record identical to what was requested.
 
@@ -64,8 +63,8 @@ def _resolve_spawn_argv(cmd: List[str]) -> List[str]:
 
 
 def run_cmd(
-    cmd: List[str],
-    cwd: Optional[str] = None,
+    cmd: list[str],
+    cwd: str | None = None,
     timeout: int = ADB_TIMEOUT,
 ) -> dict:
     """Run a subprocess with a hard timeout.

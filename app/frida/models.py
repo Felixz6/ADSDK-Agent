@@ -6,7 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 CheckStatus = Literal["pass", "warning", "error", "unknown", "not_configured"]
 OverallStatus = Literal["ready", "degraded", "blocked", "error"]
 RecommendedMode = Literal[

@@ -51,7 +51,8 @@ exclude = [
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
-ignore = ["E501"]
+# UP042 suggests StrEnum; keep str+Enum to preserve serialization semantics.
+ignore = ["E501", "UP042"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

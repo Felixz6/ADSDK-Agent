@@ -23,11 +23,10 @@ from __future__ import annotations
 
 import json
 import os
-import sys
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, fields
 from pathlib import Path
 
-from app.ai.secret_store import SecretStore, DPAPIError
+from app.ai.secret_store import DPAPIError, SecretStore
 
 # ---------------------------------------------------------------------------
 # Schema/version.
@@ -142,7 +141,7 @@ class LocalSettings:
         return {f.name: getattr(self, f.name) for f in fields(self) if getattr(self, f.name) is not None}
 
     @classmethod
-    def from_dict(cls, data: object) -> "LocalSettings":
+    def from_dict(cls, data: object) -> LocalSettings:
         if not isinstance(data, dict):
             raise TypeError("settings payload must be a dict")
         known = {f.name for f in fields(cls)}
@@ -401,7 +400,7 @@ class AISettingsStore:
 
 
 def settings_corruption_degradable(
-    store: "AISettingsStore",
+    store: AISettingsStore,
 ) -> LocalSettings:
     """Load settings, swallowing corruption into empty defaults.
 

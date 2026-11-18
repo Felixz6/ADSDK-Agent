@@ -4,7 +4,6 @@ import pytest
 
 from app.tools.sdk_fingerprint import scan_for_sdks
 
-
 PANGLE_PACKAGE = "com.bytedance.sdk.openadsdk"
 
 

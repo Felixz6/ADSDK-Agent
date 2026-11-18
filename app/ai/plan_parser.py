@@ -253,7 +253,6 @@ def parse_plan_response(content: str | None) -> ParseOutcome:
         candidates.append((fenced, 0))
     candidates.append((text, 0))
 
-    last_json_error: ParseErrorCode | None = None
     for candidate, _offset in candidates:
         stripped = candidate.strip()
         if not stripped:
@@ -261,12 +260,9 @@ def parse_plan_response(content: str | None) -> ParseOutcome:
         try:
             parsed = json.loads(stripped)
         except json.JSONDecodeError as exc:
-            # Remember the most informative reason but keep scanning; the next
-            # candidate (whole-string vs fenced) may succeed.
-            last_json_error = PARSE_INVALID_JSON
-            # Suppress unused-variable noise while keeping the location hint
-            # available if we later need it (kept out of diagnostics on
-            # purpose — never echo offending text).
+            # Keep scanning; the next candidate (whole-string vs fenced)
+            # may succeed. The exception location is deliberately not echoed
+            # because it may contain response text.
             _ = exc
             continue
         # A JSON string ("...") whose content is itself JSON-as-text is a valid

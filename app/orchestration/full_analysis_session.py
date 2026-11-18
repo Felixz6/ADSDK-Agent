@@ -34,17 +34,16 @@ Security invariants enforced here (and inherited from the layers it wraps):
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Literal, Protocol
+from datetime import UTC, datetime
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai.models import (
     AIPlan,
-    AIReport,
     AISynthesisStatus,
-    EvidenceDigest,
     PlanStep,
     PreparedPlan,
 )
@@ -54,7 +53,6 @@ from app.ai.orchestrator import (
 )
 
 from .cleanup_manager import (
-    CleanupActions,
     CleanupDiagnostic,
     CleanupManager,
     CleanupOutcome,
@@ -144,7 +142,7 @@ _STRATEGY_STEPS: dict[str, frozenset[str]] = {
 
 def _utc_now_iso() -> str:
     return (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z")
     )
@@ -295,7 +293,8 @@ def build_default_plan(
     try:
         from app.ai.tool_registry import prioritize_steps
     except ImportError:  # pragma: no cover - registry always importable
-        prioritize_steps = lambda names, limit: names[:limit]  # type: ignore
+        def prioritize_steps(names, limit):
+            return names[:limit]
     trimmed_order = prioritize_steps(
         [s for s in order if s not in drops_for_no_dynamic], 6
     )
@@ -475,7 +474,7 @@ class FullAnalysisSession:
     lease: LeaseRegistry
     consent: ConsentCheckpointService
     registry: ResourceOwnershipRegistry
-    effects: "SessionEffects"
+    effects: SessionEffects
     run_dir: Any = None
     dynamic_mode_policy: Literal["strict", "balanced", "attach_only"] = "balanced"
     application_launch_allowed: bool = True
@@ -988,7 +987,7 @@ class FullAnalysisSession:
 # Convenience entry points used by app/main.py.
 # ---------------------------------------------------------------------------
 def execute_full_analysis_plan(
-    *, session: "FullAnalysisSession"
+    *, session: FullAnalysisSession
 ) -> SessionTransition:
     """Run one session end-to-end and return its structured transition."""
     return session.run()

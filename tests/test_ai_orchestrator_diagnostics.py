@@ -27,12 +27,6 @@ from typing import Any
 
 import pytest
 
-from app.config import (
-    AI_PLANNER_MAX_OUTPUT_TOKENS,
-    AI_REPORT_MAX_OUTPUT_TOKENS,
-    AI_REPAIR_MAX_OUTPUT_TOKENS,
-)
-
 from app.ai.cache import AIResponseCache
 from app.ai.context_builder import AIContextBuilder
 from app.ai.models import (
@@ -43,12 +37,17 @@ from app.ai.models import (
     ToolCompactResult,
 )
 from app.ai.orchestrator import (
-    _normalize_plan_envelope,
     AIOrchestrationRequest,
     AIOrchestrator,
+    _normalize_plan_envelope,
     write_ai_artifacts,
 )
 from app.ai.provider import MockAIProvider, ProviderError, ProviderResponse
+from app.config import (
+    AI_PLANNER_MAX_OUTPUT_TOKENS,
+    AI_REPAIR_MAX_OUTPUT_TOKENS,
+    AI_REPORT_MAX_OUTPUT_TOKENS,
+)
 
 # A syntactically plausible key shape used ONLY to prove it never reaches an
 # artifact. It is not a real credential and is never sent anywhere.

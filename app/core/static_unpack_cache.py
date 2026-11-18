@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import shutil
 import threading
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from app.core.artifacts import atomic_write_json
-
 
 CACHE_FORMAT_VERSION = "static-unpack-v1"
 Unpacker = Callable[[str, str], dict[str, Any]]
@@ -229,7 +229,7 @@ def prepare_static_unpack(
                     "cache_format_version": CACHE_FORMAT_VERSION,
                     "apk_sha256": normalized_sha256,
                     "apktool_version": apktool_version,
-                    "created_at": datetime.now(timezone.utc)
+                    "created_at": datetime.now(UTC)
                     .isoformat()
                     .replace("+00:00", "Z"),
                 },

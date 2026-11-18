@@ -8,11 +8,12 @@ same lifecycle without requiring either external tool to be installed.
 
 from __future__ import annotations
 
-import time
 import inspect
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Protocol
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 
 class CollectionClock(Protocol):
@@ -28,7 +29,7 @@ class CollectionClock(Protocol):
 
 class SystemCollectionClock:
     def utc_now(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     def monotonic(self) -> float:
         return time.monotonic()
@@ -109,7 +110,7 @@ class DynamicTimeline:
     def _utc_text(value: datetime | None) -> str | None:
         if value is None:
             return None
-        return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace(
+        return value.astimezone(UTC).isoformat(timespec="milliseconds").replace(
             "+00:00",
             "Z",
         )
@@ -151,7 +152,7 @@ class DynamicCollectionResult:
 
 
 def _timestamp_utc(clock: CollectionClock) -> str:
-    return clock.utc_now().astimezone(timezone.utc).isoformat(
+    return clock.utc_now().astimezone(UTC).isoformat(
         timespec="milliseconds"
     ).replace("+00:00", "Z")
 

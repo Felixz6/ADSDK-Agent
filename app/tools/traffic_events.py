@@ -13,11 +13,12 @@ import json
 import os
 import re
 import threading
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 from urllib.parse import unquote, unquote_plus, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -69,7 +70,7 @@ def normalize_timestamp_utc(value: datetime | str | int | float) -> str:
     if isinstance(value, datetime):
         parsed = value
     elif isinstance(value, (int, float)) and not isinstance(value, bool):
-        parsed = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        parsed = datetime.fromtimestamp(float(value), tz=UTC)
     elif isinstance(value, str):
         candidate = value.strip()
         if not candidate:
@@ -86,7 +87,7 @@ def normalize_timestamp_utc(value: datetime | str | int | float) -> str:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp_utc must include a timezone")
     return (
-        parsed.astimezone(timezone.utc)
+        parsed.astimezone(UTC)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z")
     )

@@ -28,8 +28,9 @@ without real wall-clock waits.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
-from typing import Callable, Literal
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
 
 LeaseState = Literal["held", "stale", "free"]
 

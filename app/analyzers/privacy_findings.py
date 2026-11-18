@@ -21,7 +21,8 @@ is ever copied into a finding.
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Literal, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -307,7 +308,7 @@ def build_finding_id(
 
     joined = "\0".join(sorted(str(value) for value in evidence_ids))
     digest = hashlib.sha256(
-        f"{SCHEMA_VERSION}\0{rule_id}\0{joined}\0{consent_state}".encode("utf-8")
+        f"{SCHEMA_VERSION}\0{rule_id}\0{joined}\0{consent_state}".encode()
     ).hexdigest()
     return f"pf-{digest[:24]}"
 

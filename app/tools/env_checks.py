@@ -16,10 +16,9 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.config import APK_ALLOWED_ROOTS, APKTOOL_TIMEOUT
-
 
 # Known development placeholder values for REDACTION_HMAC_KEY. Matching any of
 # these means the deployment has not yet replaced the development default —
@@ -61,7 +60,7 @@ def _apktool_version_timeout() -> int:
     return max(5, min(configured, 15))
 
 
-def check_apktool() -> Dict[str, Any]:
+def check_apktool() -> dict[str, Any]:
     """Detect apktool and return its version.
 
     On Windows apktool is typically distributed as ``apktool.bat`` /
@@ -82,8 +81,8 @@ def check_apktool() -> Dict[str, Any]:
             "apktool_error": "apktool not found on PATH",
         }
 
-    argv: List[str] = [cmd_name, "--version"]
-    spawn_argv: List[str] = [resolved, "--version"]
+    argv: list[str] = [cmd_name, "--version"]
+    spawn_argv: list[str] = [resolved, "--version"]
     if os.name == "nt" and resolved.lower().endswith((".bat", ".cmd")):
         # Launch the wrapper through cmd.exe /c; the recorded command stays
         # the operator-visible ``["apktool", "--version"]``.
@@ -121,7 +120,7 @@ def check_apktool() -> Dict[str, Any]:
     #   - on PATH but --version failed  ⇒ unknown (无法检测) via ``apktool_error``
     #   - on PATH and --version ok      ⇒ ok      (正常)
     available = True
-    version: Optional[str] = None
+    version: str | None = None
     if result.returncode == 0:
         out = (result.stdout or result.stderr or "").strip()
         # apktool prints a single version line; take the first token-bearing
@@ -132,7 +131,7 @@ def check_apktool() -> Dict[str, Any]:
                 break
         if version is None:
             version = out or None
-    error: Optional[str] = None
+    error: str | None = None
     if result.returncode != 0:
         raw = (result.stderr or result.stdout or "").strip()
         error = raw or "apktool --version failed"
@@ -146,7 +145,7 @@ def check_apktool() -> Dict[str, Any]:
     }
 
 
-def check_frida_python_package() -> Dict[str, Any]:
+def check_frida_python_package() -> dict[str, Any]:
     """Detect the ``frida`` Python package on the *current* interpreter.
 
     This is distinct from ``check_frida_connection`` (frida-server
@@ -172,7 +171,7 @@ def check_frida_python_package() -> Dict[str, Any]:
             "frida_python_error_detail": "",
         }
 
-    version: Optional[str] = None
+    version: str | None = None
     try:
         version = getattr(frida, "__version__", None)
         if version is None:
@@ -192,7 +191,7 @@ def check_frida_python_package() -> Dict[str, Any]:
     }
 
 
-def check_redaction_hmac_key() -> Dict[str, Any]:
+def check_redaction_hmac_key() -> dict[str, Any]:
     """Probe REDACTION_HMAC_KEY configuration status without exposing the key.
 
     Status logic (the *effective* value, i.e. what ``app.config`` resolved):
@@ -213,8 +212,6 @@ def check_redaction_hmac_key() -> Dict[str, Any]:
     from app.config import REDACTION_HMAC_KEY
 
     env_value = os.getenv("REDACTION_HMAC_KEY")
-    env_configured = env_value is not None and env_value.strip() != ""
-
     effective = (REDACTION_HMAC_KEY or "").strip()
 
     is_known_placeholder = effective in _REDACTION_PLACEHOLDER_VALUES or (
@@ -244,14 +241,14 @@ def check_redaction_hmac_key() -> Dict[str, Any]:
     }
 
 
-def check_apk_allowed_roots() -> Dict[str, Any]:
+def check_apk_allowed_roots() -> dict[str, Any]:
     """Return the normalized, absolute allowed APK roots.
 
     Uses the real parsed value from ``app.config`` (already resolved to
     absolute, normalized paths). Reads *no* APK files inside the roots
     and exposes nothing outside the configured list.
     """
-    roots_normalized: List[str] = [str(root) for root in APK_ALLOWED_ROOTS]
+    roots_normalized: list[str] = [str(root) for root in APK_ALLOWED_ROOTS]
     configured = len(roots_normalized) > 0
     return {
         "apk_allowed_roots_configured": configured,

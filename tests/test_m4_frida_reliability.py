@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import json
 import struct
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,13 +11,13 @@ from fastapi.testclient import TestClient
 from app.core.device import DeviceContext
 from app.frida.diagnostics import FridaDiagnosticsService
 from app.frida.errors import DynamicErrorCode, legacy_error_code
-from app.frida.execution_session import PolicyFridaSession
 from app.frida.execution_modes import (
     DynamicModePolicy,
     ExecutionMode,
     build_evidence_quality,
     select_execution_mode,
 )
+from app.frida.execution_session import PolicyFridaSession
 from app.frida.models import FridaDiagnosticsRequest
 from app.frida.process_monitor import classify_process_exit
 from app.frida.server_manager import FridaServerManager
@@ -322,7 +321,7 @@ def test_balanced_falls_back_after_post_resume_native_crash_and_keeps_evidence()
             calls.append(f"stop:{self.mode.value}")
             return True
 
-    launch_requested = datetime(2026, 7, 29, tzinfo=timezone.utc)
+    launch_requested = datetime(2026, 7, 29, tzinfo=UTC)
     session = PolicyFridaSession(
         policy=DynamicModePolicy.BALANCED,
         session_factory=FakeSession,

@@ -1,5 +1,5 @@
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -14,7 +14,7 @@ from app.tools.frida_session import (
 
 class FakeClock:
     def __init__(self) -> None:
-        self.wall = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.wall = datetime(2026, 1, 1, tzinfo=UTC)
         self.monotonic_value = 10.0
 
     def utc_now(self) -> datetime:

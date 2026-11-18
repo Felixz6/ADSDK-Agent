@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from app.core.device import DeviceContext
@@ -103,7 +104,7 @@ class LegacyFridaAdapter:
             "event_id": str(uuid4()),
             "run_id": self.run_id,
             "session_id": self.session_id,
-            "timestamp_utc": datetime.now(timezone.utc)
+            "timestamp_utc": datetime.now(UTC)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z"),
             "monotonic_ms": time.monotonic() * 1000.0,

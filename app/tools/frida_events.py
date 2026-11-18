@@ -13,9 +13,10 @@ import math
 import os
 import threading
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -108,13 +109,13 @@ def _utc_iso(value: Any) -> str:
         raise ValueError("timestamp_utc must be a valid ISO timestamp") from exc
     if parsed.tzinfo is None:
         raise ValueError("timestamp_utc must include a timezone")
-    normalized = parsed.astimezone(timezone.utc).isoformat(timespec="milliseconds")
+    normalized = parsed.astimezone(UTC).isoformat(timespec="milliseconds")
     return normalized.replace("+00:00", "Z")
 
 
 def utc_now_iso() -> str:
     return (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z")
     )
@@ -205,7 +206,7 @@ class FridaStructuredEvent(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_identifier_shape(self) -> "FridaStructuredEvent":
+    def validate_identifier_shape(self) -> FridaStructuredEvent:
         is_identifier = (
             self.category == "identifier_access"
             or self.identifier_type is not None
@@ -278,7 +279,7 @@ class FridaControlEvent(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_control_shape(self) -> "FridaControlEvent":
+    def validate_control_shape(self) -> FridaControlEvent:
         if self.event == "hook_ready" and not (
             self.installed_hooks or self.failed_hooks
         ):

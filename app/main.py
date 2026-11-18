@@ -1,66 +1,31 @@
-import asyncio
-from contextlib import asynccontextmanager
 import json
 import math
 import os
 import time
 from collections import Counter
+from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
-from app.config import (
-    AI_CACHE_ENABLED,
-    AI_MAX_ROUNDS,
-    AI_MAX_TOOL_CALLS,
-    AI_REPORT_LANGUAGE,
-    ALLOW_UNC_APK_PATHS,
-    APK_ALLOWED_ROOTS,
-    APK_MAX_SIZE_BYTES,
-    DEFAULT_MITM_PORT,
-    EVIDENCE_CORRELATION_WINDOW_MS,
-    FRIDA_READY_TIMEOUT_SECONDS,
-    FRIDA_SPAWN_STABILITY_SECONDS,
-    FRIDA_STOP_TIMEOUT_SECONDS,
-    FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS,
-    FRIDA_SERVER_LOCAL_PATH,
-    FRIDA_SERVER_MANAGEMENT_ENABLED,
-    FRIDA_SERVER_REMOTE_PATH,
-    FRIDA_SERVER_START_TIMEOUT_SECONDS,
-    MITM_LISTEN_HOST,
-    MITM_DEVICE_PROXY_HOST,
-    MITM_READY_TIMEOUT_SECONDS,
-    MITM_STOP_TIMEOUT_SECONDS,
-    M7A_CONSENT_WAIT_SECONDS,
-    M7A_LEASE_STALE_SECONDS,
-    OUTPUT_DIR,
-    REDACTION_HMAC_KEY,
-    SCHEMA_VERSION,
-    STATIC_UNPACK_CACHE_DIR,
-    TASK_DATABASE_PATH,
+from app.ai.cache import AIResponseCache
+from app.ai.orchestrator import (
+    AIOrchestrationRequest,
+    AIOrchestrationResult,
+    AIOrchestrator,
 )
-from app.core.artifacts import atomic_write_json, atomic_write_text
-from app.core.device import DeviceContext
-from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
-from app.core.paths import ApkPathValidationError, ApkPathValidator, sha256_file
-from app.core.redaction import Redactor
-from app.core.run_context import AnalysisRunContext, create_analysis_run_context
-from app.core.static_unpack_cache import (
-    StaticUnpackCacheError,
-    prepare_static_unpack,
+from app.ai.settings_service import (
+    AISettingsService,
+    resolve_effective_ai_settings,
 )
-from app.core.status import (
-    StepResult,
-    StepStatus,
-    derive_overall_status,
-    make_step_result,
-)
+from app.ai.settings_store import AISettingsStore
+from app.ai.tool_registry import AIToolRegistry
 from app.analyzers.compliance_insight import generate_compliance_insight
 from app.analyzers.evidence_correlation import (
     EvidenceCorrelationConfig,
@@ -74,53 +39,75 @@ from app.analyzers.privacy_findings import (
 from app.analyzers.risk_scoring import calculate_risk_summary
 from app.analyzers.sdk_intelligence import correlate_sdk_evidence
 from app.analyzers.timeline_builder import build_timeline
-from app.ai.orchestrator import (
-    AIOrchestrationRequest,
-    AIOrchestrationResult,
-    AIOrchestrator,
+from app.comparisons import (
+    ComparisonService,
 )
-from app.ai.settings_service import (
-    AISettingsService,
-    AISettingsValidationError,
-    resolve_effective_ai_settings,
+
+# Compatibility re-exports used by app/api/* and tests through main.X.
+# Kept only until phase 3 migrates routes to dependency injection.
+from app.config import (
+    ALLOW_UNC_APK_PATHS,
+    APK_ALLOWED_ROOTS,
+    APK_MAX_SIZE_BYTES,
+    DEFAULT_MITM_PORT,  # noqa: F401  # re-export for monkeypatch，阶段 3 移除
+    EVIDENCE_CORRELATION_WINDOW_MS,
+    FRIDA_READY_TIMEOUT_SECONDS,
+    FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS,
+    FRIDA_SERVER_LOCAL_PATH,
+    FRIDA_SERVER_MANAGEMENT_ENABLED,
+    FRIDA_SERVER_REMOTE_PATH,
+    FRIDA_SERVER_START_TIMEOUT_SECONDS,
+    FRIDA_SPAWN_STABILITY_SECONDS,
+    FRIDA_STOP_TIMEOUT_SECONDS,
+    M7A_CONSENT_WAIT_SECONDS,
+    M7A_LEASE_STALE_SECONDS,
+    MITM_DEVICE_PROXY_HOST,
+    MITM_LISTEN_HOST,
+    MITM_READY_TIMEOUT_SECONDS,
+    MITM_STOP_TIMEOUT_SECONDS,
+    OUTPUT_DIR,
+    REDACTION_HMAC_KEY,
+    SCHEMA_VERSION,
+    STATIC_UNPACK_CACHE_DIR,
+    TASK_DATABASE_PATH,
 )
-from app.ai.settings_store import AISettingsStore
-from app.ai.cache import AIResponseCache
-from app.ai.tool_registry import AIToolRegistry
-from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
+from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
+from app.core.artifacts import atomic_write_json, atomic_write_text
+from app.core.device import DeviceContext
+from app.core.paths import ApkPathValidationError, ApkPathValidator, sha256_file
+from app.core.redaction import Redactor
+from app.core.run_context import AnalysisRunContext, create_analysis_run_context
+from app.core.static_unpack_cache import (
+    StaticUnpackCacheError,
+    prepare_static_unpack,
+)
+from app.core.status import (
+    StepResult,
+    StepStatus,
+    derive_overall_status,
+    make_step_result,
+)
 from app.frida import (
     DynamicModePolicy,
     ExecutionMode,
     FridaDiagnosticsRequest,
     FridaDiagnosticsService,
-    FridaServerActionRequest,
     FridaServerManager,
     PolicyFridaSession,
     build_evidence_quality,
 )
 from app.frida.process_monitor import classify_process_exit
 from app.frida.traffic_diagnostics import diagnose_traffic
-from app.comparisons import (
-    ComparisonCreateRequest,
-    ComparisonResult,
-    ComparisonService,
-)
-from app.reporting import write_html_report
-from app.repositories import TaskRepository
-from app.repositories.task_repository import utc_now as task_utc_now
-from app.orchestration.consent_checkpoint import (
-    ConsentAction,
-    ConsentCheckpointError,
-    ConsentCheckpointRequest,
-    ConsentCheckpointService,
-    ConsentCheckpointState,
-)
-from app.orchestration.device_lease import LeaseRegistry
+from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
 from app.orchestration.cleanup_manager import (
     CleanupDiagnostic,
     CleanupStep,
     ResourceOwnershipRegistry,
 )
+from app.orchestration.consent_checkpoint import (
+    ConsentCheckpointService,
+)
+from app.orchestration.device_lease import LeaseRegistry
 from app.orchestration.device_session import (
     DeviceSessionSnapshot,
     DeviceState,
@@ -128,26 +115,17 @@ from app.orchestration.device_session import (
 )
 from app.orchestration.full_analysis_session import FullAnalysisSession
 from app.orchestration.production_session_effects import ProductionSessionEffects
+from app.reporting import write_html_report
+from app.repositories import TaskRepository
+from app.repositories.task_repository import utc_now as task_utc_now
 from app.services import AITaskService, TaskService
 from app.services.ai_task_service import RunScopedExecution
 from app.services.application_name_service import (
     repair_historical_application_names,
 )
 from app.tasks.models import (
-    AIStatusResponse,
-    AISettingsDeleteKeyResponse,
-    AISettingsResponse,
-    AISettingsSaveRequest,
-    AISettingsTestRequest,
-    AISettingsTestResponse,
-    TaskActionResponse,
-    TaskAIArtifactResponse,
     TaskAIArtifactSummary,
-    TaskCreateRequest,
-    TaskListResponse,
     TaskRecord,
-    TaskReportResponse,
-    TaskSystemStatus,
 )
 from app.tasks.runtime import (
     TaskCancelled,
@@ -156,7 +134,7 @@ from app.tasks.runtime import (
     register_cleanup,
     report_step,
 )
-from app.tools.adb_runner import (
+from app.tools.adb_runner import (  # noqa: F401  # re-export for monkeypatch，阶段 3 移除
     DeviceSelectionError,
     check_adb_available,
     check_device_online,
@@ -165,44 +143,48 @@ from app.tools.adb_runner import (
     select_device_context,
 )
 from app.tools.apk_unpack import unpack_apk
-from app.tools.frida_runner import (
-    check_frida_connection,
-    check_frida_device_runtime,
-    spawn_and_inject,
-)
-from app.tools.frida_session import FridaSession, FridaSessionError
 from app.tools.dynamic_collection import (
     DynamicCollectionConfig,
     DynamicCollectionResult,
     run_dynamic_collection,
 )
 from app.tools.dynamic_compat import LegacyFridaAdapter, LegacyMitmAdapter
-from app.tools.env_checks import (
+from app.tools.env_checks import (  # noqa: F401  # re-export for monkeypatch，阶段 3 移除
     check_apk_allowed_roots,
     check_apktool,
     check_frida_python_package,
     check_redaction_hmac_key,
 )
+from app.tools.frida_runner import (  # noqa: F401  # re-export for monkeypatch，阶段 3 移除
+    check_frida_connection,
+    check_frida_device_runtime,
+    spawn_and_inject,
+)
+from app.tools.frida_session import FridaSession, FridaSessionError
 from app.tools.hook_parser import parse_hook_to_events_json
-from app.tools.log_writer import append_log
-from app.tools.manifest_parser import parse_manifest_info
-from app.tools.mitm_runner import check_port_listening, get_mitm_status, start_mitm, stop_mitm
-from app.tools.mitm_session import MitmSession
 from app.tools.logcat_collector import LogcatCollector
+from app.tools.manifest_parser import parse_manifest_info
+from app.tools.mitm_runner import (
+    check_port_listening,
+    get_mitm_status,  # noqa: F401  # re-export for monkeypatch，阶段 3 移除
+    start_mitm,
+    stop_mitm,
+)
+from app.tools.mitm_session import MitmSession
 from app.tools.report_writer import write_json_report, write_markdown_report
 from app.tools.sdk_fingerprint import scan_for_sdks
-from app.tools.timeline_rules import evaluate_timeline_rules
-from app.tools.timeline_rules import classify_consent_state
+from app.tools.timeline_rules import classify_consent_state, evaluate_timeline_rules
 from app.tools.traffic_events import (
     TrafficCollectionOutcome,
     TrafficCollectionResult,
 )
 from app.tools.traffic_parser import (
-    parse_traffic_text,
+    parse_traffic_text,  # noqa: F401  # re-export for monkeypatch，阶段 3 移除
     parse_traffic_to_summary_json,
     write_traffic_summary,
 )
 from app.tools.utils import ensure_dir, now_iso, run_cmd
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -335,8 +317,7 @@ def _origin_allowed_for_ai_settings(origin: str | None) -> bool:
 # request that tries to mutate via GET query params (defense-in-depth: GET is
 # not a write method, but we explicitly refuse query-param-driven config on
 # these paths in the route layer too).
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request as StarletteRequest
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 
 class _AILocalOnlyMiddleware(BaseHTTPMiddleware):
@@ -493,7 +474,7 @@ def _build_dynamic_findings(
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _step_result(
@@ -1096,8 +1077,8 @@ def _parse_utc(value: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _build_and_write_privacy_findings(
@@ -1143,15 +1124,9 @@ def _build_and_write_privacy_findings(
     return payload
 
 
-from app.api.env import (
-    router as env_router,
+from app.api.env import (  # noqa: E402
     env_check,
-    traffic_check,
-    frida_diagnostics,
-    frida_server_status,
-    deploy_frida_server,
-    start_frida_server,
-    stop_frida_server,
+    router as env_router,
 )
 
 
@@ -3614,32 +3589,11 @@ def _task_not_found(task_id: str) -> HTTPException:
     )
 
 
-from app.api.tasks import (
-    router as tasks_router,
-    create_task,
-    list_tasks,
-    task_system_status,
-    get_task,
-    get_task_report,
-    cancel_task,
-    retry_task,
-    get_consent_checkpoint,
-    resolve_consent_checkpoint,
-    delete_task,
-    download_task_artifact,
-    task_progress_websocket,
-)
-from app.api.ai import (
+from app.api.ai import (  # noqa: E402
     router as ai_router,
-    ai_status,
-    get_ai_settings,
-    update_ai_settings,
-    test_ai_settings,
-    delete_ai_api_key,
-    _read_task_ai_artifact,
-    get_task_ai_plan,
-    get_task_ai_report,
-    get_task_ai_runtime_diagnostics,
+)
+from app.api.tasks import (  # noqa: E402
+    router as tasks_router,
 )
 
 
@@ -3782,11 +3736,8 @@ def regenerate_task_ai_report(
     )
 
 
-from app.api.comparisons import (
+from app.api.comparisons import (  # noqa: E402
     router as comparisons_router,
-    create_comparison,
-    list_comparisons,
-    get_comparison,
 )
 
 # 注册领域划分后的模块化路由

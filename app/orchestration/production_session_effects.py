@@ -7,9 +7,10 @@ dynamic strategy inside the two-phase orchestration boundary.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from app.ai.models import AIPlan
 from app.ai.orchestrator import AIOrchestrationRequest, AIOrchestrationResult, PreparedPlan
@@ -19,6 +20,7 @@ from app.orchestration.consent_checkpoint import (
 )
 from app.orchestration.device_session import DeviceSessionSnapshot
 from app.orchestration.dynamic_strategy import DynamicStrategyDecision
+
 if TYPE_CHECKING:
     from app.services.ai_task_service import AITaskService
 
@@ -39,7 +41,7 @@ class ProductionSessionEffects:
 
     task_id: str
     run_id: str
-    ai_service: "AITaskService"
+    ai_service: AITaskService
     consent_service: ConsentCheckpointService
     snapshot_factory: SnapshotFactory
     clock: Callable[[], str]

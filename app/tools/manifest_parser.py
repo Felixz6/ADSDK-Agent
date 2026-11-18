@@ -7,7 +7,6 @@ from app.core.application_names import (
     stable_application_name,
 )
 
-
 ANDROID_NAME = "{http://schemas.android.com/apk/res/android}name"
 ANDROID_PERMISSION = "{http://schemas.android.com/apk/res/android}permission"
 ANDROID_READ_PERMISSION = "{http://schemas.android.com/apk/res/android}readPermission"

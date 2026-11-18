@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import math
-from typing import Any, Literal, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
-
 
 CorrelationStatus = Literal[
     "evaluated",
@@ -147,7 +147,7 @@ def _utc_ms(value: datetime | None) -> float | None:
         return None
     if value.tzinfo is None:
         return None
-    return value.astimezone(timezone.utc).timestamp() * 1000.0
+    return value.astimezone(UTC).timestamp() * 1000.0
 
 
 def _consent_compatible(left: ConsentState, right: ConsentState) -> bool:
@@ -209,7 +209,7 @@ def build_correlation_summary(
 
 def _stable_id(event_id: str, request_id: str) -> str:
     digest = hashlib.sha256(
-        f"correlation-v1\0{event_id}\0{request_id}".encode("utf-8")
+        f"correlation-v1\0{event_id}\0{request_id}".encode()
     ).hexdigest()
     return f"corr-{digest[:24]}"
 

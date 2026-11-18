@@ -31,10 +31,11 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import ValidationError
 
@@ -65,6 +66,7 @@ from .context_builder import (
 )
 from .models import (
     AIErrorObservation,
+    AIPerRoundUsage,
     AIPlan,
     AIReport,
     AIReportSource,
@@ -74,32 +76,29 @@ from .models import (
     AITokenUsage,
     AIToolTrace,
     AIToolTraceStep,
-    AIPerRoundUsage,
     EvidenceDigest,
     PlanStep,
-    PreparedPlan,
     PlanValidationIssue,
     PlanValidationRound,
+    PreparedPlan,
+    TokenUsageSource,
     ToolCompactResult,
     ToolErrorDetail,
-    TokenUsageSource,
 )
-from .plan_parser import ParseOutcome, PlanParseError, parse_plan_response
+from .plan_parser import parse_plan_response
 from .plan_repair import (
     build_plan_repair_contract,
-    repaired_plan_from,
-    revalidate_repaired,
 )
 from .plan_validator import PlanValidationResult, validate_plan
 from .provider import AIProvider, ProviderError, ProviderResponse, build_system_prompt
 from .report_composer import AIReportComposer
 from .tool_registry import (
-    AIToolRegistry,
     DEFAULT_PLAN_STEPS,
+    AIToolRegistry,
     InvalidToolArgumentsError,
-    UnknownToolError,
     prioritize_steps,
 )
+
 # M7B (Section 十二) — deterministic dynamic-strategy normalization owns the
 # ``requested_strategy -> effective_strategy`` decision (Rules A–F). The
 # orchestrator records both on the runtime diagnostic so the acceptance
@@ -124,7 +123,7 @@ ToolExecutor = Callable[[str, dict[str, Any]], ToolCompactResult]
 
 def _utc_now_iso() -> str:
     return (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z")
     )
@@ -713,7 +712,7 @@ class AIOrchestrator:
         *,
         stage: Literal["plan", "repair"],
         previous_issues: list[PlanValidationIssue] | None = None,
-    ) -> "_PlanRoundOutcome":
+    ) -> _PlanRoundOutcome:
         """Parse + validate one model response (plan or repair), recording the
         structured ``PlanValidationRound`` diagnostics. Returns the result plus
         the parsed payload (kept only in-memory for the repair contract)."""
@@ -892,7 +891,7 @@ class AIOrchestrator:
         strategy: str,
         allow_dynamic: bool,
         confirmed_tools: frozenset[str],
-    ) -> "_PlanRoundOutcome | None":
+    ) -> _PlanRoundOutcome | None:
         """Retry the same planning prompt once after a transient transport blip.
 
         The retry is recorded as the second attempt (``stage="repair"``,

@@ -1,4 +1,3 @@
-import json
 
 import pytest
 
@@ -9,7 +8,6 @@ from app.tools.frida_events import (
     normalize_frida_payload,
 )
 from app.tools.hook_parser import parse_hook_log, parse_hook_to_events_json
-
 
 RAW_IDENTIFIER = "fixture-sensitive-id-2026-NEVER-PERSIST"
 

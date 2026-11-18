@@ -3,7 +3,6 @@ from pathlib import Path
 from app.analyzers.risk_scoring import calculate_risk_summary
 from app.tools.manifest_parser import parse_manifest_info
 
-
 MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.permissions">

@@ -27,8 +27,8 @@ class FakeActions:
     def kill_pid(self, device, pid): return self._stop("app_process", pid) if ("app_process", pid) in self.present or ("app_process", pid) in self.retry_present else self._stop("frida_helper", pid)
     def stop_mitm_pid(self, pid): return self._stop("mitm_process", pid)
     def stop_frida_session(self, ref): return True
-    def set_proxy(self, device, value): self.proxy = value; return True
-    def delete_proxy(self, device): self.proxy = ":null"; return True
+    def set_proxy(self, device, value): self.proxy = value; return True  # noqa: E702
+    def delete_proxy(self, device): self.proxy = ":null"; return True  # noqa: E702
     def read_proxy(self, device): return self.proxy
 
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -68,7 +69,7 @@ class StepResult(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_timing(self) -> "StepResult":
+    def _validate_timing(self) -> StepResult:
         if (
             self.started_at is not None
             and self.ended_at is not None

@@ -3,18 +3,17 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import zipfile
 from pathlib import Path
 from typing import BinaryIO
-import zipfile
 
 import pytest
 
+from app import main as main_module
 from app.core import apk_snapshot as snapshot_module
 from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
 from app.core.device import DeviceContext
-from app import main as main_module
-from app.tools import adb_runner, apk_unpack
-from app.tools import utils as tools_utils
+from app.tools import adb_runner, apk_unpack, utils as tools_utils
 
 
 def _sha256(content: bytes) -> str:
@@ -110,7 +109,7 @@ def test_snapshot_streams_to_fixed_run_path_and_returns_safe_report_metadata(
 def test_snapshot_supports_chinese_and_spaces_in_source_and_run_paths(
     tmp_path: Path,
 ) -> None:
-    content = "中文 APK 快照".encode("utf-8") * 20
+    content = "中文 APK 快照".encode() * 20
     source = tmp_path / "输入 目录" / "广告 示例.apk"
     source.parent.mkdir()
     source.write_bytes(content)
