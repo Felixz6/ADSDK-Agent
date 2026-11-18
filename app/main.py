@@ -1155,14 +1155,7 @@ def analyze(req: AnalyzeRequest):
         apktool_version = str(
             apktool_info.get("apktool_version") or "unknown"
         )
-        configured_cache_root = os.environ.get(
-            "STATIC_UNPACK_CACHE_DIR",
-            "",
-        ).strip()
-        cache_root = Path(
-            configured_cache_root
-            or str(context.output_root / "cache" / "static-unpack")
-        )
+        cache_root = Path(STATIC_UNPACK_CACHE_DIR)
         cache_result = prepare_static_unpack(
             snapshot_path=context.apk_path,
             apk_sha256=context.apk_sha256,
@@ -1611,14 +1604,7 @@ def _dynamic_analyze_v2(
         apktool_version = str(
             apktool_info.get("apktool_version") or "unknown"
         )
-        configured_cache_root = os.environ.get(
-            "STATIC_UNPACK_CACHE_DIR",
-            "",
-        ).strip()
-        cache_root = Path(
-            configured_cache_root
-            or str(context.output_root / "cache" / "static-unpack")
-        )
+        cache_root = Path(STATIC_UNPACK_CACHE_DIR)
         cache_result = prepare_static_unpack(
             snapshot_path=context.apk_path,
             apk_sha256=context.apk_sha256,

@@ -23,7 +23,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TextIO
 
-from app.config import DEFAULT_MITM_PORT
+from app.config import MITM_PORT_END, MITM_PORT_START
 from app.core.device import DeviceContext
 from app.frida.traffic_diagnostics import summarize_proc_net
 from app.tools.traffic_events import (
@@ -182,17 +182,7 @@ class PortPool:
 
 
 def _default_port_pool() -> PortPool:
-    try:
-        start = int(
-            os.getenv("MITM_PORT_START", str(DEFAULT_MITM_PORT))
-        )
-        end = int(os.getenv("MITM_PORT_END", str(start)))
-    except ValueError:
-        start = DEFAULT_MITM_PORT
-        end = DEFAULT_MITM_PORT
-    if end < start:
-        start, end = end, start
-    return PortPool(range(start, end + 1))
+    return PortPool(range(MITM_PORT_START, MITM_PORT_END + 1))
 
 
 # A global *resource manager* is intentional; no process, file handle, or
