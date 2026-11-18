@@ -359,9 +359,6 @@ class TaskService:
     def recover(self) -> int:
         return self.repository.recover_interrupted_tasks()
 
-    def shutdown(self) -> None:
-        self._pool.shutdown(wait=False, cancel_futures=True)
-
     def occupied_devices(self) -> list[str]:
         with self._lock:
             return sorted(key for key, lock in self._device_locks.items() if lock.locked())
