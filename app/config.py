@@ -17,8 +17,6 @@ STATIC_UNPACK_CACHE_DIR = (
     or str(Path(OUTPUT_DIR) / "cache" / "static-unpack")
 )
 
-# 当前未使用,预留后续 AI 辅助分析扩展。
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 DEFAULT_HOST = os.getenv("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.getenv("PORT", "8000"))
 
