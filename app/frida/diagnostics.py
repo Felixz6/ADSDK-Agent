@@ -11,9 +11,10 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from app.core.device import DeviceContext
+from app.core.protocols import CommandRunner
 from app.tools.utils import run_cmd
 
 from .errors import DynamicErrorCode
@@ -25,12 +26,6 @@ from .models import (
     FridaDiagnosticsResponse,
     FridaEnvironmentCapabilities,
 )
-
-
-class CommandRunner(Protocol):
-    def __call__(
-        self, command: list[str], cwd: str | None = None, timeout: int = 10
-    ) -> dict[str, Any]: ...
 
 
 def _utc_text() -> str:

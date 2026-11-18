@@ -50,6 +50,7 @@ from app.ai.orchestrator import (
     AIOrchestrationRequest,
     AIOrchestrationResult,
 )
+from app.core.protocols import CleanupActionProtocol
 
 from .cleanup_manager import (
     CleanupDiagnostic,
@@ -363,7 +364,7 @@ def build_full_analysis_plan(
 # ---------------------------------------------------------------------------
 # Injectable effects.
 # ---------------------------------------------------------------------------
-class SessionEffects(Protocol):
+class SessionEffects(CleanupActionProtocol, Protocol):
     """The session's external-effect surface, all injected for tests."""
 
     clock: Callable[[], str]
@@ -395,14 +396,6 @@ class SessionEffects(Protocol):
     def wait_consent(self, task_id: str) -> ConsentCheckpointState: ...
 
     def notify_plan_built(self, plan: AIPlan, path: Literal["ai", "default", "repaired"]) -> None: ...
-
-    # CleanupActions surface (set_proxy / delete_proxy / kill_pid / stop_mitm_pid /
-    # stop_frida_session), all injected.
-    def set_proxy(self, device: str, value: str) -> bool: ...
-    def delete_proxy(self, device: str) -> bool: ...
-    def kill_pid(self, device: str, pid: int) -> bool: ...
-    def stop_mitm_pid(self, pid: int) -> bool: ...
-    def stop_frida_session(self, ref: str) -> bool: ...
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,8 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.protocols import CleanupActionProtocol
+
 from .device_session import DeviceSessionSnapshot
 
 Ownership = Literal["external", "owned_by_run", "shared_pre_existing"]
@@ -115,13 +117,8 @@ class CleanupOutcome(BaseModel):
         return self.ran and self.status == "success" and not self.proxy_restore_failed and not self.failures
 
 
-class CleanupActions(Protocol):
-    def set_proxy(self, device: str, value: str) -> bool: ...
-    def delete_proxy(self, device: str) -> bool: ...
-    def kill_pid(self, device: str, pid: int) -> bool: ...
+class CleanupActions(CleanupActionProtocol, Protocol):
     def force_stop_package(self, device: str, package_name: str) -> bool: ...
-    def stop_mitm_pid(self, pid: int) -> bool: ...
-    def stop_frida_session(self, ref: str) -> bool: ...
 
 
 _RESOURCE_KIND_FRIDA_SERVER = "frida_server"
