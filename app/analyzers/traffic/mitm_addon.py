@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,16 +18,13 @@ try:  # pragma: no cover - exercised only when mitmproxy is installed.
 except ImportError:  # Tests and static analysis do not require mitmproxy.
     _mitm_ctx = None
 
+from app.core.clock import utc_now as _utc_now
 from app.tools.traffic_events import (
     HttpRequestRecord,
     TrafficJSONLWriter,
     build_http_request_record,
     extract_query_keys,
 )
-
-
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
 
 
 class SafeTrafficAddon:

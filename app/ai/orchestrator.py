@@ -33,7 +33,6 @@ import json
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -57,6 +56,7 @@ from app.config import (
     AI_THINKING_MODE,
 )
 from app.core.artifacts import atomic_write_json
+from app.core.clock import utc_now_iso as _utc_now_iso
 
 from .cache import AIResponseCache
 from .context_builder import (
@@ -119,14 +119,6 @@ if TYPE_CHECKING:
 
 # The executor callable a host supplies for one tool.
 ToolExecutor = Callable[[str, dict[str, Any]], ToolCompactResult]
-
-
-def _utc_now_iso() -> str:
-    return (
-        datetime.now(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
 
 
 @dataclass(slots=True)

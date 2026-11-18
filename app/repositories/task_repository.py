@@ -5,10 +5,10 @@ import math
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.core.clock import utc_now_iso
 from app.tasks.models import (
     TaskListResponse,
     TaskRecord,
@@ -17,10 +17,7 @@ from app.tasks.models import (
 
 
 def utc_now() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds").replace(
-        "+00:00",
-        "Z",
-    )
+    return utc_now_iso()
 
 
 class TaskRepository:

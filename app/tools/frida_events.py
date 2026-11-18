@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.config import SCHEMA_VERSION
 from app.core.artifacts import atomic_write_json
+from app.core.clock import utc_now_iso
 from app.core.redaction import Redactor
 
 PROTOCOL_VERSION = "1.0"
@@ -111,14 +112,6 @@ def _utc_iso(value: Any) -> str:
         raise ValueError("timestamp_utc must include a timezone")
     normalized = parsed.astimezone(UTC).isoformat(timespec="milliseconds")
     return normalized.replace("+00:00", "Z")
-
-
-def utc_now_iso() -> str:
-    return (
-        datetime.now(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
 
 
 def _metadata_is_safe(value: Any) -> bool:

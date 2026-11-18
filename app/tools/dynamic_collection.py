@@ -9,33 +9,12 @@ same lifecycle without requiring either external tool to be installed.
 from __future__ import annotations
 
 import inspect
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-
-class CollectionClock(Protocol):
-    def utc_now(self) -> datetime:
-        ...
-
-    def monotonic(self) -> float:
-        ...
-
-    def sleep(self, seconds: float) -> None:
-        ...
-
-
-class SystemCollectionClock:
-    def utc_now(self) -> datetime:
-        return datetime.now(UTC)
-
-    def monotonic(self) -> float:
-        return time.monotonic()
-
-    def sleep(self, seconds: float) -> None:
-        time.sleep(seconds)
+from app.core.clock import Clock as CollectionClock, SystemClock as SystemCollectionClock
 
 
 class CollectionSession(Protocol):

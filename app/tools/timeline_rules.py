@@ -4,24 +4,15 @@ from __future__ import annotations
 
 import json
 import math
-import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Any
 
-
-class TimelineClock(Protocol):
-    def utc_now(self) -> datetime: ...
-
-    def monotonic(self) -> float: ...
-
-
-class SystemTimelineClock:
-    def utc_now(self) -> datetime:
-        return datetime.now(UTC)
-
-    def monotonic(self) -> float:
-        return time.monotonic()
+from app.core.clock import (
+    Clock as TimelineClock,
+    SystemClock as SystemTimelineClock,
+    parse_utc as _parse_iso,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,23 +141,6 @@ def classify_consent_state(
     ):
         return "unknown"
     return "pre_consent" if event_value < consent_value else "post_consent"
-
-
-def _parse_iso(ts: str | None) -> datetime | None:
-    if not isinstance(ts, str) or not ts:
-        return None
-    value = ts.strip()
-    if not value:
-        return None
-    if value.endswith("Z"):
-        value = value[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC)
 
 
 def _load_events(events_json_path: str) -> list[dict[str, Any]]:

@@ -36,7 +36,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -138,14 +137,6 @@ _STRATEGY_STEPS: dict[str, frozenset[str]] = {
         {"deterministic_report", "privacy_findings"}
     ),
 }
-
-
-def _utc_now_iso() -> str:
-    return (
-        datetime.now(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
 
 
 # ---------------------------------------------------------------------------

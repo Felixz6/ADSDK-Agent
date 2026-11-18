@@ -18,12 +18,13 @@ import time
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, TextIO
 
 from app.config import MITM_PORT_END, MITM_PORT_START
+from app.core.clock import utc_now
 from app.core.device import DeviceContext
 from app.frida.traffic_diagnostics import summarize_proc_net
 from app.tools.traffic_events import (
@@ -190,10 +191,6 @@ def _default_port_pool() -> PortPool:
 DEFAULT_PORT_POOL = _default_port_pool()
 
 
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
 def terminate_process_tree(
     process: subprocess.Popen[str],
     *,
@@ -293,7 +290,7 @@ class MitmSession:
         repr=False,
     )
     utc_now: Callable[[], datetime] = field(
-        default=_utc_now,
+        default=utc_now,
         repr=False,
     )
     stop_timeout: float = 3.0

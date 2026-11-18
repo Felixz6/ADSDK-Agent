@@ -2,9 +2,9 @@ import os
 import shutil
 import signal
 import subprocess
-from datetime import UTC, datetime
 
 from app.config import ADB_TIMEOUT
+from app.core.clock import utc_now_iso
 
 
 def ensure_dir(path: str):
@@ -12,12 +12,12 @@ def ensure_dir(path: str):
 
 
 def now_iso() -> str:
-    """Current UTC time as ISO-8601 with a trailing Z (e.g. 2026-03-14T10:00:00Z).
+    """Current UTC time as ISO-8601 with a trailing ``Z``.
 
-    Single source of truth for timestamps written into hook.log; matches the
-    ISO_TS_PATTERN consumed by hook_parser.
+    Delegates to the central clock while retaining the historical
+    auto-precision format used by hook.log.
     """
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    return utc_now_iso(timespec="auto")
 
 
 def command_exists(cmd: str) -> bool:

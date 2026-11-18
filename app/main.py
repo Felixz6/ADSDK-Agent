@@ -5,7 +5,7 @@ import time
 from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -73,6 +73,7 @@ from app.config import (
 )
 from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
 from app.core.artifacts import atomic_write_json, atomic_write_text
+from app.core.clock import parse_utc as _parse_utc, utc_now as _utc_now
 from app.core.device import DeviceContext
 from app.core.paths import ApkPathValidationError, ApkPathValidator, sha256_file
 from app.core.redaction import Redactor
@@ -471,10 +472,6 @@ def _build_dynamic_findings(
             "high_frequency_sensitive_access": high_frequency_evaluation,
         },
     }
-
-
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
 
 
 def _step_result(
@@ -1064,21 +1061,6 @@ def _network_consent_states(
             "pre_consent" if observed < consent_dt else "post_consent"
         )
     return states
-
-
-def _parse_utc(value: Any) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def _build_and_write_privacy_findings(
