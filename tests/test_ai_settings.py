@@ -145,7 +145,7 @@ def test_api_key_configured_status_correct(ai_store: AISettingsService):
 
 
 @pytest.mark.skipif(
-    secret_store_module._dpapi_available() is False,
+    secret_store_module._IS_WINDOWS is False,
     reason="DPAPI round-trip is Windows-specific",
 )
 def test_dpapi_encrypt_and_decrypt_round_trip(tmp_path: Path):
@@ -159,7 +159,7 @@ def test_dpapi_encrypt_and_decrypt_round_trip(tmp_path: Path):
 
 
 @pytest.mark.skipif(
-    secret_store_module._dpapi_available() is False,
+    secret_store_module._IS_WINDOWS is False,
     reason="DPAPI secret file not-cleartext is Windows-specific",
 )
 def test_secret_file_is_not_cleartext(tmp_path: Path):

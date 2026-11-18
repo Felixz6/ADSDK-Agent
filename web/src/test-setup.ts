@@ -41,6 +41,31 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   })
 }
 
+// Node 22+ experimental localStorage polyfill for jsdom environment
+if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage?.clear !== 'function') {
+  const store = new Map<string, string>()
+  const mockLocalStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => { store.set(key, String(value)) },
+    removeItem: (key: string) => { store.delete(key) },
+    clear: () => { store.clear() },
+    get length() { return store.size },
+    key: (index: number) => Array.from(store.keys())[index] ?? null,
+  }
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: mockLocalStorage,
+    configurable: true,
+    writable: true,
+  })
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'localStorage', {
+      value: mockLocalStorage,
+      configurable: true,
+      writable: true,
+    })
+  }
+}
+
 // MSW 在测试启用拦截;每个用例后重置 handler(由具体用例注册)并清理 DOM。
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' })

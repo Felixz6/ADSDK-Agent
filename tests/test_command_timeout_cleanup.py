@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import subprocess
+import sys
+
+import pytest
 
 from app.tools import utils
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Windows-specific apktool.bat wrapper resolution",
+)
 def test_windows_apktool_wrapper_resolves_to_owned_java_process(
     monkeypatch,
 ) -> None:

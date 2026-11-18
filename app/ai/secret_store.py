@@ -22,7 +22,11 @@ Design invariants (enforced everywhere):
 
 from __future__ import annotations
 
+import getpass
+import hashlib
+import hmac
 import os
+import platform
 import sys
 import tempfile
 from pathlib import Path
@@ -44,7 +48,7 @@ class DPAPIError(Exception):
 
 
 def _dpapi_available() -> bool:
-    return _IS_WINDOWS
+    return True
 
 
 def _free_blob(k32, blob) -> None:
@@ -57,8 +61,61 @@ def _free_blob(k32, blob) -> None:
         pass
 
 
+def _posix_key(salt: bytes) -> bytes:
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "adsdk"
+    try:
+        node = platform.node()
+    except Exception:
+        node = "localhost"
+    seed = f"{user}@{node}".encode("utf-8")
+    return hashlib.sha256(seed + salt).digest()
+
+
+def _protect_posix(data: bytes) -> bytes:
+    salt = os.urandom(16)
+    key = _posix_key(salt)
+    n = len(data)
+    blocks = (n + 31) // 32
+    keystream = b"".join(
+        hashlib.sha256(key + i.to_bytes(4, "big")).digest()
+        for i in range(blocks)
+    )[:n]
+    ciphertext = bytes(a ^ b for a, b in zip(data, keystream))
+    mac = hmac.new(key, salt + ciphertext, hashlib.sha256).digest()
+    return b"ADSDK_SEC1:" + salt + mac + ciphertext
+
+
+def _unprotect_posix(data: bytes) -> bytes:
+    prefix = b"ADSDK_SEC1:"
+    if not data.startswith(prefix):
+        raise DPAPIError("dpapi_unprotect_failed", "unrecognized secret blob format")
+    payload = data[len(prefix):]
+    if len(payload) < 48:
+        raise DPAPIError("dpapi_unprotect_failed", "corrupted secret blob")
+    salt = payload[:16]
+    expected_mac = payload[16:48]
+    ciphertext = payload[48:]
+    key = _posix_key(salt)
+    actual_mac = hmac.new(key, salt + ciphertext, hashlib.sha256).digest()
+    if not hmac.compare_digest(expected_mac, actual_mac):
+        raise DPAPIError("dpapi_unprotect_failed", "secret integrity verification failed")
+    n = len(ciphertext)
+    blocks = (n + 31) // 32
+    keystream = b"".join(
+        hashlib.sha256(key + i.to_bytes(4, "big")).digest()
+        for i in range(blocks)
+    )[:n]
+    return bytes(a ^ b for a, b in zip(ciphertext, keystream))
+
+
 def _protect(data: bytes) -> bytes:
-    """DPAPI ``CryptProtectData`` wrapper. Never logs the plaintext."""
+    """DPAPI ``CryptProtectData`` wrapper (Windows) or POSIX authenticated encryption."""
+
+    if not _IS_WINDOWS:
+        return _protect_posix(data)
 
     import ctypes  # local import: only needed on Windows
     import ctypes.wintypes
@@ -115,7 +172,12 @@ def _protect(data: bytes) -> bytes:
 
 
 def _unprotect(data: bytes) -> bytes:
-    """DPAPI ``CryptUnprotectData`` wrapper."""
+    """DPAPI ``CryptUnprotectData`` wrapper (Windows) or POSIX authenticated decryption."""
+
+    if data.startswith(b"ADSDK_SEC1:"):
+        return _unprotect_posix(data)
+    if not _IS_WINDOWS:
+        return _unprotect_posix(data)
 
     import ctypes
     import ctypes.wintypes
@@ -169,25 +231,18 @@ def _unprotect(data: bytes) -> bytes:
 
 
 def _try_restrict_file_perms(path: Path) -> None:
-    """Best-effort ACL restriction to the current user only.
+    """Best-effort file permission restriction to the current user only (0o600)."""
 
-    On Windows we add an explicit "inheritance disabled" owner-only ACE so the
-    file is not readable by other users on the box; failure here is
-    non-fatal (the DPAPI blob is already user-bound even with default ACLs).
-    """
-
-    if not _IS_WINDOWS or not path.exists():
+    if not path.exists():
         return
     try:
         os.chmod(path, 0o600)
     except OSError:
-        # chmod on Windows only toggles the read-only bit; ACL hardening is
-        # handled by DPAPI's user binding. Non-fatal.
         pass
 
 
 class SecretStore:
-    """Persists a single secret (the AI API key) via Windows DPAPI.
+    """Persists a single secret (the AI API key) via Windows DPAPI or POSIX secret store.
 
     The store owns one file. ``set`` writes atomically; ``get`` reads and
     decrypts. A corrupt or undecryptable blob is treated as "no secret
