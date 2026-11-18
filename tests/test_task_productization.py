@@ -283,6 +283,38 @@ def test_html_report_is_printable_and_escapes_untrusted_content(tmp_path: Path):
     assert path.read_text(encoding="utf-8") == rendered
 
 
+def test_recover_interrupted_tasks_on_restart(tmp_path: Path):
+    repository = _repository(tmp_path)
+    running_task = _create_task(repository, task_id="orphan-1", status="running")
+    queued_task = _create_task(repository, task_id="orphan-2", status="queued")
+    completed_task = _create_task(repository, task_id="normal-3", status="completed")
+
+    repository.upsert_step(
+        running_task.id,
+        step_key="frida_spawn",
+        step_name="Frida spawn",
+        status="running",
+        progress_percent=63,
+        message=None,
+    )
+
+    recovered_count = repository.recover_interrupted_tasks()
+    assert recovered_count == 2
+
+    t1 = repository.get_task("orphan-1")
+    t2 = repository.get_task("orphan-2")
+    t3 = repository.get_task("normal-3")
+
+    assert t1 is not None and t1.status == "failed"
+    assert t1.error_code == "service_restarted"
+    assert t1.steps[0].status == "failed"
+
+    assert t2 is not None and t2.status == "failed"
+    assert t2.error_code == "service_restarted"
+
+    assert t3 is not None and t3.status == "completed"
+
+
 def _completed_report_task(
     repository: TaskRepository,
     tmp_path: Path,

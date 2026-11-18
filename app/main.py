@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 import json
 import math
 import os
@@ -203,7 +204,15 @@ from app.tools.traffic_parser import (
 )
 from app.tools.utils import ensure_dir, now_iso, run_cmd
 
-app = FastAPI(title="AdSDK Agent", version="0.2.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task_repository.initialize()
+    task_service.recover()
+    yield
+    task_service.shutdown()
+
+
+app = FastAPI(title="AdSDK Agent", version="0.2.0", lifespan=lifespan)
 frida_diagnostics_service = FridaDiagnosticsService(
     project_root=Path(__file__).resolve().parent.parent,
     server_remote_path=FRIDA_SERVER_REMOTE_PATH,
@@ -1134,167 +1143,16 @@ def _build_and_write_privacy_findings(
     return payload
 
 
-@app.get("/env/check")
-def env_check(device_id: str | None = None):
-    resolved_device_id = device_id
-    if device_id:
-        try:
-            resolved_device_id = select_device_context(device_id).serial
-        except DeviceSelectionError:
-            # Preserve the existing diagnostic response shape for stale or
-            # invalid references instead of turning this compatibility route
-            # into an exception.
-            resolved_device_id = device_id
-    adb_info = check_adb_available()
-    device_info = check_device_online(device_id=resolved_device_id)
-    frida_info = check_frida_connection(device_id=resolved_device_id)
-    frida_runtime_info = check_frida_device_runtime(resolved_device_id)
-    mitm_listen_port = DEFAULT_MITM_PORT
-    mitm_8080_listening = check_port_listening(port=mitm_listen_port)
-    output_info = _check_output_writable()
-    serials = _device_serials(device_info, resolved_device_id)
-
-    apktool_info = check_apktool()
-    frida_python_info = check_frida_python_package()
-    redaction_info = check_redaction_hmac_key()
-    allowed_roots_info = check_apk_allowed_roots()
-
-    checks = {
-        "adb_available": adb_info.get("ok", False),
-        "device_online": device_info.get("ok", False),
-        "frida_connectable": frida_info.get("ok", False),
-        "frida_server_running": frida_runtime_info.get(
-            "server_running",
-            False,
-        ),
-        "frida_python_available": frida_python_info.get(
-            "frida_python_available", False
-        ),
-        "apktool_available": apktool_info.get("apktool_available", False),
-        "mitm_8080_listening": mitm_8080_listening,
-        "output_writable": output_info.get("ok", False),
-        "redaction_hmac_key_secure": redaction_info.get(
-            "redaction_hmac_key_security_status"
-        ) == "secure",
-        "apk_allowed_roots_configured": allowed_roots_info.get(
-            "apk_allowed_roots_configured", False
-        ),
-    }
-
-    # apktool_info / frida_python_info may carry private helper keys (_cmd,
-    # _python_executable) that are not part of the public contract; strip them
-    # before exposing to the client / logs.
-    def _public(obj: dict[str, Any]) -> dict[str, Any]:
-        return {k: v for k, v in obj.items() if not k.startswith("_")}
-
-    return {
-        "ok": all(checks.values()),
-        "device_id": _redact_known_device_serials(resolved_device_id, serials),
-        "checks": checks,
-        "details": {
-            "adb": _redact_known_device_serials(adb_info, serials),
-            "device": _redact_known_device_serials(
-                device_info,
-                serials,
-            ),
-            "frida": _redact_known_device_serials(frida_info, serials),
-            "frida_runtime": frida_runtime_info,
-            "mitm": {"port": mitm_listen_port, "listening": mitm_8080_listening},
-            "output": output_info,
-            "apktool": _public(apktool_info),
-            "frida_python": _public(frida_python_info),
-            "redaction_hmac_key": redaction_info,
-            "apk_allowed_roots": allowed_roots_info["apk_allowed_roots"],
-        },
-    }
-
-
-@app.get("/traffic/check")
-def traffic_check(device_id: str):
-    try:
-        resolved_device_id = select_device_context(device_id).serial
-    except DeviceSelectionError:
-        resolved_device_id = device_id
-    device_info = check_device_online(device_id=resolved_device_id)
-    mitm_status = get_mitm_status(port=DEFAULT_MITM_PORT)
-    stream_log = mitm_status.get("stream_log")
-    records = parse_traffic_text(stream_log) if stream_log else []
-    flow_file_size = mitm_status.get("flow_file_size", 0)
-
-    # A listening port or non-empty flow file does not prove ownership or a
-    # valid observation.  This compatibility endpoint only reports success
-    # for an explicitly owned session with parsed observations.
-    captured_ok = bool(records) and bool(
-        mitm_status.get("owned_by_session")
-    )
-    reasons = []
-
-    if not device_info.get("ok"):
-        reasons.append("Device is offline or unauthorized (adb state is not 'device').")
-    if not mitm_status.get("has_last_session"):
-        reasons.append("No recent mitm session found.")
-    if not mitm_status.get("traffic_dir_exists"):
-        reasons.append("traffic directory is missing; capture may not have started or path is inaccessible.")
-    if not mitm_status.get("traffic_dir_writable"):
-        reasons.append("traffic directory is not writable; cannot persist capture files.")
-    if not mitm_status.get("port_listening"):
-        reasons.append("mitmproxy is not listening on port 8080.")
-    if mitm_status.get("stream_log_exists") and mitm_status.get("stream_log_size", 0) == 0:
-        reasons.append("mitm stream log is empty; proxy may not be hit or HTTPS decryption failed.")
-    if not captured_ok:
-        reasons.append("No requests detected in latest capture; verify proxy/IP/certificate/SSL pinning.")
-
-    serials = _device_serials(device_info, resolved_device_id)
-    response = {
-        "ok": captured_ok,
-        "device_id": resolved_device_id,
-        "captured_success": captured_ok,
-        "captured_request_count": len(records),
-        "flow_file_size": flow_file_size,
-        "possible_reasons": reasons,
-        "mitm_status": mitm_status,
-        "sample_requests": records[:10],
-    }
-    return _redact_known_device_serials(response, serials)
-
-
-@app.post("/frida/diagnostics")
-def frida_diagnostics(request: FridaDiagnosticsRequest):
-    """Run a read-only, exact-device diagnostic pass."""
-
-    device = select_device_context(request.device_id)
-    return frida_diagnostics_service.diagnose(
-        request.model_copy(update={"device_id": device.serial})
-    )
-
-
-@app.get("/frida/status")
-def frida_server_status(device_id: str = Query(min_length=1, max_length=256)):
-    return frida_server_manager.status(select_device_context(device_id))
-
-
-@app.post("/frida/server/deploy")
-def deploy_frida_server(request: FridaServerActionRequest):
-    return frida_server_manager.deploy(
-        select_device_context(request.device_id),
-        confirm=request.confirm,
-    )
-
-
-@app.post("/frida/server/start")
-def start_frida_server(request: FridaServerActionRequest):
-    return frida_server_manager.start(
-        select_device_context(request.device_id),
-        confirm=request.confirm,
-    )
-
-
-@app.post("/frida/server/stop")
-def stop_frida_server(request: FridaServerActionRequest):
-    return frida_server_manager.stop(
-        select_device_context(request.device_id),
-        confirm=request.confirm,
-    )
+from app.api.env import (
+    router as env_router,
+    env_check,
+    traffic_check,
+    frida_diagnostics,
+    frida_server_status,
+    deploy_frida_server,
+    start_frida_server,
+    stop_frida_server,
+)
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -3756,266 +3614,35 @@ def _task_not_found(task_id: str) -> HTTPException:
     )
 
 
-@app.post("/tasks", response_model=TaskRecord, status_code=202)
-def create_task(request: TaskCreateRequest):
-    return task_service.create(request)
-
-
-@app.get("/tasks", response_model=TaskListResponse)
-def list_tasks(
-    status: str | None = Query(default=None),
-    task_type: str | None = Query(default=None),
-    keyword: str | None = Query(default=None, max_length=256),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
-    sort: str = Query(default="-created_at"),
-):
-    allowed_statuses = {"queued", "running", "completed", "failed", "cancelled"}
-    allowed_types = {"static", "dynamic", "comparison", "ai_orchestrated"}
-    if status and status not in allowed_statuses:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "invalid_status", "message": "任务状态筛选值无效"},
-        )
-    if task_type and task_type not in allowed_types:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "invalid_task_type", "message": "任务类型筛选值无效"},
-        )
-    return task_service.list(
-        status=status,
-        task_type=task_type,
-        keyword=keyword,
-        page=page,
-        page_size=page_size,
-        sort=sort,
-    )
-
-
-@app.get("/tasks/system/status", response_model=TaskSystemStatus)
-def task_system_status():
-    running = task_service.list(status="running", page=1, page_size=1).total
-    queued = task_service.list(status="queued", page=1, page_size=1).total
-    return TaskSystemStatus(
-        database_ok=True,
-        database_path=str(task_repository.database_path),
-        running_tasks=running,
-        queued_tasks=queued,
-        occupied_devices=task_service.occupied_devices(),
-    )
-
-
-@app.get("/ai/status", response_model=AIStatusResponse)
-def ai_status(probe: bool = Query(default=False)):
-    """Public AI availability.
-
-    Never returns the API key (or any derivative of it). ``reachable`` is only
-    evaluated when ``probe=true`` so a page load never calls the external
-    model; otherwise it stays ``null`` ("not probed").
-    """
-
-    effective = resolve_effective_ai_settings(ai_settings_service.store)
-    configured = bool(effective["configured"])
-    reachable: bool | None = None
-    last_error_code: str | None = None
-    if probe and effective["enabled"] and configured:
-        provider = ai_settings_service.factory.current()
-        if provider is None:
-            last_error_code = "ai_provider_build_failed"
-        else:
-            try:
-                reachable, reason = provider.reachable()
-                if not reachable:
-                    last_error_code = f"ai_provider_{reason or 'unreachable'}"
-            except Exception:
-                reachable = False
-                last_error_code = "ai_provider_unreachable"
-    return AIStatusResponse(
-        enabled=bool(effective["enabled"]),
-        provider=str(effective["provider"] or ""),
-        model=str(effective["model"] or ""),
-        configured=configured,
-        reachable=reachable,
-        last_error_code=last_error_code,
-        default_token_budget=int(effective["default_token_budget"]),
-        max_rounds=int(effective["max_rounds"]),
-        max_tool_calls=int(effective["max_tool_calls"]),
-        report_language=str(effective["report_language"]),
-        allow_dynamic_tools=bool(effective["allow_dynamic_tools"]),
-    )
-
-
-# ===========================================================================
-# M6B — secure frontend AI configuration center.
-#
-# All four endpoints below:
-#   * never return the API key (only ``api_key_configured`` + ``api_key_source``)
-#   * never log request bodies (the write endpoints are blocked by
-#     ``_AILocalOnlyMiddleware`` for non-loopback / unknown origins)
-#   * never persist the key to the frontend-visible JSON; it lives in the
-#     DPAPI ``ai-secret.bin`` file via ``AISettingsStore.set_api_key``.
-# ===========================================================================
-
-
-@app.get("/ai/settings", response_model=AISettingsResponse)
-def get_ai_settings():
-    """Return the masked effective AI configuration.
-
-    The API key is never present. ``api_key_configured`` is the only key-
-    derived boolean. Corrupted local settings degrade to defaults rather than
-    500.
-    """
-
-    try:
-        return ai_settings_service.get_effective_settings()
-    except Exception:  # pragma: no cover - defensive, never leaks key
-        # Best-effort structured degradation; the layered store already
-        # swallows corruption, so reaching here is unexpected.
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "AI 设置不可用",
-                "error_code": "ai_settings_unavailable",
-            },
-        )
-
-
-@app.put("/ai/settings", response_model=AISettingsResponse)
-def update_ai_settings(request: AISettingsSaveRequest):
-    """Save editable AI configuration + optional new API key. Body is never logged.
-
-    A missing or empty ``api_key`` field preserves the stored key; deletion
-    is a separate authenticated action (DELETE /ai/settings/api-key).
-    """
-
-    try:
-        payload = request.model_dump(exclude_none=False)
-        # ``model_dump`` keeps ``None`` for omitted fields; we drop them so the
-        # service only sees supplied keys. ``api_key`` must pass through even
-        # when it is an empty string ("" == preserve), so handle separately.
-        supplied = {}
-        if "api_key" in payload and payload["api_key"] is not None:
-            supplied["api_key"] = payload["api_key"]
-        for key, value in payload.items():
-            if key == "api_key":
-                continue
-            if value is not None:
-                supplied[key] = value
-        return ai_settings_service.save_settings(supplied)
-    except AISettingsValidationError as exc:
-        return JSONResponse(
-            status_code=422,
-            content={"detail": exc.safe_message, **exc.to_dict()},
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        # Never leak the key via an unexpected exception's repr/args. Surface
-        # only a type name.
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "AI 设置保存失败",
-                "error_code": "ai_settings_save_failed",
-                "safe_message": type(exc).__name__,
-            },
-        )
-
-
-@app.post("/ai/settings/test", response_model=AISettingsTestResponse)
-def test_ai_settings(request: AISettingsTestRequest):
-    """Test the current or a temporary configuration. Temporary key is not saved.
-
-    The request body (which may carry a temporary ``api_key``) is never logged
-    and never persisted. The probe tries ``/models`` first, then a minimal
-    chat completion (max_tokens=1) for gateways that do not expose ``/models``.
-    """
-
-    try:
-        temp = request.model_dump(exclude_none=True)
-        return ai_settings_service.test_connection(temp)
-    except AISettingsValidationError as exc:
-        return JSONResponse(
-            status_code=422,
-            content={"detail": exc.safe_message, **exc.to_dict()},
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "测试连接失败",
-                "error_code": "ai_settings_test_failed",
-                "safe_message": type(exc).__name__,
-            },
-        )
-
-
-@app.delete("/ai/settings/api-key", response_model=AISettingsDeleteKeyResponse)
-def delete_ai_api_key():
-    """Delete the locally-saved API key only. An environment-variable key is untouched."""
-
-    deleted = ai_settings_service.delete_api_key()
-    source = ai_settings_service.store.api_key_source()
-    # After deleting a local key, if an env key exists it remains the source.
-    return AISettingsDeleteKeyResponse(
-        deleted=deleted,
-        api_key_source=source,
-        api_key_configured=source != "none",
-    )
-
-
-def _read_task_ai_artifact(task_id: str, filename: str) -> TaskAIArtifactResponse:
-    task = task_service.get(task_id)
-    if task is None:
-        raise _task_not_found(task_id)
-    payload: dict[str, Any] | None = None
-    if task.report_json_path:
-        candidate = Path(task.report_json_path).resolve(strict=False).parent / filename
-        allowed = (Path(OUTPUT_DIR).resolve(strict=False) / "runs").resolve(
-            strict=False
-        )
-        if candidate.is_relative_to(allowed) and candidate.is_file():
-            try:
-                loaded = json.loads(candidate.read_text(encoding="utf-8"))
-            except Exception:
-                loaded = None
-            if isinstance(loaded, dict):
-                payload = loaded
-    return TaskAIArtifactResponse(
-        task_id=task_id,
-        status=task.status,
-        available=payload is not None,
-        payload=payload,
-    )
-
-
-@app.get("/tasks/{task_id}/ai-plan", response_model=TaskAIArtifactResponse)
-def get_task_ai_plan(task_id: str):
-    return _read_task_ai_artifact(task_id, "ai-plan.json")
-
-
-@app.get("/tasks/{task_id}/ai-report", response_model=TaskAIArtifactResponse)
-def get_task_ai_report(task_id: str):
-    return _read_task_ai_artifact(task_id, "ai-report.json")
-
-
-@app.get(
-    "/tasks/{task_id}/ai-runtime-diagnostics",
-    response_model=TaskAIArtifactResponse,
+from app.api.tasks import (
+    router as tasks_router,
+    create_task,
+    list_tasks,
+    task_system_status,
+    get_task,
+    get_task_report,
+    cancel_task,
+    retry_task,
+    get_consent_checkpoint,
+    resolve_consent_checkpoint,
+    delete_task,
+    download_task_artifact,
+    task_progress_websocket,
 )
-def get_task_ai_runtime_diagnostics(task_id: str):
-    """The ``ai-runtime-diagnostics-v1`` artifact.
-
-    Observable runtime facts only (per-round token provenance, classified
-    errors, latency, retry/cache status). No API key, no prompt or response
-    text, no reasoning_content content — the artifact simply never carries it.
-    """
-
-    return _read_task_ai_artifact(task_id, "ai-runtime-diagnostics.json")
-
-
-@app.post(
-    "/tasks/{task_id}/ai-report/regenerate",
-    response_model=TaskAIArtifactSummary,
+from app.api.ai import (
+    router as ai_router,
+    ai_status,
+    get_ai_settings,
+    update_ai_settings,
+    test_ai_settings,
+    delete_ai_api_key,
+    _read_task_ai_artifact,
+    get_task_ai_plan,
+    get_task_ai_report,
+    get_task_ai_runtime_diagnostics,
 )
+
+
 def regenerate_task_ai_report(
     task_id: str,
     use_cache: bool | None = None,
@@ -4155,202 +3782,15 @@ def regenerate_task_ai_report(
     )
 
 
-@app.get("/tasks/{task_id}", response_model=TaskRecord)
-def get_task(task_id: str):
-    task = task_service.get(task_id)
-    if task is None:
-        raise _task_not_found(task_id)
-    return task
-
-
-@app.get("/tasks/{task_id}/report", response_model=TaskReportResponse)
-def get_task_report(task_id: str):
-    try:
-        return task_service.report(task_id)
-    except KeyError:
-        raise _task_not_found(task_id)
-
-
-@app.post("/tasks/{task_id}/cancel", response_model=TaskActionResponse)
-def cancel_task(task_id: str):
-    try:
-        result = task_service.cancel(task_id)
-    except KeyError:
-        raise _task_not_found(task_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "task_not_cancellable", "message": str(exc)},
-        )
-    # M7A — a task waiting on the manual consent checkpoint must exit that wait
-    # on cancel so cleanup runs. Cancelling never confirms consent.
-    consent_checkpoint_service.cancel(task_id=task_id)
-    return result
-
-
-@app.post("/tasks/{task_id}/retry", response_model=TaskActionResponse, status_code=202)
-def retry_task(task_id: str):
-    try:
-        return task_service.retry(task_id)
-    except KeyError:
-        raise _task_not_found(task_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "task_not_retryable", "message": str(exc)},
-        )
-
-
-@app.get(
-    "/tasks/{task_id}/consent-checkpoint",
-    response_model=ConsentCheckpointState,
+from app.api.comparisons import (
+    router as comparisons_router,
+    create_comparison,
+    list_comparisons,
+    get_comparison,
 )
-def get_consent_checkpoint(task_id: str):
-    """Read the current consent checkpoint for a task.
 
-    Returns 404 when the task has no checkpoint awaiting (either it never
-    reached ``awaiting_consent_action`` or the checkpoint was already cleared
-    by cleanup). The payload carries no UI text, no cookies, no bodies.
-    """
-    if task_service.get(task_id) is None:
-        raise _task_not_found(task_id)
-    state = consent_checkpoint_service.state(task_id)
-    if state is None:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "checkpoint_not_found",
-                "message": "该任务当前没有等待中的 Consent 检查点",
-            },
-        )
-    return state
-
-
-@app.post(
-    "/tasks/{task_id}/consent-checkpoint",
-    response_model=ConsentCheckpointState,
-)
-def resolve_consent_checkpoint(task_id: str, req: ConsentCheckpointRequest):
-    """Resolve the manual consent checkpoint for a running full-analysis task.
-
-    Only a human operator reaches this route. The action is one of
-    ``confirmed`` / ``not_found`` / ``skipped`` — the AI never calls it and no
-    timer ever produces ``confirmed``. The call is idempotent for a repeat of
-    the same action and state-gated: resolving a task that is not awaiting
-    consent returns 409, and a different action after resolution returns 409.
-    """
-    if task_service.get(task_id) is None:
-        raise _task_not_found(task_id)
-    try:
-        return consent_checkpoint_service.resolve(
-            task_id=task_id,
-            action=req.action,
-            note=req.note,
-        )
-    except ConsentCheckpointError as exc:
-        status_code = 404 if exc.code == "checkpoint_not_found" else 409
-        raise HTTPException(
-            status_code=status_code,
-            detail={"code": exc.code, "message": exc.message},
-        )
-
-
-@app.delete("/tasks/{task_id}", status_code=204)
-def delete_task(task_id: str):
-    try:
-        deleted = task_service.delete(task_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "active_task", "message": str(exc)},
-        )
-    if not deleted:
-        raise _task_not_found(task_id)
-    return None
-
-
-@app.get("/tasks/{task_id}/artifacts/{artifact_kind}")
-def download_task_artifact(task_id: str, artifact_kind: str):
-    task = task_service.get(task_id)
-    if task is None:
-        raise _task_not_found(task_id)
-    field_map = {
-        "json": (task.report_json_path, "application/json", "report.json"),
-        "markdown": (task.report_markdown_path, "text/markdown", "report.md"),
-        "html": (task.report_html_path, "text/html", "report.html"),
-    }
-    if artifact_kind not in field_map:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "invalid_artifact_kind", "message": "报告格式无效"},
-        )
-    path_text, media_type, filename = field_map[artifact_kind]
-    if not path_text:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "artifact_not_found", "message": "报告产物尚未生成"},
-        )
-    path = Path(path_text).resolve(strict=False)
-    allowed = (Path(OUTPUT_DIR).resolve(strict=False) / "runs").resolve(strict=False)
-    if not path.is_relative_to(allowed) or not path.is_file():
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "artifact_not_found", "message": "报告产物不存在"},
-        )
-    return FileResponse(path, media_type=media_type, filename=filename)
-
-
-@app.websocket("/ws/tasks/{task_id}")
-async def task_progress_websocket(websocket: WebSocket, task_id: str):
-    await websocket.accept()
-    last_updated: str | None = None
-    try:
-        while True:
-            task = task_service.get(task_id)
-            if task is None:
-                await websocket.send_json(
-                    {"error": {"code": "task_not_found", "message": "任务不存在"}}
-                )
-                await websocket.close(code=4404)
-                return
-            if task.updated_at != last_updated:
-                await websocket.send_json(task.model_dump(mode="json"))
-                last_updated = task.updated_at
-            if task.status in {"completed", "failed", "cancelled"}:
-                await websocket.close(code=1000)
-                return
-            await asyncio.sleep(0.5)
-    except WebSocketDisconnect:
-        return
-
-
-@app.post("/comparisons", response_model=ComparisonResult, status_code=201)
-def create_comparison(request: ComparisonCreateRequest):
-    try:
-        return comparison_service.create(request)
-    except KeyError:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "comparison_input_not_found", "message": "对比任务不存在"},
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "invalid_comparison", "message": str(exc)},
-        )
-
-
-@app.get("/comparisons", response_model=list[ComparisonResult])
-def list_comparisons(limit: int = 20):
-    return comparison_service.list(limit=max(1, min(limit, 100)))
-
-
-@app.get("/comparisons/{comparison_id}", response_model=ComparisonResult)
-def get_comparison(comparison_id: str):
-    result = comparison_service.get(comparison_id)
-    if result is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "comparison_not_found", "message": "对比结果不存在"},
-        )
-    return result
+# 注册领域划分后的模块化路由
+app.include_router(env_router)
+app.include_router(tasks_router)
+app.include_router(ai_router)
+app.include_router(comparisons_router)

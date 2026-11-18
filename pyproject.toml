@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adsdk-agent"
+version = "0.2.0"
+description = "面向 Android APK 的本地隐私合规审计与取证分析平台"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [
+    { name = "AdSDK Agent Team" }
+]
+keywords = ["android", "privacy", "compliance", "frida", "mitmproxy", "security"]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.0",
+    "frida>=16.0.0",
+    "frida-tools>=12.0.0",
+    "mitmproxy>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+    "ruff>=0.8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+tmp_path_retention_policy = "failed"
+tmp_path_retention_count = 2
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    ".vite",
+    "output",
+    "web",
+    "scripts/frida-agent/node_modules",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["app"]

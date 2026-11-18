@@ -26,6 +26,9 @@ _IDENTIFIER_NAMES = {
     "meid",
     "device_id",
     "serial",
+    "mac",
+    "imsi",
+    "iccid",
 }
 
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -61,16 +62,9 @@ def _rewire(store_dir: Path) -> tuple[Path, Path]:
 
 @pytest.fixture
 def ai_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("AI_API_KEY", raising=False)
-    monkeypatch.delenv("AI_ENABLED", raising=False)
-    monkeypatch.delenv("AI_MODEL", raising=False)
-    monkeypatch.delenv("AI_BASE_URL", raising=False)
-    monkeypatch.delenv("AI_PROVIDER", raising=False)
-    monkeypatch.delenv("AI_ALLOW_DYNAMIC_TOOLS", raising=False)
-    monkeypatch.delenv("AI_CACHE_ENABLED", raising=False)
-    monkeypatch.delenv("AI_CACHE_TTL_SECONDS", raising=False)
-    monkeypatch.delenv("AI_TIMEOUT_SECONDS", raising=False)
-    monkeypatch.delenv("AI_REPORT_LANGUAGE", raising=False)
+    for key in list(os.environ.keys()):
+        if key.startswith("AI_"):
+            monkeypatch.delenv(key, raising=False)
     settings_path, secret_path = _rewire(tmp_path)
     # Rebuild a fresh factory+service bound to the freshly re-wired store so
     # provider cache state never bleeds between tests.

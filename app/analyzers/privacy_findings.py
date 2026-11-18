@@ -39,6 +39,22 @@ SENSITIVE_APIS: frozenset[str] = frozenset(
     {
         "Settings.Secure.getString",
         "ClipboardManager.getPrimaryClip",
+        "TelephonyManager.getDeviceId",
+        "TelephonyManager.getImei",
+        "TelephonyManager.getMeid",
+        "TelephonyManager.getSubscriberId",
+        "TelephonyManager.getSimSerialNumber",
+        "Build.getSerial",
+        "NetworkInterface.getHardwareAddress",
+        "WifiInfo.getMacAddress",
+        "LocationManager.getLastKnownLocation",
+        "LocationManager.requestLocationUpdates",
+        "WifiManager.getScanResults",
+        "PackageManager.getInstalledPackages",
+        "PackageManager.getInstalledApplications",
+        "SensorManager.registerListener",
+        "AudioRecord.startRecording",
+        "CameraManager.openCamera",
     }
 )
 

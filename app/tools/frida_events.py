@@ -32,13 +32,16 @@ _RAW_IDENTIFIER_KEYS = {
     "identifier_raw",
 }
 _SENSITIVE_METADATA_KEYS = {
-    "android_id",
     "advertising_id",
+    "android_id",
     "authorization",
     "cookie",
     "device_id",
     "gaid",
+    "iccid",
     "imei",
+    "imsi",
+    "mac",
     "meid",
     "oaid",
     "password",

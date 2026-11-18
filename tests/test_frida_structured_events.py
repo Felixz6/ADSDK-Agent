@@ -157,3 +157,84 @@ def test_malformed_structured_line_is_not_promoted_to_raw_event(tmp_path):
 
     assert events == []
 
+
+def test_extended_sensitive_api_categories_normalization():
+    redactor = Redactor(secret="test-secret-material")
+
+    # 1. Location access event
+    loc_payload = {
+        "protocol_version": "1.0",
+        "schema_version": "1.0",
+        "type": "event",
+        "event_id": "loc-1",
+        "run_id": "run-1",
+        "session_id": "session-1",
+        "timestamp_utc": "2026-01-01T00:00:01.000Z",
+        "monotonic_ms": 1000.0,
+        "pid": 1234,
+        "process_name": "com.example.app",
+        "thread_id": 1,
+        "category": "location_access",
+        "api": "LocationManager.getLastKnownLocation",
+        "action": "last_known_location_read",
+        "metadata": {"location_present": True},
+        "stack": ["com.example.app.MapActivity.initLocation:42"],
+    }
+    loc_event = normalize_frida_payload(loc_payload, run_id="run-1", session_id="session-1", redactor=redactor)
+    assert loc_event.category == "location_access"
+    assert loc_event.api == "LocationManager.getLastKnownLocation"
+    assert loc_event.stack == ["com.example.app.MapActivity.initLocation:42"]
+    assert loc_event.value_token is None
+
+    # 2. App list access event
+    pkg_payload = {
+        "protocol_version": "1.0",
+        "schema_version": "1.0",
+        "type": "event",
+        "event_id": "pkg-1",
+        "run_id": "run-1",
+        "session_id": "session-1",
+        "timestamp_utc": "2026-01-01T00:00:01.500Z",
+        "monotonic_ms": 1500.0,
+        "pid": 1234,
+        "process_name": "com.example.app",
+        "thread_id": 1,
+        "category": "app_list_access",
+        "api": "PackageManager.getInstalledPackages",
+        "action": "installed_packages_read",
+        "metadata": {"count": 48},
+        "stack": ["com.kwad.sdk.collector.AppScanner.scan:108"],
+    }
+    pkg_event = normalize_frida_payload(pkg_payload, run_id="run-1", session_id="session-1", redactor=redactor)
+    assert pkg_event.category == "app_list_access"
+    assert pkg_event.metadata["count"] == 48
+
+    # 3. Telephony IMEI identifier event with redaction
+    imei_payload = {
+        "protocol_version": "1.0",
+        "schema_version": "1.0",
+        "type": "event",
+        "event_id": "imei-1",
+        "run_id": "run-1",
+        "session_id": "session-1",
+        "timestamp_utc": "2026-01-01T00:00:02.000Z",
+        "monotonic_ms": 2000.0,
+        "pid": 1234,
+        "process_name": "com.example.app",
+        "thread_id": 1,
+        "category": "identifier_access",
+        "api": "TelephonyManager.getImei",
+        "action": "imei_read",
+        "identifier_type": "imei",
+        "identifier_present": True,
+        "raw_value": "860000000000001",
+        "stack": ["com.bytedance.sdk.openadsdk.core.IdUtils.getImei:75"],
+        "metadata": {"value_length": 15},
+    }
+    imei_event = normalize_frida_payload(imei_payload, run_id="run-1", session_id="session-1", redactor=redactor)
+    assert imei_event.category == "identifier_access"
+    assert imei_event.identifier_type == "imei"
+    assert imei_event.value_token.startswith("redacted:")
+    assert "860000000000001" not in imei_event.model_dump_json()
+    assert imei_event.stack == ["com.bytedance.sdk.openadsdk.core.IdUtils.getImei:75"]
+

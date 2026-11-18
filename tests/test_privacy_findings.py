@@ -417,6 +417,32 @@ def test_single_rule_exception_does_not_abort_other_rules(monkeypatch):
     assert "synthetic rule failure" not in result.model_dump_json()
 
 
+def test_extended_sensitive_apis_trigger_preconsent_rule():
+    extended_events = [
+        _event(
+            event_id="evt-pkg",
+            api="PackageManager.getInstalledPackages",
+            category="app_list_access",
+            action="installed_packages_read",
+            consent_state="pre_consent",
+        ),
+        _event(
+            event_id="evt-loc",
+            api="LocationManager.getLastKnownLocation",
+            category="location_access",
+            action="last_known_location_read",
+            consent_state="pre_consent",
+        ),
+    ]
+    result = _full(dynamic_events=extended_events)
+    finding = _finding(result, "PF-PRECONSENT-SENSITIVE-EVENT")
+    assert finding is not None
+    assert finding.finding_type == "observed"
+    assert len(finding.evidence_refs) == 2
+    ref_ids = {ref.evidence_id for ref in finding.evidence_refs}
+    assert ref_ids == {"evt-pkg", "evt-loc"}
+
+
 def test_build_error_privacy_findings_is_safe_and_complete():
     result = build_error_privacy_findings(reason="RuntimeError")
     assert result.status == "error"

@@ -62,12 +62,17 @@ export function renderWithProviders(
       },
       ...(extraRoutes ?? []),
     ],
-    { initialEntries: initialEntries ?? ['/'] },
+    {
+      initialEntries: initialEntries ?? ['/'],
+      future: {
+        v7_relativeSplatPath: true,
+      },
+    },
   )
 
   const utils = render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <RouterProvider router={router} future={{ v7_startTransition: true }} />
       <ToastViewport />
     </QueryClientProvider>,
     rest,

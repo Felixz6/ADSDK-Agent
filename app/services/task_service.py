@@ -88,6 +88,10 @@ class TaskService:
     def set_runner(self, runner: TaskRunner) -> None:
         self._runner = runner
 
+    def shutdown(self, wait: bool = False) -> None:
+        """Gracefully shut down task execution thread pool and cancel pending futures."""
+        self._pool.shutdown(wait=wait, cancel_futures=True)
+
     def create(self, request: TaskCreateRequest) -> TaskRecord:
         task_id = str(uuid4())
         payload = request.model_dump(mode="json")

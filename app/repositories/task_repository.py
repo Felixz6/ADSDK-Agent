@@ -404,7 +404,22 @@ class TaskRepository:
                 """,
                 (now, now),
             )
-        return max(0, cursor.rowcount)
+            count = max(0, cursor.rowcount)
+            if count > 0:
+                connection.execute(
+                    """
+                    UPDATE task_steps
+                    SET status = 'failed',
+                        message = '服务重启前任务未正常结束',
+                        completed_at = ?,
+                        updated_at = ?
+                    WHERE task_id IN (
+                        SELECT id FROM tasks WHERE error_code = 'service_restarted'
+                    ) AND status IN ('running', 'pending')
+                    """,
+                    (now, now),
+                )
+        return count
 
     def delete_task(self, task_id: str) -> bool:
         with self._connection() as connection:

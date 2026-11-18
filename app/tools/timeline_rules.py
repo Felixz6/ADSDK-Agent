@@ -206,10 +206,9 @@ def _find_legacy_consent_index(
 
 
 def _is_sensitive_event(event: Dict[str, Any]) -> bool:
-    return event.get("api") in {
-        "Settings.Secure.getString",
-        "ClipboardManager.getPrimaryClip",
-    }
+    from app.analyzers.privacy_findings import SENSITIVE_APIS
+
+    return event.get("api") in SENSITIVE_APIS
 
 
 def _is_android_id_event(event: Dict[str, Any]) -> bool:
