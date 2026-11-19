@@ -7,7 +7,7 @@ import math
 import os
 import sys
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,7 @@ from app.config import (
     EVIDENCE_CORRELATION_WINDOW_MS,
     OUTPUT_DIR,
     SCHEMA_VERSION,
+    STATIC_UNPACK_CACHE_DIR,
 )
 from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
 from app.core.artifacts import atomic_write_json
@@ -47,6 +48,10 @@ from app.core.redaction import (
     _redact_known_device_serials,
 )
 from app.core.run_context import AnalysisRunContext, create_analysis_run_context
+from app.core.static_unpack_cache import (
+    StaticUnpackCacheError,
+    prepare_static_unpack,
+)
 from app.core.status import (
     StepResult,
     StepStatus,
@@ -55,8 +60,11 @@ from app.core.status import (
 )
 from app.reporting import write_html_report
 from app.tasks.runtime import TaskCancelled, checkpoint, current_task_id, report_step
+from app.tools.apk_unpack import unpack_apk
+from app.tools.env_checks import check_apktool
 from app.tools.manifest_parser import parse_manifest_info
 from app.tools.report_writer import write_json_report, write_markdown_report
+from app.tools.sdk_fingerprint import scan_for_sdks
 from app.tools.utils import ensure_dir
 
 _CRITICAL_STEPS = {
@@ -131,6 +139,212 @@ def _manifest_application_fallback(
         "sensitive_permissions": [],
         "high_attention_permissions": [],
     }
+
+
+@dataclass(slots=True)
+class StaticStageResult:
+    analysis_dir: Path
+    app_info: dict[str, Any]
+    manifest_evidence: dict[str, Any]
+    sdk_hits: list[dict[str, Any]]
+    unpack_ok: bool
+    package_name: str | None = None
+
+
+def run_static_stage(
+    context: AnalysisRunContext,
+    steps: list[StepResult],
+    *,
+    package_name_input: str | None = None,
+) -> StaticStageResult:
+    """Execute the common static analysis stage: unpack, manifest parse, SDK scan."""
+    app_info = _manifest_application_fallback(package_name_input)
+    manifest_evidence: dict[str, Any] = {
+        "status": "not_evaluated",
+        "error_code": None,
+        "message": "Manifest evidence has not been evaluated",
+    }
+    sdk_hits: list[dict[str, Any]] = []
+    analysis_dir = context.unpacked_dir
+
+    unpack_started = _utc_now()
+    try:
+        apktool_info = _get_hook("check_apktool", check_apktool)()
+        apktool_version = str(
+            apktool_info.get("apktool_version") or "unknown"
+        )
+        cache_root = Path(STATIC_UNPACK_CACHE_DIR)
+        unpacker_fn = _get_hook("unpack_apk", unpack_apk)
+        cache_result = prepare_static_unpack(
+            snapshot_path=context.apk_path,
+            apk_sha256=context.apk_sha256,
+            cache_root=cache_root,
+            apktool_version=apktool_version,
+            unpacker=unpacker_fn,
+        )
+        analysis_dir = cache_result.unpacked_dir
+        unpack_result = {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "",
+            "cache_hit": cache_result.cache_hit,
+            "cache_key": cache_result.cache_key,
+            "apktool_version": cache_result.apktool_version,
+            "cache_format_version": cache_result.cache_format_version,
+        }
+    except StaticUnpackCacheError as exc:
+        unpack_result = {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": str(exc),
+            "error_code": exc.code,
+            **exc.result,
+        }
+    except Exception as exc:
+        unpack_result = {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": f"apktool execution failed: {type(exc).__name__}",
+            "error_code": "analysis_failed",
+        }
+    unpack_ok = unpack_result.get("returncode") == 0
+    steps.append(
+        _step_result(
+            "apk_unpack",
+            StepStatus.SUCCESS if unpack_ok else StepStatus.FAILED,
+            unpack_started,
+            error_code=None
+            if unpack_ok
+            else unpack_result.get("error_code") or "apk_unpack_failed",
+            error_message=(
+                None
+                if unpack_ok
+                else str(
+                    unpack_result.get("stderr")
+                    or unpack_result.get("stdout")
+                    or "apktool failed"
+                )
+            ),
+            outputs=[str(analysis_dir)] if unpack_ok else [],
+            details=(
+                {
+                    "cache_hit": bool(unpack_result.get("cache_hit")),
+                    "cache_key": unpack_result.get("cache_key"),
+                    "apktool_version": unpack_result.get("apktool_version"),
+                    "cache_format_version": unpack_result.get(
+                        "cache_format_version"
+                    ),
+                }
+                if unpack_ok
+                else {}
+            ),
+        )
+    )
+
+    if unpack_ok:
+        manifest_started = _utc_now()
+        try:
+            parsed_app_info = _parse_manifest_application(
+                str(analysis_dir),
+                apk_filename=context.source_apk_display,
+            )
+            app_info = {
+                **_manifest_application_fallback(package_name_input),
+                **parsed_app_info,
+            }
+            if not app_info.get("package_name") and package_name_input:
+                app_info["package_name"] = (
+                    str(package_name_input or "").strip() or None
+                )
+            manifest_evidence = {
+                "status": "evaluated",
+                "error_code": None,
+                "message": None,
+            }
+            steps.append(
+                _step_result(
+                    "manifest_parse",
+                    StepStatus.SUCCESS,
+                    manifest_started,
+                    required=False,
+                    outputs=[str(analysis_dir / "AndroidManifest.xml")],
+                )
+            )
+        except Exception as exc:
+            manifest_evidence = {
+                "status": "not_evaluated",
+                "error_code": "manifest_parse_failed",
+                "message": f"manifest parse failed: {type(exc).__name__}",
+            }
+            steps.append(
+                _step_result(
+                    "manifest_parse",
+                    StepStatus.FAILED,
+                    manifest_started,
+                    required=False,
+                    error_code="manifest_parse_failed",
+                    error_message=f"manifest parse failed: {type(exc).__name__}",
+                )
+            )
+
+        sdk_started = _utc_now()
+        try:
+            scan_fn = _get_hook("scan_for_sdks", scan_for_sdks)
+            sdk_hits = scan_fn(str(analysis_dir))
+            steps.append(
+                _step_result(
+                    "sdk_scan",
+                    StepStatus.SUCCESS,
+                    sdk_started,
+                    required=False,
+                    details={"sdk_count": len(sdk_hits)},
+                )
+            )
+        except Exception as exc:
+            sdk_hits = []
+            steps.append(
+                _step_result(
+                    "sdk_scan",
+                    StepStatus.FAILED,
+                    sdk_started,
+                    required=False,
+                    error_code="sdk_scan_failed",
+                    error_message=f"SDK scan failed: {type(exc).__name__}",
+                )
+            )
+    else:
+        now = _utc_now()
+        steps.extend(
+            [
+                _step_result(
+                    "manifest_parse",
+                    StepStatus.SKIPPED,
+                    now,
+                    required=False,
+                    warnings=["manifest parse skipped because APK unpack failed"],
+                ),
+                _step_result(
+                    "sdk_scan",
+                    StepStatus.SKIPPED,
+                    now,
+                    required=False,
+                    warnings=["SDK scan skipped because APK unpack failed"],
+                ),
+            ]
+        )
+
+    resolved_package_name = str(package_name_input or "").strip()
+    if not resolved_package_name and app_info:
+        resolved_package_name = str(app_info.get("package_name") or "").strip()
+
+    return StaticStageResult(
+        analysis_dir=analysis_dir,
+        app_info=app_info,
+        manifest_evidence=manifest_evidence,
+        sdk_hits=sdk_hits,
+        unpack_ok=unpack_ok,
+        package_name=resolved_package_name or None,
+    )
 
 
 def _step_result(
@@ -782,5 +996,7 @@ __all__ = [
     "_steps_payload",
     "_validation_failure_response",
     "resolve_frida_hook_script",
+    "run_static_stage",
+    "StaticStageResult",
     "task_service_response_payload",
 ]
