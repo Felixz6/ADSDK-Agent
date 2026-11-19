@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import os
 from collections.abc import Mapping
-from typing import Final
+from typing import Any, Final
 
 _PRIMARY_SECRET_ENV: Final = "REDACTION_HMAC_KEY"
 _COMPAT_SECRET_ENVS: Final = (
@@ -139,3 +139,76 @@ class Redactor:
         ):
             redacted = redacted.replace(raw_text, token)
         return redacted
+
+
+def extract_device_serials(
+    device_info: Mapping[str, Any],
+    requested_device_id: str | None = None,
+) -> list[str]:
+    serials: list[str] = []
+    if requested_device_id:
+        serials.append(requested_device_id)
+    target = device_info.get("target")
+    if isinstance(target, dict) and target.get("device_id"):
+        serials.append(str(target["device_id"]))
+    for item in device_info.get("devices") or []:
+        if isinstance(item, dict) and item.get("device_id"):
+            serials.append(str(item["device_id"]))
+    return list(dict.fromkeys(serials))
+
+
+_device_serials = extract_device_serials
+
+
+def redact_known_device_serials(
+    value: Any,
+    serials: list[str],
+    *,
+    secret: str | bytes | None = None,
+) -> Any:
+    from app.config import REDACTION_HMAC_KEY
+
+    redactor = Redactor(secret=secret if secret is not None else REDACTION_HMAC_KEY)
+
+    def redact_text(text: str) -> str:
+        result = text
+        for serial in sorted(serials, key=len, reverse=True):
+            token = redactor.redact_identifier(
+                serial,
+                kind="device_serial",
+            )
+            if token is not None:
+                result = result.replace(serial, token)
+        return result
+
+    if isinstance(value, str):
+        return redact_text(value)
+    if isinstance(value, list):
+        return [
+            redact_known_device_serials(item, serials, secret=secret)
+            for item in value
+        ]
+    if isinstance(value, tuple):
+        return [
+            redact_known_device_serials(item, serials, secret=secret)
+            for item in value
+        ]
+    if isinstance(value, dict):
+        return {
+            key: redact_known_device_serials(item, serials, secret=secret)
+            for key, item in value.items()
+        }
+    return value
+
+
+_redact_known_device_serials = redact_known_device_serials
+
+
+__all__ = [
+    "Redactor",
+    "_device_serials",
+    "_redact_known_device_serials",
+    "extract_device_serials",
+    "redact_known_device_serials",
+]
+
