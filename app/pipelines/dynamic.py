@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, replace
@@ -166,34 +165,12 @@ def _build_dynamic_findings(
     }
 
 
-def _get_hook(name: str, fallback: Any) -> Any:
-    main = sys.modules.get("app.main")
-    if main is not None and hasattr(main, name):
-        return getattr(main, name)
-    return fallback
-
-
 def _state_value(session: Any) -> str:
     state = getattr(session, "state", "created")
     return str(getattr(state, "value", state))
 
 
 def _legacy_fixture_mode() -> bool:
-    main = sys.modules.get("app.main")
-    if main is not None:
-        fs = getattr(main, "FridaSession", FridaSession)
-        ms = getattr(main, "MitmSession", MitmSession)
-        orig_fs = getattr(main, "_ORIGINAL_FRIDA_SESSION_CLASS", _ORIGINAL_FRIDA_SESSION_CLASS)
-        orig_ms = getattr(main, "_ORIGINAL_MITM_SESSION_CLASS", _ORIGINAL_MITM_SESSION_CLASS)
-        sai = getattr(main, "spawn_and_inject", spawn_and_inject)
-        orig_sai = getattr(main, "_ORIGINAL_SPAWN_AND_INJECT", _ORIGINAL_SPAWN_AND_INJECT)
-        sm = getattr(main, "start_mitm", start_mitm)
-        orig_sm = getattr(main, "_ORIGINAL_START_MITM", _ORIGINAL_START_MITM)
-        return (
-            fs is orig_fs
-            and ms is orig_ms
-            and (sai is not orig_sai or sm is not orig_sm)
-        )
     return (
         FridaSession is _ORIGINAL_FRIDA_SESSION_CLASS
         and MitmSession is _ORIGINAL_MITM_SESSION_CLASS
@@ -228,10 +205,7 @@ def _normalize_events(
     *,
     device_context: DeviceContext | None,
 ) -> list[dict[str, Any]]:
-    parse_hook_fn = _get_hook(
-        "parse_hook_to_events_json", parse_hook_to_events_json
-    )
-    events = parse_hook_fn(
+    events = parse_hook_to_events_json(
         str(source_path),
         str(output_path),
         sensitive_identifiers=(
@@ -495,9 +469,7 @@ def _install_and_select_device(
     started = _utc_now()
     if unpack_ok and package_name:
         try:
-            device_context = _get_hook(
-                "select_device_context", select_device_context
-            )(req.device_id)
+            device_context = select_device_context(req.device_id)
             context = replace(context, device_id=device_context.serial)
             steps.append(
                 _step_result(
@@ -551,7 +523,7 @@ def _install_and_select_device(
         )
     elif device_context is not None:
         try:
-            install_result = _get_hook("install_apk", install_apk)(
+            install_result = install_apk(
                 str(context.apk_path),
                 device_context=device_context,
             )
@@ -665,7 +637,7 @@ def _make_launch_target_for_attach(
 
     def launch_target_for_attach() -> dict[str, Any]:
         launch_requested = _utc_now()
-        launch_result = _get_hook("launch_app", launch_app)(
+        launch_result = launch_app(
             package_name,
             device_context=device_context,
         )
@@ -728,10 +700,8 @@ def _build_real_frida_session(
     """Build the real Frida session (policy or single-mode) and its diagnostics."""
     frida_session: Any = None
     frida_diagnostic_payload: dict[str, Any] | None = None
-    frida_cls = _get_hook("FridaSession", FridaSession)
-    orig_frida_cls = _get_hook(
-        "_ORIGINAL_FRIDA_SESSION_CLASS", _ORIGINAL_FRIDA_SESSION_CLASS
-    )
+    frida_cls = FridaSession
+    orig_frida_cls = _ORIGINAL_FRIDA_SESSION_CLASS
     if frida_cls is orig_frida_cls:
         frida_diagnostic_payload = _report_frida_diagnostics(
             req, steps, device_context, package_name
@@ -743,7 +713,7 @@ def _build_real_frida_session(
         )
 
         def make_frida_session(mode: ExecutionMode) -> FridaSession:
-            session_cls = _get_hook("FridaSession", FridaSession)
+            session_cls = FridaSession
             return session_cls(
                 run_id=context.run_id,
                 device=device_context,
@@ -772,7 +742,7 @@ def _build_real_frida_session(
             ),
         )
     else:
-        frida_session = _get_hook("FridaSession", FridaSession)(
+        frida_session = FridaSession(
             run_id=context.run_id,
             device=device_context,
             package_name=package_name,
@@ -796,7 +766,7 @@ def _make_collection_callbacks(
     """Create the UI-stimulation and Frida-started ownership callbacks."""
 
     def stimulate_ui() -> None:
-        result = _get_hook("launch_app", launch_app)(
+        result = launch_app(
             package_name,
             device_context=device_context,
         )
@@ -905,16 +875,16 @@ def _build_dynamic_sessions(
             package_name=package_name,
             script_path=script_path,
             transport_path=transport_path,
-            spawn=_get_hook("spawn_and_inject", spawn_and_inject),
-            launch=_get_hook("launch_app", launch_app),
+            spawn=spawn_and_inject,
+            launch=launch_app,
         )
         if req.enable_traffic:
             mitm_session = LegacyMitmAdapter(
                 run_id=context.run_id,
                 device=device_context,
                 traffic_dir=context.traffic_dir,
-                start=_get_hook("start_mitm", start_mitm),
-                stop=_get_hook("stop_mitm", stop_mitm),
+                start=start_mitm,
+                stop=stop_mitm,
             )
         register_runtime_target = _noop_register_runtime_target
     else:
@@ -931,7 +901,7 @@ def _build_dynamic_sessions(
             )
         )
         if req.enable_traffic:
-            mitm_session = _get_hook("MitmSession", MitmSession)(
+            mitm_session = MitmSession(
                 run_id=context.run_id,
                 device=device_context,
                 traffic_dir=context.traffic_dir,
@@ -972,9 +942,7 @@ def _run_collection_stage(
     mitm_session = environment.mitm_session
 
     if environment.install_ok and environment.device_context is not None:
-        collection_result = _get_hook(
-            "run_dynamic_collection", run_dynamic_collection
-        )(
+        collection_result = run_dynamic_collection(
             frida_session=frida_session,
             mitm_session=mitm_session,
             config=DynamicCollectionConfig(
@@ -1194,10 +1162,7 @@ def _collect_legacy_traffic(
             "stream_log",
             str(context.mitm_stream_log_path),
         )
-        parse_traffic_fn = _get_hook(
-            "parse_traffic_to_summary_json", parse_traffic_to_summary_json
-        )
-        traffic_summary = parse_traffic_fn(
+        traffic_summary = parse_traffic_to_summary_json(
             traffic_text_path=stream,
             output_path=str(context.traffic_summary_path),
         )
@@ -1403,10 +1368,7 @@ def _process_diagnostics_stage(
     dynamic_diagnostics_dir.mkdir(parents=True, exist_ok=True)
     if (
         device_context is not None
-        and _get_hook("FridaSession", FridaSession)
-        is _get_hook(
-            "_ORIGINAL_FRIDA_SESSION_CLASS", _ORIGINAL_FRIDA_SESSION_CLASS
-        )
+        and FridaSession is _ORIGINAL_FRIDA_SESSION_CLASS
         and frida_session is not None
     ):
         runtime_failure_sessions = list(
@@ -1867,10 +1829,7 @@ def _assemble_dynamic_report(
         dynamic_events,
         evidence_available=hook_evidence_available,
     )
-    timeline_rules_fn = _get_hook(
-        "evaluate_timeline_rules", evaluate_timeline_rules
-    )
-    strict_dynamic_findings = timeline_rules_fn(
+    strict_dynamic_findings = evaluate_timeline_rules(
         events_json_path=str(context.events_path),
         consent_time=execution.consent_time,
         pre_consent_seconds=req.pre_consent_seconds,

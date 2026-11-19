@@ -16,13 +16,13 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 
+from app import config as app_config
 from app.api.deps import (
     get_consent_checkpoint_service,
     get_task_repository,
     get_task_service,
 )
 from app.api.errors import task_not_found
-from app.config import OUTPUT_DIR
 from app.orchestration.consent_checkpoint import (
     ConsentCheckpointError,
     ConsentCheckpointRequest,
@@ -256,11 +256,9 @@ def download_task_artifact(
             detail={"code": "artifact_not_found", "message": "报告产物尚未生成"},
         )
     path = Path(path_text).resolve(strict=False)
-    import sys
-
-    main = sys.modules.get("app.main")
-    output_dir = getattr(main, "OUTPUT_DIR", OUTPUT_DIR)
-    allowed = (Path(output_dir).resolve(strict=False) / "runs").resolve(strict=False)
+    allowed = (
+        Path(app_config.OUTPUT_DIR).resolve(strict=False) / "runs"
+    ).resolve(strict=False)
     if not path.is_relative_to(allowed) or not path.is_file():
         raise HTTPException(
             status_code=404,

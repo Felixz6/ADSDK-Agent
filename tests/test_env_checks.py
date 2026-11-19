@@ -245,19 +245,20 @@ def test_env_check_response_does_not_leak_hmac_key(monkeypatch):
     even when the key is securely configured."""
     from fastapi.testclient import TestClient
 
+    import app.api.env as env_module
     from app import main as main_module
 
     _set_hmac_key(monkeypatch, SECURE_KEY)
 
-    monkeypatch.setattr(main_module, "check_adb_available", lambda: {"ok": True, "stdout": "adb", "stderr": "", "cmd": ["adb"]})
+    monkeypatch.setattr(env_module, "check_adb_available", lambda: {"ok": True, "stdout": "adb", "stderr": "", "cmd": ["adb"]})
     monkeypatch.setattr(
-        main_module,
+        env_module,
         "check_device_online",
         lambda device_id=None: {"ok": True, "device_id": device_id, "target": None, "devices": []},
     )
-    monkeypatch.setattr(main_module, "check_frida_connection", lambda device_id=None: {"ok": True, "stdout": "", "stderr": "", "cmd": []})
-    monkeypatch.setattr(main_module, "check_port_listening", lambda port=8080: True)
-    monkeypatch.setattr(main_module, "_check_output_writable", lambda: {"ok": True, "path": "/out", "error": None})
+    monkeypatch.setattr(env_module, "check_frida_connection", lambda device_id=None: {"ok": True, "stdout": "", "stderr": "", "cmd": []})
+    monkeypatch.setattr(env_module, "check_port_listening", lambda port=8080: True)
+    monkeypatch.setattr(env_module, "_check_output_writable", lambda: {"ok": True, "path": "/out", "error": None})
 
     client = TestClient(main_module.app)
     resp = client.get("/env/check")

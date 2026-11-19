@@ -1,9 +1,8 @@
-"""FastAPI dependency providers."""
+"""FastAPI dependency providers backed by the process container."""
 
 from __future__ import annotations
 
-import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from app import container
 
@@ -17,51 +16,36 @@ if TYPE_CHECKING:
     from app.services import TaskService
 
 
-def _get_container_or_main(attr: str, default: Any) -> Any:
-    main = sys.modules.get("app.main")
-    if main is not None and hasattr(main, attr):
-        return getattr(main, attr)
-    return default
-
-
 def get_task_repository() -> TaskRepository:
-    return _get_container_or_main("task_repository", container.task_repository)
+    return container.task_repository
 
 
 def get_task_service() -> TaskService:
-    return _get_container_or_main("task_service", container.task_service)
+    return container.task_service
 
 
 def get_comparison_service() -> ComparisonService:
-    return _get_container_or_main("comparison_service", container.comparison_service)
+    return container.comparison_service
 
 
 def get_ai_settings_service() -> AISettingsService:
-    return _get_container_or_main("ai_settings_service", container.ai_settings_service)
+    return container.ai_settings_service
 
 
 def get_consent_checkpoint_service() -> ConsentCheckpointService:
-    return _get_container_or_main(
-        "consent_checkpoint_service", container.consent_checkpoint_service
-    )
+    return container.consent_checkpoint_service
 
 
 def get_device_lease_registry() -> LeaseRegistry:
-    return _get_container_or_main(
-        "device_lease_registry", container.device_lease_registry
-    )
+    return container.device_lease_registry
 
 
 def get_frida_server_manager() -> FridaServerManager:
-    return _get_container_or_main(
-        "frida_server_manager", container.frida_server_manager
-    )
+    return container.frida_server_manager
 
 
 def get_frida_diagnostics_service() -> FridaDiagnosticsService:
-    return _get_container_or_main(
-        "frida_diagnostics_service", container.frida_diagnostics_service
-    )
+    return container.frida_diagnostics_service
 
 
 __all__ = [

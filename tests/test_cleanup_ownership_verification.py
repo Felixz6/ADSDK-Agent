@@ -164,7 +164,8 @@ def test_preexisting_external_target_is_never_force_stopped():
 
 
 def test_production_target_probe_detects_replacement_package_pid(monkeypatch):
-    import app.main as main_module
+    import app.orchestration.device_ops as device_ops_module
+    import app.pipelines.full_analysis as full_analysis_module
 
     commands = []
     results = iter(
@@ -178,15 +179,15 @@ def test_production_target_probe_detects_replacement_package_pid(monkeypatch):
         commands.append(command)
         return next(results)
 
-    monkeypatch.setattr(main_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(device_ops_module, "run_cmd", fake_run_cmd)
     detail = {
         "pid": 100,
         "device_id": "DEVICE",
         "expected_command_token": "com.phoenix.read",
     }
 
-    assert main_module._m7b_resource_present("app_process", detail) is True
-    assert main_module._m7b_resource_present("app_process", detail) is False
+    assert full_analysis_module._m7b_resource_present("app_process", detail) is True
+    assert full_analysis_module._m7b_resource_present("app_process", detail) is False
     assert commands == [
         ["adb", "-s", "DEVICE", "shell", "pidof", "com.phoenix.read"],
         ["adb", "-s", "DEVICE", "shell", "pidof", "com.phoenix.read"],

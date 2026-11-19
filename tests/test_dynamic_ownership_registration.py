@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -122,14 +121,6 @@ def test_launch_target_registers_pid_after_successful_launch(
         "launch_app",
         lambda package, device_context=None: {"returncode": 0},
     )
-    # ``_get_hook`` prefers the app.main re-export when that module is loaded.
-    main_module = sys.modules.get("app.main")
-    if main_module is not None:
-        monkeypatch.setattr(
-            main_module,
-            "launch_app",
-            lambda package, device_context=None: {"returncode": 0},
-        )
     pid_calls = {"count": 0}
 
     def fake_run_cmd(command: list[str], timeout: int = 10) -> dict[str, Any]:

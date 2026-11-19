@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import app.container as container
 import app.main as main_module
+import app.pipelines.task_runner as task_runner
 from app.comparisons import ComparisonCreateRequest, ComparisonService
 from app.reporting import render_html_report, write_html_report
 from app.repositories import TaskRepository
@@ -448,8 +450,9 @@ def test_task_api_create_list_detail_report_and_websocket(
     report_path.write_text(json.dumps(payload), encoding="utf-8")
     service = TaskService(repository, max_workers=1)
     service.set_runner(lambda _task: payload)
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
 
     client = TestClient(main_module.app)
     created_response = client.post(
@@ -480,8 +483,9 @@ def test_task_api_stable_errors_and_delete(
     repository = _repository(tmp_path)
     service = TaskService(repository, max_workers=1)
     service.set_runner(lambda _task: {"ok": False, "status": "failed"})
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
     client = TestClient(main_module.app)
 
     missing = client.get("/tasks/missing")

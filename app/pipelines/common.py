@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import sys
 import time
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -15,6 +14,7 @@ from uuid import uuid4
 
 from fastapi.responses import JSONResponse
 
+from app import config as app_config
 from app.ai.orchestrator import AIOrchestrationResult
 from app.analyzers.compliance_insight import generate_compliance_insight
 from app.analyzers.evidence_correlation import (
@@ -31,10 +31,8 @@ from app.analyzers.sdk_intelligence import correlate_sdk_evidence
 from app.analyzers.timeline_builder import build_timeline
 from app.config import (
     ALLOW_UNC_APK_PATHS,
-    APK_ALLOWED_ROOTS,
     APK_MAX_SIZE_BYTES,
     EVIDENCE_CORRELATION_WINDOW_MS,
-    OUTPUT_DIR,
     SCHEMA_VERSION,
     STATIC_UNPACK_CACHE_DIR,
 )
@@ -76,13 +74,6 @@ _CRITICAL_STEPS = {
 }
 
 
-def _get_hook(name: str, fallback: Any) -> Any:
-    main = sys.modules.get("app.main")
-    if main is not None and hasattr(main, name):
-        return getattr(main, name)
-    return fallback
-
-
 def resolve_frida_hook_script(hooks_dir: Path | None = None) -> Path:
     """Pick the hook agent source injected into target processes."""
     directory = hooks_dir or (
@@ -95,7 +86,7 @@ def resolve_frida_hook_script(hooks_dir: Path | None = None) -> Path:
 
 
 def _check_output_writable() -> dict[str, Any]:
-    output_dir = _get_hook("OUTPUT_DIR", OUTPUT_DIR)
+    output_dir = app_config.OUTPUT_DIR
     ensure_dir(output_dir)
     probe_file = os.path.join(output_dir, ".write_probe")
     try:
@@ -113,7 +104,7 @@ def _parse_manifest_application(
     apk_filename: str,
 ) -> dict[str, Any]:
     """Pass the display filename while retaining compatibility with injected parsers."""
-    parser = _get_hook("parse_manifest_info", parse_manifest_info)
+    parser = parse_manifest_info
     try:
         return parser(unpack_dir, apk_filename=apk_filename)
     except TypeError as exc:
@@ -169,12 +160,12 @@ def run_static_stage(
 
     unpack_started = _utc_now()
     try:
-        apktool_info = _get_hook("check_apktool", check_apktool)()
+        apktool_info = check_apktool()
         apktool_version = str(
             apktool_info.get("apktool_version") or "unknown"
         )
         cache_root = Path(STATIC_UNPACK_CACHE_DIR)
-        unpacker_fn = _get_hook("unpack_apk", unpack_apk)
+        unpacker_fn = unpack_apk
         cache_result = prepare_static_unpack(
             snapshot_path=context.apk_path,
             apk_sha256=context.apk_sha256,
@@ -289,7 +280,7 @@ def run_static_stage(
 
         sdk_started = _utc_now()
         try:
-            scan_fn = _get_hook("scan_for_sdks", scan_for_sdks)
+            scan_fn = scan_for_sdks
             sdk_hits = scan_fn(str(analysis_dir))
             steps.append(
                 _step_result(
@@ -464,7 +455,7 @@ def _prepare_run(
 
     validation_started = _utc_now()
     validator = ApkPathValidator(
-        allowed_roots=_get_hook("APK_ALLOWED_ROOTS", APK_ALLOWED_ROOTS),
+        allowed_roots=app_config.APK_ALLOWED_ROOTS,
         max_size_bytes=APK_MAX_SIZE_BYTES,
         allow_unc=ALLOW_UNC_APK_PATHS,
     )
@@ -544,7 +535,7 @@ def _prepare_run(
     try:
         context = create_analysis_run_context(
             validated_apk,
-            _get_hook("OUTPUT_DIR", OUTPUT_DIR),
+            app_config.OUTPUT_DIR,
             apk_sha256=apk_sha256,
             run_id=run_id,
             device_id=device_id,
@@ -750,9 +741,7 @@ def _finalize_report(
 
     try:
         write_html_report(report, context.report_html_path)
-        _get_hook("write_markdown_report", write_markdown_report)(
-            report, str(context.report_markdown_path)
-        )
+        write_markdown_report(report, str(context.report_markdown_path))
         report_write_duration_ms = max(
             0,
             int((time.perf_counter() - report_write_started) * 1000),
@@ -815,10 +804,8 @@ def _build_and_write_evidence_correlation(
     consent_timestamp_utc: str | None,
 ) -> dict[str, Any]:
     """Keep correlation failures isolated from the primary report pipeline."""
-    builder = _get_hook(
-        "build_evidence_correlations", build_evidence_correlations
-    )
-    writer = _get_hook("atomic_write_json", atomic_write_json)
+    builder = build_evidence_correlations
+    writer = atomic_write_json
     try:
         correlation = builder(
             dynamic_events,
@@ -896,10 +883,8 @@ def _build_and_write_privacy_findings(
     consent_timestamp_utc: str | None = None,
 ) -> dict[str, Any]:
     """Keep privacy-findings failures isolated from the primary report pipeline."""
-    builder = _get_hook(
-        "build_privacy_findings", build_privacy_findings
-    )
-    writer = _get_hook("atomic_write_json", atomic_write_json)
+    builder = build_privacy_findings
+    writer = atomic_write_json
     try:
         findings = builder(
             dynamic_events=dynamic_events,

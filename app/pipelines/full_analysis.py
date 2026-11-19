@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
 from fastapi.responses import JSONResponse
 
+from app import config as app_config
 from app.ai.orchestrator import AIOrchestrator
 from app.ai.settings_service import resolve_effective_ai_settings
 from app.ai.tool_registry import AIToolRegistry
 from app.api.env import env_check
 from app.config import (
     M7A_CONSENT_WAIT_SECONDS,
-    OUTPUT_DIR,
     SCHEMA_VERSION,
 )
 from app.container import (
@@ -195,28 +194,17 @@ def _register_m7b_owned_resources(
         )
 
 
-def _get_hook(name: str, fallback: Any) -> Any:
-    main = sys.modules.get("app.main")
-    if main is not None and hasattr(main, name):
-        return getattr(main, name)
-    return fallback
-
-
 def _run_m7b_full_analysis_session(
     *, task: TaskRecord, payload: dict[str, Any]
 ) -> dict[str, Any] | JSONResponse:
     """Single production entry for ai_orchestrated full_analysis tasks."""
     from app.pipelines.dynamic import _dynamic_analyze_v2
 
-    output_dir = _get_hook("OUTPUT_DIR", OUTPUT_DIR)
+    output_dir = app_config.OUTPUT_DIR
     run_dir = Path(output_dir) / "runs" / task.id
-    resolve_effective = _get_hook(
-        "resolve_effective_ai_settings", resolve_effective_ai_settings
-    )
-    ai_settings = _get_hook("ai_settings_service", ai_settings_service)
-    effective = resolve_effective(ai_settings.store)
+    effective = resolve_effective_ai_settings(ai_settings_service.store)
     ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
-    provider = ai_settings.factory.current() if ai_enabled else None
+    provider = ai_settings_service.factory.current() if ai_enabled else None
     orchestrator = AIOrchestrator(
         provider=provider,
         registry=AIToolRegistry(
@@ -296,10 +284,7 @@ def _run_m7b_full_analysis_session(
         unified_runner_with_strategy=run_execution,
         environment_probe=lambda: env_check(payload.get("device_id")),
     )
-    effects_cls = _get_hook(
-        "ProductionSessionEffects", ProductionSessionEffects
-    )
-    effects = effects_cls(
+    effects = ProductionSessionEffects(
         task_id=task.id,
         run_id=task.id,
         ai_service=ai_service,
@@ -329,8 +314,7 @@ def _run_m7b_full_analysis_session(
         ),
         consent_wait_seconds=M7A_CONSENT_WAIT_SECONDS,
     )
-    session_cls = _get_hook("FullAnalysisSession", FullAnalysisSession)
-    session = session_cls(
+    session = FullAnalysisSession(
         task_id=task.id,
         run_id=task.id,
         device_id=payload.get("device_id"),

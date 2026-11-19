@@ -19,7 +19,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main as main_module
+import app.config as app_config
+import app.main as main_module
+import app.pipelines.common as common_module
+import app.pipelines.dynamic as dynamic_module
 from app.core.device import DeviceContext
 from app.tools.dynamic_collection import (
     run_dynamic_collection as real_run_dynamic_collection,
@@ -527,7 +530,7 @@ class _ApiHarness:
             raise OSError("fixture report write failure")
 
         self.monkeypatch.setattr(
-            main_module,
+            common_module,
             "write_markdown_report",
             fail_markdown,
         )
@@ -549,14 +552,14 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
     output_root = tmp_path / "output"
     _write_fake_apk(source_apk)
 
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(output_root))
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_root))
     monkeypatch.setattr(
-        main_module,
+        app_config,
         "APK_ALLOWED_ROOTS",
         (tmp_path.resolve(),),
     )
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "select_device_context",
         lambda device_id=None: DeviceContext(
             serial=device_id or "fixture-device"
@@ -603,11 +606,11 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
         scenario.calls.append("ui.stimulate")
         return {"returncode": 0, "stdout": "", "stderr": "", "cmd": []}
 
-    monkeypatch.setattr(main_module, "unpack_apk", fake_unpack)
-    monkeypatch.setattr(main_module, "install_apk", fake_install)
-    monkeypatch.setattr(main_module, "launch_app", fake_ui_stimulation)
+    monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
+    monkeypatch.setattr(dynamic_module, "install_apk", fake_install)
+    monkeypatch.setattr(dynamic_module, "launch_app", fake_ui_stimulation)
     monkeypatch.setattr(
-        main_module,
+        common_module,
         "parse_manifest_info",
         lambda _: {
             "package_name": "com.example.stage2c",
@@ -616,7 +619,7 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
             "application_label": "Stage2C",
         },
     )
-    monkeypatch.setattr(main_module, "scan_for_sdks", lambda _: [])
+    monkeypatch.setattr(common_module, "scan_for_sdks", lambda _: [])
 
     class BoundFakeFridaSession(_FakeFridaSession):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -627,13 +630,13 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
             super().__init__(scenario, *args, **kwargs)
 
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "FridaSession",
         BoundFakeFridaSession,
         raising=False,
     )
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "MitmSession",
         BoundFakeMitmSession,
         raising=False,
@@ -649,7 +652,7 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
         return real_run_dynamic_collection(*args, **kwargs)
 
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "run_dynamic_collection",
         recording_collection,
         raising=False,
@@ -704,9 +707,9 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
             "log_file": None,
         }
 
-    monkeypatch.setattr(main_module, "start_mitm", legacy_start_mitm)
-    monkeypatch.setattr(main_module, "stop_mitm", legacy_stop_mitm)
-    monkeypatch.setattr(main_module, "spawn_and_inject", legacy_spawn)
+    monkeypatch.setattr(dynamic_module, "start_mitm", legacy_start_mitm)
+    monkeypatch.setattr(dynamic_module, "stop_mitm", legacy_stop_mitm)
+    monkeypatch.setattr(dynamic_module, "spawn_and_inject", legacy_spawn)
 
     def legacy_traffic_summary(
         traffic_text_path: str,
@@ -731,12 +734,12 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
         return summary
 
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "parse_traffic_to_summary_json",
         legacy_traffic_summary,
     )
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "evaluate_timeline_rules",
         lambda **kwargs: {
             "summary": {},

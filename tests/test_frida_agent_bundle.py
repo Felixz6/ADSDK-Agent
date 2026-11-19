@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.main import resolve_frida_hook_script
+from app.pipelines.common import resolve_frida_hook_script
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = PROJECT_ROOT / "app" / "frida_hooks"

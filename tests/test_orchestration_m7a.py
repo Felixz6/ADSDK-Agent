@@ -1502,7 +1502,9 @@ def _api_client(tmp_path, monkeypatch):
     """Build a TestClient with an isolated repository + a stub runner."""
     from fastapi.testclient import TestClient
 
+    import app.container as container
     import app.main as main_module
+    import app.pipelines.task_runner as task_runner
     from app.repositories import TaskRepository
     from app.services import TaskService
 
@@ -1519,11 +1521,12 @@ def _api_client(tmp_path, monkeypatch):
     report_path.write_text("{}", encoding="utf-8")
     service = TaskService(repository, max_workers=1)
     service.set_runner(lambda _task: payload)
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
     # Fresh checkpoint registry per test so state never bleeds across tests.
     fresh = ConsentCheckpointService(clock=_TickClock())
-    monkeypatch.setattr(main_module, "consent_checkpoint_service", fresh)
+    monkeypatch.setattr(container, "consent_checkpoint_service", fresh)
     return TestClient(main_module.app), service, fresh, repository
 
 

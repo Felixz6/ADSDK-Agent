@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
+from app import config as app_config
 from app.ai.settings_service import (
     AISettingsValidationError,
     resolve_effective_ai_settings,
 )
 from app.api.deps import get_ai_settings_service, get_task_service
 from app.api.errors import task_not_found
-from app.config import OUTPUT_DIR
 from app.pipelines.task_runner import (
     regenerate_task_ai_report as run_regenerate_task_ai_report,
 )
@@ -187,19 +187,15 @@ def _read_task_ai_artifact(
     filename: str,
     task_service: TaskService,
 ) -> TaskAIArtifactResponse:
-    import sys
-
     task = task_service.get(task_id)
     if task is None:
         raise task_not_found(task_id)
     payload: dict[str, Any] | None = None
     if task.report_json_path:
         candidate = Path(task.report_json_path).resolve(strict=False).parent / filename
-        main = sys.modules.get("app.main")
-        output_dir = getattr(main, "OUTPUT_DIR", OUTPUT_DIR)
-        allowed = (Path(output_dir).resolve(strict=False) / "runs").resolve(
-            strict=False
-        )
+        allowed = (
+            Path(app_config.OUTPUT_DIR).resolve(strict=False) / "runs"
+        ).resolve(strict=False)
         if candidate.is_relative_to(allowed) and candidate.is_file():
             try:
                 loaded = json.loads(candidate.read_text(encoding="utf-8"))
@@ -251,8 +247,4 @@ def regenerate_task_ai_report(
     task_id: str,
     use_cache: bool | None = None,
 ):
-    import sys
-
-    main = sys.modules.get("app.main")
-    regen_fn = getattr(main, "regenerate_task_ai_report", run_regenerate_task_ai_report)
-    return regen_fn(task_id, use_cache=use_cache)
+    return run_regenerate_task_ai_report(task_id, use_cache=use_cache)

@@ -29,7 +29,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+import app.config as app_config
+import app.container as container
 import app.main as main_module
+import app.pipelines.task_runner as task_runner
 from app.ai import secret_store as secret_store_module
 from app.ai.provider import OpenAICompatibleProvider
 from app.ai.secret_store import DPAPIError, SecretStore
@@ -40,6 +43,7 @@ from app.ai.settings_service import (
 from app.ai.settings_store import (
     AISettingsStore,
 )
+from app.api import middleware as middleware_module
 from app.repositories import TaskRepository
 
 
@@ -50,7 +54,7 @@ from app.repositories import TaskRepository
 def _rewire(store_dir: Path) -> tuple[Path, Path]:
     settings_path = Path(store_dir) / "ai-settings.json"
     secret_path = Path(store_dir) / "ai-secret.bin"
-    store = main_module.ai_settings_service.store
+    store = container.ai_settings_service.store
     store._path = settings_path  # noqa: SLF001 — tests own the seam
     store.secret_store._path = secret_path  # noqa: SLF001
     return settings_path, secret_path
@@ -64,8 +68,9 @@ def ai_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings_path, secret_path = _rewire(tmp_path)
     # Rebuild a fresh factory+service bound to the freshly re-wired store so
     # provider cache state never bleeds between tests.
-    service = AISettingsService(main_module.ai_settings_service.store)
-    monkeypatch.setattr(main_module, "ai_settings_service", service)
+    service = AISettingsService(container.ai_settings_service.store)
+    monkeypatch.setattr(container, "ai_settings_service", service)
+    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     return service
 
 
@@ -273,7 +278,7 @@ def test_api_key_not_in_response(client: TestClient, ai_store: AISettingsService
 def test_non_loopback_write_rejected(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     # Force the middleware to see a remote host by patching the helper.
     monkeypatch.setattr(
-        main_module, "_client_is_loopback", lambda host: False
+        middleware_module, "_client_is_loopback", lambda host: False
     )
     r = client.put("/ai/settings", json={"model": "x"})
     assert r.status_code == 403
@@ -534,9 +539,10 @@ def test_ai_disabled_does_not_break_static_task(
         lambda _t: {"ok": True, "status": "success",
                     "report_json": str(run_dir / "report.json")}
     )
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repo)
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repo)
+    monkeypatch.setattr(task_runner, "task_service", service)
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(tmp_path))
     tc = TestClient(main_module.app)
     created = tc.post("/tasks", json={"task_type": "static",
                                      "apk_path": "D:/samples/app.apk"}).json()
@@ -563,8 +569,8 @@ def test_legacy_env_config_compatible(monkeypatch: pytest.MonkeyPatch, tmp_path:
     # store bound to the live env.
     store = AISettingsStore()
     _rewire(tmp_path)
-    main_module.ai_settings_service.store._env = store._env  # noqa: SLF001
-    payload = main_module.ai_settings_service.get_effective_settings()
+    container.ai_settings_service.store._env = store._env  # noqa: SLF001
+    payload = container.ai_settings_service.get_effective_settings()
     assert payload["base_url"] == "https://legacy/v1"
     assert payload["model"] == "legacy-model"
     assert payload["api_key_source"] == "environment"
@@ -688,12 +694,12 @@ def test_new_ai_task_captures_provider_from_saved_effective_model(
         def __init__(self, **_kwargs):  # noqa: ANN003
             raise StopAfterConstruction()
 
-    monkeypatch.setattr(main_module, "AIOrchestrator", CapturingOrchestrator)
-    monkeypatch.setattr(main_module, "AITaskService", StopTaskService)
-    monkeypatch.setattr(main_module, "report_step", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(task_runner, "AIOrchestrator", CapturingOrchestrator)
+    monkeypatch.setattr(task_runner, "AITaskService", StopTaskService)
+    monkeypatch.setattr(task_runner, "report_step", lambda *_args, **_kwargs: None)
 
     with pytest.raises(StopAfterConstruction):
-        main_module._execute_ai_orchestration(
+        task_runner._execute_ai_orchestration(
             task=SimpleNamespace(id="task-1"),
             payload={"analysis_scope": "static_only", "ai_enabled": True},
             run_dir=None,

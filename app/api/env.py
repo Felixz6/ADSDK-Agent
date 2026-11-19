@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Query
 
+from app import config as app_config
 from app.api.deps import (
     get_frida_diagnostics_service,
     get_frida_server_manager,
 )
-from app.config import DEFAULT_MITM_PORT
 from app.core.redaction import _device_serials, _redact_known_device_serials
 from app.frida import (
     FridaDiagnosticsRequest,
@@ -40,50 +39,27 @@ if TYPE_CHECKING:
 router = APIRouter(tags=["environment"])
 
 
-def _get_hook(name: str, fallback: Any) -> Any:
-    main = sys.modules.get("app.main")
-    if main is not None and hasattr(main, name):
-        return getattr(main, name)
-    return fallback
-
-
 @router.get("/env/check")
 def env_check(device_id: str | None = None):
     resolved_device_id = device_id
     if device_id:
         try:
-            select_fn = _get_hook("select_device_context", select_device_context)
-            resolved_device_id = select_fn(device_id).serial
+            resolved_device_id = select_device_context(device_id).serial
         except DeviceSelectionError:
             resolved_device_id = device_id
-    adb_info = _get_hook("check_adb_available", check_adb_available)()
-    device_info = _get_hook("check_device_online", check_device_online)(
-        device_id=resolved_device_id
-    )
-    frida_info = _get_hook("check_frida_connection", check_frida_connection)(
-        device_id=resolved_device_id
-    )
-    frida_runtime_info = _get_hook(
-        "check_frida_device_runtime", check_frida_device_runtime
-    )(resolved_device_id)
-    mitm_listen_port = _get_hook("DEFAULT_MITM_PORT", DEFAULT_MITM_PORT)
-    mitm_8080_listening = _get_hook(
-        "check_port_listening", check_port_listening
-    )(port=mitm_listen_port)
-    output_info = _get_hook("_check_output_writable", _check_output_writable)()
-    device_serials_fn = _get_hook("_device_serials", _device_serials)
-    serials = device_serials_fn(device_info, resolved_device_id)
+    adb_info = check_adb_available()
+    device_info = check_device_online(device_id=resolved_device_id)
+    frida_info = check_frida_connection(device_id=resolved_device_id)
+    frida_runtime_info = check_frida_device_runtime(resolved_device_id)
+    mitm_listen_port = app_config.DEFAULT_MITM_PORT
+    mitm_8080_listening = check_port_listening(port=mitm_listen_port)
+    output_info = _check_output_writable()
+    serials = _device_serials(device_info, resolved_device_id)
 
-    apktool_info = _get_hook("check_apktool", check_apktool)()
-    frida_python_info = _get_hook(
-        "check_frida_python_package", check_frida_python_package
-    )()
-    redaction_info = _get_hook(
-        "check_redaction_hmac_key", check_redaction_hmac_key
-    )()
-    allowed_roots_info = _get_hook(
-        "check_apk_allowed_roots", check_apk_allowed_roots
-    )()
+    apktool_info = check_apktool()
+    frida_python_info = check_frida_python_package()
+    redaction_info = check_redaction_hmac_key()
+    allowed_roots_info = check_apk_allowed_roots()
 
     checks = {
         "adb_available": adb_info.get("ok", False),
@@ -111,16 +87,14 @@ def env_check(device_id: str | None = None):
     def _public(obj: dict[str, Any]) -> dict[str, Any]:
         return {k: v for k, v in obj.items() if not k.startswith("_")}
 
-    redact_fn = _get_hook("_redact_known_device_serials", _redact_known_device_serials)
-
     return {
         "ok": all(checks.values()),
-        "device_id": redact_fn(resolved_device_id, serials),
+        "device_id": _redact_known_device_serials(resolved_device_id, serials),
         "checks": checks,
         "details": {
-            "adb": redact_fn(adb_info, serials),
-            "device": redact_fn(device_info, serials),
-            "frida": redact_fn(frida_info, serials),
+            "adb": _redact_known_device_serials(adb_info, serials),
+            "device": _redact_known_device_serials(device_info, serials),
+            "frida": _redact_known_device_serials(frida_info, serials),
             "frida_runtime": frida_runtime_info,
             "mitm": {"port": mitm_listen_port, "listening": mitm_8080_listening},
             "output": output_info,
@@ -135,19 +109,13 @@ def env_check(device_id: str | None = None):
 @router.get("/traffic/check")
 def traffic_check(device_id: str):
     try:
-        select_fn = _get_hook("select_device_context", select_device_context)
-        resolved_device_id = select_fn(device_id).serial
+        resolved_device_id = select_device_context(device_id).serial
     except DeviceSelectionError:
         resolved_device_id = device_id
-    device_info = _get_hook("check_device_online", check_device_online)(
-        device_id=resolved_device_id
-    )
-    mitm_status = _get_hook("get_mitm_status", get_mitm_status)(
-        port=_get_hook("DEFAULT_MITM_PORT", DEFAULT_MITM_PORT)
-    )
+    device_info = check_device_online(device_id=resolved_device_id)
+    mitm_status = get_mitm_status(port=app_config.DEFAULT_MITM_PORT)
     stream_log = mitm_status.get("stream_log")
-    parse_fn = _get_hook("parse_traffic_text", parse_traffic_text)
-    records = parse_fn(stream_log) if stream_log else []
+    records = parse_traffic_text(stream_log) if stream_log else []
     flow_file_size = mitm_status.get("flow_file_size", 0)
 
     captured_ok = bool(records) and bool(mitm_status.get("owned_by_session"))
@@ -176,8 +144,7 @@ def traffic_check(device_id: str):
             "No requests detected in latest capture; verify proxy/IP/certificate/SSL pinning."
         )
 
-    device_serials_fn = _get_hook("_device_serials", _device_serials)
-    serials = device_serials_fn(device_info, resolved_device_id)
+    serials = _device_serials(device_info, resolved_device_id)
     response = {
         "ok": captured_ok,
         "device_id": resolved_device_id,
@@ -188,8 +155,7 @@ def traffic_check(device_id: str):
         "mitm_status": mitm_status,
         "sample_requests": records[:10],
     }
-    redact_fn = _get_hook("_redact_known_device_serials", _redact_known_device_serials)
-    return redact_fn(response, serials)
+    return _redact_known_device_serials(response, serials)
 
 
 @router.post("/frida/diagnostics")
@@ -200,8 +166,7 @@ def frida_diagnostics(
     ),
 ):
     """Run a read-only, exact-device diagnostic pass."""
-    select_fn = _get_hook("select_device_context", select_device_context)
-    device = select_fn(request.device_id)
+    device = select_device_context(request.device_id)
     return frida_diagnostics_service.diagnose(
         request.model_copy(update={"device_id": device.serial})
     )
@@ -212,8 +177,7 @@ def frida_server_status(
     device_id: str = Query(min_length=1, max_length=256),
     frida_server_manager: FridaServerManager = Depends(get_frida_server_manager),
 ):
-    select_fn = _get_hook("select_device_context", select_device_context)
-    return frida_server_manager.status(select_fn(device_id))
+    return frida_server_manager.status(select_device_context(device_id))
 
 
 @router.post("/frida/server/deploy")
@@ -221,9 +185,8 @@ def deploy_frida_server(
     request: FridaServerActionRequest,
     frida_server_manager: FridaServerManager = Depends(get_frida_server_manager),
 ):
-    select_fn = _get_hook("select_device_context", select_device_context)
     return frida_server_manager.deploy(
-        select_fn(request.device_id),
+        select_device_context(request.device_id),
         confirm=request.confirm,
     )
 
@@ -233,9 +196,8 @@ def start_frida_server(
     request: FridaServerActionRequest,
     frida_server_manager: FridaServerManager = Depends(get_frida_server_manager),
 ):
-    select_fn = _get_hook("select_device_context", select_device_context)
     return frida_server_manager.start(
-        select_fn(request.device_id),
+        select_device_context(request.device_id),
         confirm=request.confirm,
     )
 
@@ -245,8 +207,7 @@ def stop_frida_server(
     request: FridaServerActionRequest,
     frida_server_manager: FridaServerManager = Depends(get_frida_server_manager),
 ):
-    select_fn = _get_hook("select_device_context", select_device_context)
     return frida_server_manager.stop(
-        select_fn(request.device_id),
+        select_device_context(request.device_id),
         confirm=request.confirm,
     )

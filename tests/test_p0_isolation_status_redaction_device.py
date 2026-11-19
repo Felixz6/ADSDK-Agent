@@ -17,6 +17,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+import app.config as app_config
+import app.pipelines.common as common_module
+import app.pipelines.dynamic as dynamic_module
 from app import main as main_module
 from app.core.device import DeviceContext
 from app.core.redaction import Redactor
@@ -142,20 +145,20 @@ def _install_common_fakes(
         "launched_packages": [],
     }
 
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(output_root))
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_root))
     monkeypatch.setattr(
-        main_module,
+        app_config,
         "APK_ALLOWED_ROOTS",
         (output_root.parent.resolve(),),
     )
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "select_device_context",
         lambda device_id=None: DeviceContext(
             serial=device_id or "emulator-5554",
         ),
     )
-    monkeypatch.setattr(main_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(dynamic_module.time, "sleep", lambda _: None)
 
     def fake_unpack(*args: Any, **kwargs: Any) -> dict[str, Any]:
         apk_path = Path(
@@ -260,15 +263,15 @@ def _install_common_fakes(
             "flow_file": str(flow_file),
         }
 
-    monkeypatch.setattr(main_module, "unpack_apk", fake_unpack)
-    monkeypatch.setattr(main_module, "parse_manifest_info", fake_manifest)
-    monkeypatch.setattr(main_module, "scan_for_sdks", fake_sdks)
-    monkeypatch.setattr(main_module, "install_apk", fake_install)
-    monkeypatch.setattr(main_module, "launch_app", fake_launch)
-    monkeypatch.setattr(main_module, "spawn_and_inject", fake_spawn)
-    monkeypatch.setattr(main_module, "start_mitm", fake_start_mitm)
+    monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
+    monkeypatch.setattr(common_module, "parse_manifest_info", fake_manifest)
+    monkeypatch.setattr(common_module, "scan_for_sdks", fake_sdks)
+    monkeypatch.setattr(dynamic_module, "install_apk", fake_install)
+    monkeypatch.setattr(dynamic_module, "launch_app", fake_launch)
+    monkeypatch.setattr(dynamic_module, "spawn_and_inject", fake_spawn)
+    monkeypatch.setattr(dynamic_module, "start_mitm", fake_start_mitm)
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "stop_mitm",
         lambda *args, **kwargs: {"ok": True, "error": None},
     )
@@ -518,7 +521,7 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
 
     if failure_mode == "missing_hook":
         monkeypatch.setattr(
-            main_module,
+            dynamic_module,
             "parse_hook_to_events_json",
             lambda *args, **kwargs: (_ for _ in ()).throw(
                 FileNotFoundError("hook evidence is missing")
@@ -526,7 +529,7 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
         )
     elif failure_mode == "corrupt_hook":
         monkeypatch.setattr(
-            main_module,
+            dynamic_module,
             "parse_hook_to_events_json",
             lambda *args, **kwargs: (_ for _ in ()).throw(
                 UnicodeDecodeError("utf-8", b"\xff", 0, 1, "corrupt hook evidence")
@@ -534,7 +537,7 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
         )
     elif failure_mode == "missing_traffic":
         monkeypatch.setattr(
-            main_module,
+            dynamic_module,
             "parse_traffic_to_summary_json",
             lambda *args, **kwargs: (_ for _ in ()).throw(
                 FileNotFoundError("traffic evidence is missing")
@@ -542,7 +545,7 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
         )
     elif failure_mode == "manifest_error":
         monkeypatch.setattr(
-            main_module,
+            common_module,
             "parse_manifest_info",
             lambda *args, **kwargs: (_ for _ in ()).throw(
                 ValueError("manifest parse failed")
@@ -550,7 +553,7 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
         )
     elif failure_mode == "sdk_error":
         monkeypatch.setattr(
-            main_module,
+            common_module,
             "scan_for_sdks",
             lambda *args, **kwargs: (_ for _ in ()).throw(
                 RuntimeError("sdk scan failed")
@@ -572,7 +575,7 @@ def test_manifest_value_error_keeps_structured_reports_and_correlation(
     _write_fake_apk(apk_path, marker="manifest-error-regression")
     _install_common_fakes(monkeypatch, output_root)
     monkeypatch.setattr(
-        main_module,
+        common_module,
         "parse_manifest_info",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             ValueError("manifest parse failed")

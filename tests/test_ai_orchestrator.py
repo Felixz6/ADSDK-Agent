@@ -19,7 +19,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+import app.config as app_config
+import app.container as container
 import app.main as main_module
+import app.pipelines.dynamic as dynamic_module
+import app.pipelines.full_analysis as full_analysis_module
+import app.pipelines.task_runner as task_runner
 from app.ai.cache import AIResponseCache
 from app.ai.context_builder import (
     AIContextBuilder,
@@ -84,7 +89,8 @@ def _install_local_ai_settings(
         "model": model,
         "api_key": "sk-test-status-only",
     })
-    monkeypatch.setattr(main_module, "ai_settings_service", service)
+    monkeypatch.setattr(container, "ai_settings_service", service)
+    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     return service
 
 
@@ -1100,7 +1106,8 @@ def test_ai_status_endpoint_defaults_to_disabled(
     )
     service = AISettingsService(store)
     service.save_settings({"enabled": False})
-    monkeypatch.setattr(main_module, "ai_settings_service", service)
+    monkeypatch.setattr(container, "ai_settings_service", service)
+    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     client = TestClient(main_module.app)
     payload = client.get("/ai/status").json()
 
@@ -1149,9 +1156,10 @@ def test_ai_plan_and_report_endpoints_report_availability(
     service.set_runner(
         lambda _task: {"ok": True, "status": "success", "report_json": str(report_path)}
     )
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(tmp_path))
 
     client = TestClient(main_module.app)
     created = client.post(
@@ -1220,7 +1228,7 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
         captured["session"] = session
         captured["effects"] = session.effects
         assert isinstance(
-            session.effects, main_module.ProductionSessionEffects
+            session.effects, full_analysis_module.ProductionSessionEffects
         )
         return SimpleNamespace(
             final_state="completed",
@@ -1240,9 +1248,9 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
         calls["legacy_dynamic"] += 1
         raise AssertionError("legacy direct dynamic path executed")
 
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(
-        main_module,
+        full_analysis_module,
         "resolve_effective_ai_settings",
         lambda _store: {
             "enabled": False,
@@ -1250,11 +1258,12 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
             "report_language": "zh-CN",
         },
     )
-    monkeypatch.setattr(main_module.FullAnalysisSession, "run", run_session)
-    monkeypatch.setattr(main_module, "dynamic_analyze", legacy_dynamic)
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
-    service.set_runner(main_module._run_persisted_task)
+    monkeypatch.setattr(full_analysis_module.FullAnalysisSession, "run", run_session)
+    monkeypatch.setattr(dynamic_module, "dynamic_analyze", legacy_dynamic)
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
+    service.set_runner(task_runner._run_persisted_task)
     client = TestClient(main_module.app)
 
     response = client.post(

@@ -514,7 +514,7 @@ def test_privacy_findings_failure_isolated_and_error_artifact_written(
     tmp_path,
     monkeypatch,
 ):
-    import app.main as main
+    import app.pipelines.common as main
 
     def fail(*_args, **_kwargs):
         raise RuntimeError("synthetic privacy failure")
@@ -542,7 +542,7 @@ def test_privacy_findings_failure_isolated_and_error_artifact_written(
 
 
 def test_report_generation_survives_privacy_module_exception(tmp_path, monkeypatch):
-    import app.main as main
+    import app.pipelines.common as main
 
     def fail(*_args, **_kwargs):
         raise RuntimeError("synthetic privacy failure")
@@ -575,7 +575,7 @@ def test_report_generation_survives_privacy_module_exception(tmp_path, monkeypat
 
 
 def test_write_failure_is_reported_without_aborting(tmp_path, monkeypatch):
-    import app.main as main
+    import app.pipelines.common as main
 
     def fail_write(*_args, **_kwargs):
         raise OSError("synthetic write failure")
@@ -598,7 +598,7 @@ def test_write_failure_is_reported_without_aborting(tmp_path, monkeypatch):
 
 
 def test_network_consent_states_are_classified_from_utc_evidence():
-    import app.main as main
+    import app.pipelines.common as main
 
     states = main._network_consent_states(
         [
@@ -612,7 +612,7 @@ def test_network_consent_states_are_classified_from_utc_evidence():
 
 
 def test_consent_boundary_requires_finite_monotonic_mark():
-    import app.main as main
+    import app.pipelines.common as main
 
     assert main._has_trusted_consent_boundary(
         {"consent_at": {"monotonic_ms": 1500.0}}

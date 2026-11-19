@@ -9,7 +9,8 @@ from typing import BinaryIO
 
 import pytest
 
-from app import main as main_module
+import app.config as app_config
+import app.pipelines.common as common_module
 from app.core import apk_snapshot as snapshot_module
 from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
 from app.core.device import DeviceContext
@@ -340,14 +341,14 @@ def test_prepare_run_rebinds_all_downstream_reads_to_verified_snapshot(
         archive.writestr("classes.dex", b"dex\n035\x00")
     output_root = tmp_path / "output"
 
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(output_root))
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_root))
     monkeypatch.setattr(
-        main_module,
+        app_config,
         "APK_ALLOWED_ROOTS",
         (tmp_path.resolve(),),
     )
 
-    context, steps, failure = main_module._prepare_run(
+    context, steps, failure = common_module._prepare_run(
         str(source),
         device_id=None,
     )

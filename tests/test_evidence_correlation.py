@@ -210,7 +210,7 @@ def test_correlation_failure_isolated_and_error_artifact_written(
     tmp_path,
     monkeypatch,
 ):
-    import app.main as main
+    import app.pipelines.common as main
 
     def fail(*_args, **_kwargs):
         raise RuntimeError("synthetic correlation failure")
