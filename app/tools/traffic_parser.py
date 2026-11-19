@@ -107,15 +107,6 @@ def write_traffic_summary(summary: dict[str, Any], output_path: str):
     atomic_write_json(output_path, summary)
 
 
-def parse_traffic_to_summary_json(traffic_text_path: str, output_path: str) -> dict[str, Any]:
-    if not traffic_text_path or not os.path.isfile(traffic_text_path):
-        raise FileNotFoundError(f"traffic evidence is missing: {traffic_text_path}")
-    records = parse_traffic_text(traffic_text_path)
-    summary = build_traffic_summary(records, source_available=True)
-    write_traffic_summary(summary, output_path)
-    return summary
-
-
 def build_structured_traffic_summary(
     collection: TrafficCollectionResult,
 ) -> dict[str, Any]:

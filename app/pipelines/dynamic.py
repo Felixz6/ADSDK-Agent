@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 
+from app import container
 from app.config import (
     FRIDA_READY_TIMEOUT_SECONDS,
     FRIDA_SPAWN_STABILITY_SECONDS,
@@ -62,34 +63,19 @@ from app.tools.dynamic_collection import (
     DynamicCollectionResult,
     run_dynamic_collection,
 )
-from app.tools.dynamic_compat import LegacyFridaAdapter, LegacyMitmAdapter
-from app.tools.frida_runner import (
-    spawn_and_inject,
-)
 from app.tools.frida_session import FridaSession, FridaSessionError
 from app.tools.hook_parser import parse_hook_to_events_json
 from app.tools.logcat_collector import LogcatCollector
-from app.tools.mitm_runner import (
-    start_mitm,
-    stop_mitm,
-)
-from app.tools.mitm_session import MitmSession
 from app.tools.timeline_rules import classify_consent_state, evaluate_timeline_rules
 from app.tools.traffic_events import (
     TrafficCollectionOutcome,
     TrafficCollectionResult,
 )
 from app.tools.traffic_parser import (
-    parse_traffic_to_summary_json,
     write_traffic_summary,
 )
 from app.tools.utils import now_iso, run_cmd
 
-# Reference definitions for legacy fixture detection
-_ORIGINAL_FRIDA_SESSION_CLASS = FridaSession
-_ORIGINAL_MITM_SESSION_CLASS = MitmSession
-_ORIGINAL_SPAWN_AND_INJECT = spawn_and_inject
-_ORIGINAL_START_MITM = start_mitm
 
 def _build_dynamic_findings(
     events: list[dict],
@@ -168,17 +154,6 @@ def _build_dynamic_findings(
 def _state_value(session: Any) -> str:
     state = getattr(session, "state", "created")
     return str(getattr(state, "value", state))
-
-
-def _legacy_fixture_mode() -> bool:
-    return (
-        FridaSession is _ORIGINAL_FRIDA_SESSION_CLASS
-        and MitmSession is _ORIGINAL_MITM_SESSION_CLASS
-        and (
-            spawn_and_inject is not _ORIGINAL_SPAWN_AND_INJECT
-            or start_mitm is not _ORIGINAL_START_MITM
-        )
-    )
 
 
 def _emit_frida_control(session: Any, event: dict[str, Any]) -> Any:
@@ -424,8 +399,6 @@ class _DynamicEnvironment:
     device_failure: bool
     install_ok: bool
     package_name: str
-    legacy_mode: bool
-    transport_path: Path
     frida_session: Any
     mitm_session: Any
     frida_diagnostic_payload: dict[str, Any] | None
@@ -696,13 +669,17 @@ def _build_real_frida_session(
     script_path: Path,
     ownership_registry: ResourceOwnershipRegistry | None,
     register_runtime_target: Any,
+    frida_session_factory: Any = None,
 ) -> tuple[Any, dict[str, Any] | None, Any]:
     """Build the real Frida session (policy or single-mode) and its diagnostics."""
+    factory = frida_session_factory or container.frida_session_factory
+    is_real_frida = (
+        factory is container.default_frida_session_factory
+        or factory is FridaSession
+    )
     frida_session: Any = None
     frida_diagnostic_payload: dict[str, Any] | None = None
-    frida_cls = FridaSession
-    orig_frida_cls = _ORIGINAL_FRIDA_SESSION_CLASS
-    if frida_cls is orig_frida_cls:
+    if is_real_frida:
         frida_diagnostic_payload = _report_frida_diagnostics(
             req, steps, device_context, package_name
         )
@@ -713,8 +690,7 @@ def _build_real_frida_session(
         )
 
         def make_frida_session(mode: ExecutionMode) -> FridaSession:
-            session_cls = FridaSession
-            return session_cls(
+            return factory(
                 run_id=context.run_id,
                 device=device_context,
                 package_name=package_name,
@@ -742,7 +718,7 @@ def _build_real_frida_session(
             ),
         )
     else:
-        frida_session = FridaSession(
+        frida_session = factory(
             run_id=context.run_id,
             device=device_context,
             package_name=package_name,
@@ -849,9 +825,9 @@ def _build_dynamic_sessions(
     device_context: DeviceContext | None,
     package_name: str,
     *,
-    legacy_mode: bool,
-    transport_path: Path,
     ownership_registry: ResourceOwnershipRegistry | None,
+    frida_session_factory: Any = None,
+    mitm_session_factory: Any = None,
 ) -> tuple[
     Any,
     Any,
@@ -863,53 +839,32 @@ def _build_dynamic_sessions(
     if device_context is None:
         return None, None, None, None, None
 
-    frida_session: Any = None
-    mitm_session: Any = None
-    frida_diagnostic_payload: dict[str, Any] | None = None
     script_path = resolve_frida_hook_script()
-
-    if legacy_mode:
-        frida_session = LegacyFridaAdapter(
+    frida_session, frida_diagnostic_payload, register_runtime_target = (
+        _build_real_frida_session(
+            req,
+            context,
+            steps,
+            device_context,
+            package_name,
+            script_path,
+            ownership_registry,
+            _noop_register_runtime_target,
+            frida_session_factory=frida_session_factory,
+        )
+    )
+    mitm_session: Any = None
+    if req.enable_traffic:
+        mitm_factory = mitm_session_factory or container.mitm_session_factory
+        mitm_session = mitm_factory(
             run_id=context.run_id,
             device=device_context,
+            traffic_dir=context.traffic_dir,
+            listen_host=MITM_LISTEN_HOST,
+            device_proxy_host=MITM_DEVICE_PROXY_HOST,
+            stop_timeout=MITM_STOP_TIMEOUT_SECONDS,
             package_name=package_name,
-            script_path=script_path,
-            transport_path=transport_path,
-            spawn=spawn_and_inject,
-            launch=launch_app,
         )
-        if req.enable_traffic:
-            mitm_session = LegacyMitmAdapter(
-                run_id=context.run_id,
-                device=device_context,
-                traffic_dir=context.traffic_dir,
-                start=start_mitm,
-                stop=stop_mitm,
-            )
-        register_runtime_target = _noop_register_runtime_target
-    else:
-        frida_session, frida_diagnostic_payload, register_runtime_target = (
-            _build_real_frida_session(
-                req,
-                context,
-                steps,
-                device_context,
-                package_name,
-                script_path,
-                ownership_registry,
-                _noop_register_runtime_target,
-            )
-        )
-        if req.enable_traffic:
-            mitm_session = MitmSession(
-                run_id=context.run_id,
-                device=device_context,
-                traffic_dir=context.traffic_dir,
-                listen_host=MITM_LISTEN_HOST,
-                device_proxy_host=MITM_DEVICE_PROXY_HOST,
-                stop_timeout=MITM_STOP_TIMEOUT_SECONDS,
-                package_name=package_name,
-            )
 
     register_cleanup(frida_session.stop)
     if mitm_session is not None:
@@ -1059,7 +1014,7 @@ def _collect_events_stage(
 
     try:
         dynamic_events = _normalize_events(
-            environment.transport_path,
+            context.events_raw_path,
             context.events_path,
             device_context=environment.device_context,
         )
@@ -1102,8 +1057,6 @@ def _collect_events_stage(
             )
         )
     finally:
-        if environment.legacy_mode:
-            environment.transport_path.unlink(missing_ok=True)
         context.events_raw_path.touch(exist_ok=True)
     return dynamic_events, hook_evidence_available
 
@@ -1149,52 +1102,6 @@ def _collect_disabled_traffic(
         )
     )
     return traffic_summary
-
-
-def _collect_legacy_traffic(
-    steps: list[StepResult],
-    context: AnalysisRunContext,
-    mitm_session: Any,
-    traffic_started: Any,
-) -> dict[str, Any]:
-    try:
-        stream = getattr(mitm_session, "_state", {}).get(
-            "stream_log",
-            str(context.mitm_stream_log_path),
-        )
-        traffic_summary = parse_traffic_to_summary_json(
-            traffic_text_path=stream,
-            output_path=str(context.traffic_summary_path),
-        )
-        traffic_status = (
-            StepStatus.SUCCESS
-            if traffic_summary.get("status") == "success"
-            else StepStatus.PARTIAL
-        )
-        steps.append(
-            _step_result(
-                "traffic_validation",
-                traffic_status,
-                traffic_started,
-                required=False,
-            )
-        )
-        return traffic_summary
-    except Exception as exc:
-        traffic_summary = _traffic_failure_summary(
-            f"traffic evidence unavailable: {type(exc).__name__}"
-        )
-        steps.append(
-            _step_result(
-                "traffic_validation",
-                StepStatus.FAILED,
-                traffic_started,
-                required=False,
-                error_code="traffic_evidence_unavailable",
-                error_message=traffic_summary["warnings"][0],
-            )
-        )
-        return traffic_summary
 
 
 def _collect_session_traffic(
@@ -1313,10 +1220,6 @@ def _collect_traffic_stage(
         traffic_summary = _collect_disabled_traffic(
             steps, context, traffic_started
         )
-    elif environment.legacy_mode:
-        traffic_summary = _collect_legacy_traffic(
-            steps, context, mitm_session, traffic_started
-        )
     else:
         traffic_summary, correlation_requests = _collect_session_traffic(
             steps, mitm_session, traffic_started
@@ -1368,8 +1271,11 @@ def _process_diagnostics_stage(
     dynamic_diagnostics_dir.mkdir(parents=True, exist_ok=True)
     if (
         device_context is not None
-        and FridaSession is _ORIGINAL_FRIDA_SESSION_CLASS
         and frida_session is not None
+        and (
+            container.frida_session_factory is container.default_frida_session_factory
+            or container.frida_session_factory is FridaSession
+        )
     ):
         runtime_failure_sessions = list(
             getattr(frida_session, "runtime_failure_sessions", [])
@@ -1900,6 +1806,8 @@ def _dynamic_analyze_v2(
     req: DynamicAnalyzeRequest,
     *,
     ownership_registry: ResourceOwnershipRegistry | None = None,
+    frida_session_factory: Any = None,
+    mitm_session_factory: Any = None,
 ):
     context, steps, failure_response = _prepare_run(
         req.apk_path,
@@ -1917,12 +1825,6 @@ def _dynamic_analyze_v2(
     context, device_context, device_failure, install_ok, package_name = (
         _install_and_select_device(req, context, steps, static_stage)
     )
-    legacy_mode = _legacy_fixture_mode()
-    transport_path = (
-        context.run_dir / ".legacy-hook.transport"
-        if legacy_mode
-        else context.events_raw_path
-    )
     (
         frida_session,
         mitm_session,
@@ -1935,9 +1837,9 @@ def _dynamic_analyze_v2(
         steps,
         device_context,
         package_name,
-        legacy_mode=legacy_mode,
-        transport_path=transport_path,
         ownership_registry=ownership_registry,
+        frida_session_factory=frida_session_factory,
+        mitm_session_factory=mitm_session_factory,
     )
     environment = _DynamicEnvironment(
         context=context,
@@ -1945,8 +1847,6 @@ def _dynamic_analyze_v2(
         device_failure=device_failure,
         install_ok=install_ok,
         package_name=package_name,
-        legacy_mode=legacy_mode,
-        transport_path=transport_path,
         frida_session=frida_session,
         mitm_session=mitm_session,
         frida_diagnostic_payload=frida_diagnostic_payload,
@@ -2029,8 +1929,17 @@ def _dynamic_analyze_v2(
     return report
 
 
-def dynamic_analyze(req: DynamicAnalyzeRequest):
-    return _dynamic_analyze_v2(req)
+def dynamic_analyze(
+    req: DynamicAnalyzeRequest,
+    *,
+    frida_session_factory: Any = None,
+    mitm_session_factory: Any = None,
+):
+    return _dynamic_analyze_v2(
+        req,
+        frida_session_factory=frida_session_factory,
+        mitm_session_factory=mitm_session_factory,
+    )
 
 
 __all__ = [
@@ -2038,7 +1947,6 @@ __all__ = [
     "_build_dynamic_findings",
     "_dynamic_analyze_v2",
     "_emit_frida_control",
-    "_legacy_fixture_mode",
     "_normalize_events",
     "_session_status",
     "_state_value",

@@ -20,6 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.config as app_config
+import app.container as container
 import app.main as main_module
 import app.pipelines.common as common_module
 import app.pipelines.dynamic as dynamic_module
@@ -478,29 +479,6 @@ class _FakeMitmSession:
         }
 
 
-class _LegacyProcess:
-    """Only prevents the pre-2C implementation from touching real processes."""
-
-    def __init__(self, scenario: _Scenario) -> None:
-        self._scenario = scenario
-        self._alive = True
-
-    def poll(self) -> int | None:
-        return None if self._alive else 0
-
-    def terminate(self) -> None:
-        self._alive = False
-        self._scenario.calls.append("legacy.frida.stop")
-
-    def wait(self, timeout: float | None = None) -> int:
-        del timeout
-        self._alive = False
-        return 0
-
-    def kill(self) -> None:
-        self._alive = False
-
-
 @dataclass
 class _ApiHarness:
     client: TestClient
@@ -630,16 +608,14 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
             super().__init__(scenario, *args, **kwargs)
 
     monkeypatch.setattr(
-        dynamic_module,
-        "FridaSession",
+        container,
+        "frida_session_factory",
         BoundFakeFridaSession,
-        raising=False,
     )
     monkeypatch.setattr(
-        dynamic_module,
-        "MitmSession",
+        container,
+        "mitm_session_factory",
         BoundFakeMitmSession,
-        raising=False,
     )
 
     def recording_collection(*args: Any, **kwargs: Any):
@@ -658,86 +634,6 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
         raising=False,
     )
 
-    # Legacy entry points are faked too.  This keeps the initial red-light run
-    # deterministic while making any continued use of those entry points
-    # visible in assertions.
-    def legacy_start_mitm(run_dir: str) -> dict[str, Any]:
-        scenario.calls.append("legacy.mitm.start")
-        traffic_dir = Path(run_dir) / "traffic"
-        traffic_dir.mkdir(parents=True, exist_ok=True)
-        stream_log = traffic_dir / "mitm_stream.log"
-        stream_log.touch()
-        ok = scenario.mitm_failure is None
-        return {
-            "ok": ok,
-            "error": None if ok else "fixture mitm failure",
-            "traffic_dir": str(traffic_dir),
-            "stream_log": str(stream_log),
-            "flow_file": str(traffic_dir / "flows.mitm"),
-        }
-
-    def legacy_stop_mitm() -> dict[str, Any]:
-        scenario.calls.append("legacy.mitm.stop")
-        return {"ok": True, "error": None}
-
-    def legacy_spawn(
-        package_name: str,
-        script_path: str,
-        log_path: str,
-        device_context: DeviceContext | None = None,
-    ) -> dict[str, Any]:
-        del package_name, script_path, device_context
-        scenario.calls.append("legacy.frida.spawn")
-        if scenario.frida_failure is not None:
-            return {
-                "ok": False,
-                "error": "fixture Frida failure",
-                "process": None,
-                "log_file": None,
-            }
-        with Path(log_path).open("a", encoding="utf-8") as stream:
-            stream.write(
-                "[HOOK] Settings.Secure.getString "
-                f"name=android_id ret={_RAW_ANDROID_ID}\n"
-            )
-        return {
-            "ok": True,
-            "error": None,
-            "process": _LegacyProcess(scenario),
-            "log_file": None,
-        }
-
-    monkeypatch.setattr(dynamic_module, "start_mitm", legacy_start_mitm)
-    monkeypatch.setattr(dynamic_module, "stop_mitm", legacy_stop_mitm)
-    monkeypatch.setattr(dynamic_module, "spawn_and_inject", legacy_spawn)
-
-    def legacy_traffic_summary(
-        traffic_text_path: str,
-        output_path: str,
-    ) -> dict[str, Any]:
-        del traffic_text_path
-        summary = {
-            "schema_version": "1.0",
-            "status": "success",
-            "evaluation_status": "not_evaluated",
-            "coverage": "no_observations",
-            "collector_outcome": "collector_success_zero_requests",
-            "warnings": [],
-            "total_requests": 0,
-            "top_hosts": [],
-            "sample_requests": [],
-        }
-        Path(output_path).write_text(
-            json.dumps(summary),
-            encoding="utf-8",
-        )
-        return summary
-
-    monkeypatch.setattr(
-        dynamic_module,
-        "parse_traffic_to_summary_json",
-        legacy_traffic_summary,
-    )
     monkeypatch.setattr(
         dynamic_module,
         "evaluate_timeline_rules",

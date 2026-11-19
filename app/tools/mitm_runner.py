@@ -94,55 +94,6 @@ def create_mitm_session(
     return MitmSession(**values)
 
 
-def start_mitm(session: MitmSession) -> dict[str, Any]:
-    if not isinstance(session, MitmSession):
-        return {
-            "ok": False,
-            "error_code": "mitm_session_required",
-            "error": "start_mitm requires an owned MitmSession",
-        }
-    started = session.start()
-    result = session.to_status()
-    result["ok"] = started
-    return result
-
-
-def wait_mitm_ready(
-    session: MitmSession,
-    *,
-    timeout: float,
-) -> dict[str, Any]:
-    if not isinstance(session, MitmSession):
-        return {
-            "ok": False,
-            "error_code": "mitm_session_required",
-            "error": "wait_mitm_ready requires an owned MitmSession",
-        }
-    ready = session.wait_ready(timeout=timeout)
-    result = session.to_status()
-    result["ok"] = ready
-    return result
-
-
-def stop_mitm(
-    session: MitmSession | None = None,
-    *,
-    timeout: float | None = None,
-) -> dict[str, Any]:
-    """Stop an explicit owner; a missing owner is a protected no-op error."""
-
-    if not isinstance(session, MitmSession):
-        return {
-            "ok": False,
-            "error_code": "mitm_session_required",
-            "error": "stop_mitm requires an owned MitmSession",
-        }
-    stopped_cleanly = session.stop(timeout=timeout)
-    result = session.to_status()
-    result["ok"] = stopped_cleanly
-    return result
-
-
 def get_mitm_status(
     session: MitmSession | None = None,
     *,
@@ -240,7 +191,4 @@ __all__ = [
     "check_port_listening",
     "create_mitm_session",
     "get_mitm_status",
-    "start_mitm",
-    "stop_mitm",
-    "wait_mitm_ready",
 ]

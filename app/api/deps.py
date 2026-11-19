@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app import container
 
@@ -48,6 +48,14 @@ def get_frida_diagnostics_service() -> FridaDiagnosticsService:
     return container.frida_diagnostics_service
 
 
+def get_frida_session_factory() -> Any:
+    return container.frida_session_factory
+
+
+def get_mitm_session_factory() -> Any:
+    return container.mitm_session_factory
+
+
 __all__ = [
     "get_ai_settings_service",
     "get_comparison_service",
@@ -55,6 +63,8 @@ __all__ = [
     "get_device_lease_registry",
     "get_frida_diagnostics_service",
     "get_frida_server_manager",
+    "get_frida_session_factory",
+    "get_mitm_session_factory",
     "get_task_repository",
     "get_task_service",
 ]

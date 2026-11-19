@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 from app.ai.settings_service import AISettingsService
 from app.ai.settings_store import AISettingsStore
@@ -25,8 +26,19 @@ from app.repositories import TaskRepository
 from app.repositories.task_repository import utc_now as task_utc_now
 from app.services import TaskService
 from app.services.application_name_service import repair_historical_application_names
+from app.tools.frida_session import FridaSession
+from app.tools.mitm_session import MitmSession
 
 project_root = Path(__file__).resolve().parent.parent
+
+def default_frida_session_factory(*args: Any, **kwargs: Any) -> Any:
+    return FridaSession(*args, **kwargs)
+
+def default_mitm_session_factory(*args: Any, **kwargs: Any) -> Any:
+    return MitmSession(*args, **kwargs)
+
+frida_session_factory = default_frida_session_factory
+mitm_session_factory = default_mitm_session_factory
 
 frida_diagnostics_service = FridaDiagnosticsService(
     project_root=project_root,
@@ -65,9 +77,13 @@ __all__ = [
     "ai_settings_store",
     "comparison_service",
     "consent_checkpoint_service",
+    "default_frida_session_factory",
+    "default_mitm_session_factory",
     "device_lease_registry",
     "frida_diagnostics_service",
     "frida_server_manager",
+    "frida_session_factory",
+    "mitm_session_factory",
     "task_repository",
     "task_service",
 ]

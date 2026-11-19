@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.api.middleware import AILocalOnlyMiddleware
 from app.container import task_repository, task_service
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
@@ -67,8 +69,16 @@ def analyze_endpoint(req: AnalyzeRequest):
 
 
 @app.post("/dynamic/analyze", response_model=AnalyzeResponse)
-def dynamic_analyze_endpoint(req: DynamicAnalyzeRequest):
-    return dynamic_analyze(req)
+def dynamic_analyze_endpoint(
+    req: DynamicAnalyzeRequest,
+    frida_session_factory: Any = Depends(get_frida_session_factory),
+    mitm_session_factory: Any = Depends(get_mitm_session_factory),
+):
+    return dynamic_analyze(
+        req,
+        frida_session_factory=frida_session_factory,
+        mitm_session_factory=mitm_session_factory,
+    )
 
 
 __all__ = ["analyze", "app", "create_app", "dynamic_analyze", "lifespan", "root"]

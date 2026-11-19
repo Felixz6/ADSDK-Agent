@@ -18,12 +18,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.config as app_config
+import app.container as container
 import app.pipelines.common as common_module
 import app.pipelines.dynamic as dynamic_module
 from app import main as main_module
 from app.core.device import DeviceContext
 from app.core.redaction import Redactor
 from app.tools.log_writer import append_log
+from tests.fake_sessions import FakeTestFridaSession, FakeTestMitmSession
 
 
 class DummyProcess:
@@ -211,70 +213,67 @@ def _install_common_fakes(
         state["launched_packages"].append(str(package_name))
         return _result_ok()
 
-    def fake_spawn(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        log_path = Path(
-            _extract_argument(args, kwargs, keyword="log_path", position=2)
-        )
-        state["spawn_count"] += 1
-        if hook_writer is None:
-            append_log(
-                str(log_path),
-                f"[INFO] 2026-07-24T00:00:0{state['spawn_count']}Z "
-                f"fixture-run-marker-{state['spawn_count']}",
+    class P0FakeFridaSession(FakeTestFridaSession):
+        def start(self) -> bool:
+            super().start()
+            state["spawn_count"] += 1
+            if hook_writer is None:
+                append_log(
+                    str(self.event_log_path),
+                    f"[INFO] 2026-07-24T00:00:0{state['spawn_count']}Z "
+                    f"fixture-run-marker-{state['spawn_count']}\n",
+                )
+            else:
+                hook_writer(self.event_log_path, state["spawn_count"])
+            return True
+
+    class P0FakeMitmSession(FakeTestMitmSession):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            stream_log = self.traffic_dir / "mitm_stream.log"
+            flow_file = self.traffic_dir / "flows.mitm"
+            if traffic_mode == "request":
+                stream_log.write_text(
+                    "10:00:01.001 GET https://api.example.test/v1/init HTTP/1.1\n",
+                    encoding="utf-8",
+                )
+                flow_file.write_bytes(b"fixture-flow")
+            elif traffic_mode == "empty":
+                stream_log.write_text("", encoding="utf-8")
+                flow_file.write_bytes(b"")
+
+        def validate_traffic(self) -> Any:
+            from app.tools.traffic_events import (
+                TrafficCollectionOutcome,
+                TrafficCollectionResult,
             )
-        else:
-            hook_writer(log_path, state["spawn_count"])
-        return {
-            "ok": True,
-            "error": None,
-            "process": DummyProcess(),
-            "log_file": None,
-            "cmd": ["frida"],
-        }
-
-    def fake_start_mitm(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        output_dir = Path(
-            _extract_argument(args, kwargs, keyword="output_dir", position=0)
-        )
-        traffic_dir = output_dir / "traffic"
-        traffic_dir.mkdir(parents=True, exist_ok=True)
-        stream_log = traffic_dir / "mitm_stream.log"
-        flow_file = traffic_dir / "flows.mitm"
-
-        if traffic_mode == "request":
-            stream_log.write_text(
-                "10:00:01.001 GET https://api.example.test/v1/init HTTP/1.1\n",
-                encoding="utf-8",
+            if traffic_mode == "missing":
+                raise FileNotFoundError("traffic evidence is missing")
+            if traffic_mode == "empty":
+                return TrafficCollectionResult(
+                    outcome=TrafficCollectionOutcome.COLLECTOR_SUCCESS_ZERO_REQUESTS,
+                    coverage="no_observations",
+                    process_ready=True,
+                    addon_ready=True,
+                    records=[],
+                    issues=[],
+                )
+            return TrafficCollectionResult(
+                outcome=TrafficCollectionOutcome.COLLECTOR_SUCCESS_REQUESTS_OBSERVED,
+                coverage="requests_observed",
+                process_ready=True,
+                addon_ready=True,
+                records=[],
+                issues=[],
             )
-            flow_file.write_bytes(b"fixture-flow")
-        elif traffic_mode == "empty":
-            stream_log.write_text("", encoding="utf-8")
-            flow_file.write_bytes(b"")
-        elif traffic_mode == "missing":
-            pass
-        else:
-            raise AssertionError(f"unknown traffic mode: {traffic_mode}")
 
-        return {
-            "ok": True,
-            "error": None,
-            "traffic_dir": str(traffic_dir),
-            "stream_log": str(stream_log),
-            "flow_file": str(flow_file),
-        }
-
+    monkeypatch.setattr(container, "frida_session_factory", P0FakeFridaSession)
+    monkeypatch.setattr(container, "mitm_session_factory", P0FakeMitmSession)
     monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
     monkeypatch.setattr(common_module, "parse_manifest_info", fake_manifest)
     monkeypatch.setattr(common_module, "scan_for_sdks", fake_sdks)
     monkeypatch.setattr(dynamic_module, "install_apk", fake_install)
     monkeypatch.setattr(dynamic_module, "launch_app", fake_launch)
-    monkeypatch.setattr(dynamic_module, "spawn_and_inject", fake_spawn)
-    monkeypatch.setattr(dynamic_module, "start_mitm", fake_start_mitm)
-    monkeypatch.setattr(
-        dynamic_module,
-        "stop_mitm",
-        lambda *args, **kwargs: {"ok": True, "error": None},
-    )
     return state
 
 
@@ -536,13 +535,7 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
             ),
         )
     elif failure_mode == "missing_traffic":
-        monkeypatch.setattr(
-            dynamic_module,
-            "parse_traffic_to_summary_json",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                FileNotFoundError("traffic evidence is missing")
-            ),
-        )
+        pass
     elif failure_mode == "manifest_error":
         monkeypatch.setattr(
             common_module,

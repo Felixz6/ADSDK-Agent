@@ -4,11 +4,13 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import app.config as app_config
+import app.container as container
 import app.pipelines.common as common_module
 import app.pipelines.dynamic as dynamic_module
 from app import main as main_module
 from app.core.device import DeviceContext
 from app.tools.log_writer import append_log
+from tests.fake_sessions import FakeTestFridaSession, FakeTestMitmSession
 
 
 class DummyProcess:
@@ -85,17 +87,19 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
         called["package"] = package_name
         return {"returncode": 0, "stdout": "ok", "stderr": "", "cmd": []}
 
-    def fake_spawn(package_name, script_path, log_path, device_context=None):
-        assert device_context.serial == "emulator-5554"
-        append_log(log_path, "[HOOK] Settings.Secure.getString name=android_id ret=abc")
-        return {
-            "ok": True,
-            "error": None,
-            "process": DummyProcess(),
-            "log_file": None,
-            "cmd": ["frida"],
-        }
+    class DemoFridaSession(FakeTestFridaSession):
+        def start(self):
+            super().start()
+            append_log(str(self.event_log_path), "[HOOK] Settings.Secure.getString name=android_id ret=abc")
+            return True
 
+        def resume(self):
+            super().resume()
+            dynamic_module.launch_app(self.package_name, device_context=self.device)
+            return True
+
+    monkeypatch.setattr(container, "frida_session_factory", DemoFridaSession)
+    monkeypatch.setattr(container, "mitm_session_factory", FakeTestMitmSession)
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_dir))
     monkeypatch.setattr(app_config, "APK_ALLOWED_ROOTS", (tmp_path.resolve(),))
     monkeypatch.setattr(
@@ -137,18 +141,6 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
         },
     )
     monkeypatch.setattr(dynamic_module, "launch_app", fake_launch)
-    monkeypatch.setattr(dynamic_module, "spawn_and_inject", fake_spawn)
-    monkeypatch.setattr(
-        dynamic_module,
-        "start_mitm",
-        lambda _: {"ok": True, "error": None, "traffic_dir": str(output_dir / "traffic"), "stream_log": str(output_dir / "traffic" / "mitm_stream.log")},
-    )
-    monkeypatch.setattr(dynamic_module, "stop_mitm", lambda: {"ok": True, "error": None})
-    monkeypatch.setattr(
-        dynamic_module,
-        "parse_traffic_to_summary_json",
-        lambda traffic_text_path, output_path: {"total_requests": 0, "top_hosts": [], "sample_requests": []},
-    )
     monkeypatch.setattr(
         dynamic_module,
         "evaluate_timeline_rules",
@@ -185,20 +177,17 @@ def test_high_frequency_sensitive_access_rule(tmp_path, monkeypatch):
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         return {"returncode": 0, "stdout": "", "stderr": "", "cmd": []}
 
-    def fake_spawn(package_name, script_path, log_path, device_context=None):
-        assert device_context.serial == "emulator-5554"
-        for _ in range(4):
-            append_log(log_path, "[HOOK] Settings.Secure.getString name=android_id ret=abc")
-        for _ in range(2):
-            append_log(log_path, "[HOOK] ClipboardManager.getPrimaryClip called")
-        return {
-            "ok": True,
-            "error": None,
-            "process": DummyProcess(),
-            "log_file": None,
-            "cmd": ["frida"],
-        }
+    class HighFreqFridaSession(FakeTestFridaSession):
+        def start(self):
+            super().start()
+            for _ in range(4):
+                append_log(str(self.event_log_path), "[HOOK] Settings.Secure.getString name=android_id ret=abc")
+            for _ in range(2):
+                append_log(str(self.event_log_path), "[HOOK] ClipboardManager.getPrimaryClip called")
+            return True
 
+    monkeypatch.setattr(container, "frida_session_factory", HighFreqFridaSession)
+    monkeypatch.setattr(container, "mitm_session_factory", FakeTestMitmSession)
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_dir))
     monkeypatch.setattr(app_config, "APK_ALLOWED_ROOTS", (tmp_path.resolve(),))
     monkeypatch.setattr(
@@ -237,18 +226,6 @@ def test_high_frequency_sensitive_access_rule(tmp_path, monkeypatch):
             "stderr": "",
             "cmd": device_context.adb_command("shell"),
         },
-    )
-    monkeypatch.setattr(dynamic_module, "spawn_and_inject", fake_spawn)
-    monkeypatch.setattr(
-        dynamic_module,
-        "start_mitm",
-        lambda _: {"ok": True, "error": None, "traffic_dir": str(output_dir / "traffic"), "stream_log": str(output_dir / "traffic" / "mitm_stream.log")},
-    )
-    monkeypatch.setattr(dynamic_module, "stop_mitm", lambda: {"ok": True, "error": None})
-    monkeypatch.setattr(
-        dynamic_module,
-        "parse_traffic_to_summary_json",
-        lambda traffic_text_path, output_path: {"total_requests": 0, "top_hosts": [], "sample_requests": []},
     )
     monkeypatch.setattr(
         dynamic_module,
