@@ -4,11 +4,11 @@ import re
 from typing import Any
 
 from app.config import REDACTION_HMAC_KEY, SCHEMA_VERSION
-from app.core.artifacts import atomic_write_json
 from app.core.redaction import Redactor
 from app.tools.frida_events import (
     FridaEventValidationError,
     normalize_frida_payload,
+    write_events_json,
 )
 
 ISO_TS_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)")
@@ -183,10 +183,6 @@ def parse_hook_log(
                     _redact_event_text(event, sensitive_identifiers)
                 )
     return events
-
-
-def write_events_json(events: list[dict[str, Any]], output_path: str):
-    atomic_write_json(output_path, events)
 
 
 def parse_hook_to_events_json(

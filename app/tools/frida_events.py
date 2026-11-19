@@ -13,7 +13,7 @@ import math
 import os
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -407,7 +407,7 @@ def unwrap_frida_message(
 
 
 def normalize_consent_states(
-    messages: list[Mapping[str, Any]],
+    messages: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     """Return canonical event objects classified by one consent control."""
 
@@ -435,7 +435,7 @@ def normalize_consent_states(
 
 
 def write_events_json(
-    messages: list[Mapping[str, Any]],
+    messages: Sequence[Mapping[str, Any]],
     output_path: str | os.PathLike[str],
 ) -> Path:
     """Atomically publish the compatibility ``events.json`` array."""
