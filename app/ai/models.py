@@ -15,6 +15,8 @@ repair / deterministic fallback path.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -664,3 +666,57 @@ class PlanValidationDiagnostics(BaseModel):
     fallback_used: bool = True
     fallback_reason: str | None = None
     diagnostics_hash: str = ""
+
+
+@dataclass(slots=True)
+class AIOrchestrationRequest:
+    """Everything the orchestrator needs for one AI task."""
+
+    objective: str
+    analysis_scope: str = "static_only"
+    analysis_mode: str | None = None
+    dynamic_mode_policy: str = "balanced"
+    task_id: str | None = None
+    allow_dynamic: bool = False
+    allow_network: bool = False
+    confirmed_tools: frozenset[str] = field(default_factory=frozenset)
+    token_budget: int | None = None
+    report_language: str = "zh-CN"
+    run_dir: Path | None = None
+    orchestration_entrypoint: str = ""
+    session_engine: str = ""
+    execution_pipeline_version: str = ""
+
+
+@dataclass(slots=True)
+class AIOrchestrationResult:
+    """The orchestrator's output; never raises into the task pipeline."""
+
+    status: AISynthesisStatus
+    plan: AIPlan
+    digest: EvidenceDigest
+    report: AIReport
+    trace: AIToolTrace
+    usage: AITokenUsage
+    tool_results: list[ToolCompactResult] = field(default_factory=list)
+    error_code: str | None = None
+    unavailable_reason: str | None = None
+    plan_rounds: list[PlanValidationRound] = field(default_factory=list)
+    report_synthesis_status: AISynthesisStatus = "completed"
+    runtime_validation: Any = None
+    diagnostic: AIRuntimeDiagnostic | None = None
+
+    def artifact_payloads(self) -> dict[str, Any]:
+        return {
+            "ai-plan.json": self.plan.model_dump(mode="json"),
+            "evidence-digest.json": self.digest.model_dump(mode="json"),
+            "ai-tool-trace.json": self.trace.model_dump(mode="json"),
+            "ai-report.json": self.report.model_dump(mode="json"),
+        }
+
+    def diagnostic_payload(self) -> dict[str, Any] | None:
+        """The runtime diagnostics artifact, or ``None`` when unavailable."""
+        if self.diagnostic is None:
+            return None
+        return self.diagnostic.model_dump(mode="json")
+

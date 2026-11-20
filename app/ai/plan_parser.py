@@ -44,29 +44,6 @@ PARSE_MULTIPLE_JSON_OBJECTS: ParseErrorCode = "multiple_json_objects"
 PARSE_INPUT_TOO_LONG: ParseErrorCode = "input_too_long"
 
 
-class PlanParseError(ValueError):
-    """Raised when the model response cannot be reduced to a single JSON object.
-
-    Carries a *stable* ``code`` (one of the ``PARSE_*`` constants) plus an
-    optional bounded location hint (``json_path`` / ``index``). No error
-    message here echoes the offending content — callers must not persist it.
-    """
-
-    __slots__ = ("code", "json_path", "index")
-
-    def __init__(
-        self,
-        code: ParseErrorCode,
-        *,
-        json_path: str | None = None,
-        index: int | None = None,
-    ) -> None:
-        super().__init__(code)
-        self.code = code
-        self.json_path = json_path
-        self.index = index
-
-
 @dataclass(slots=True)
 class ParseOutcome:
     """The result of a parse attempt.
@@ -309,6 +286,5 @@ __all__ = [
     "PARSE_INPUT_TOO_LONG",
     "ParseOutcome",
     "ParseErrorCode",
-    "PlanParseError",
     "parse_plan_response",
 ]
