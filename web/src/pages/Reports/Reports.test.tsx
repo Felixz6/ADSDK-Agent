@@ -104,22 +104,7 @@ function seedDynamic(resp: Partial<AnalyzeResponse> = {}) {
     dynamic_timeline: null,
   } as unknown as AnalyzeResponse
   const merged = { ...base, ...resp } as AnalyzeResponse
-  useAnalysisStore.getState().setActive(merged, {
-    local_id: 'local-x',
-    run_id: 'r-1',
-    kind: 'dynamic',
-    apk_path: 'D:/authorized/demo.apk',
-    package_name: 'com.example.demo',
-    created_at: '2026-01-01T00:00:00Z',
-    status: 'success',
-    sdk_count: 0,
-    has_report: true,
-    report_md_path: null,
-    artifacts_count: 0,
-    error: null,
-    error_code: null,
-    summary: null,
-  }, 'dynamic')
+  useAnalysisStore.getState().setActive(merged, 'dynamic')
   return merged
 }
 

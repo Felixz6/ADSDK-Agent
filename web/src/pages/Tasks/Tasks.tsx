@@ -19,7 +19,6 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { StatCard, MetricStrip } from '@/components/common/StatCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { listLocalTasks } from '@/api/tasks'
 import { useCancelTask, useDeleteTask, useRetryTask, useTasks } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
 import { formatDateTime } from '@/utils'
@@ -51,8 +50,6 @@ export default function Tasks() {
   const [taskType, setTaskType] = useState<TaskType | ''>('')
   const [page, setPage] = useState(1)
   const [pending, setPending] = useState<PendingAction>(null)
-  const [showLegacy, setShowLegacy] = useState(false)
-  const legacy = listLocalTasks()
 
   const tasks = useTasks({
     keyword: keyword.trim() || undefined,
@@ -209,28 +206,6 @@ export default function Tasks() {
               <button type="button" aria-label="下一页" title="下一页" disabled={page >= tasks.data.pages} onClick={() => setPage((value) => value + 1)} className="control-icon"><ChevronRight size={15} /></button>
             </div>
           </div>
-        </GlassCard>
-      )}
-
-      {legacy.length > 0 && (
-        <GlassCard padding="md">
-          <button type="button" onClick={() => setShowLegacy((value) => !value)} className="flex w-full items-center justify-between text-left">
-            <span>
-              <strong className="text-sm text-[var(--text-primary)]">浏览器旧记录</strong>
-              <span className="ml-2 text-xs text-[var(--text-tertiary)]">{legacy.length} 条 · 只读兼容</span>
-            </span>
-            <ChevronRight size={16} className={showLegacy ? 'rotate-90' : ''} />
-          </button>
-          {showLegacy && (
-            <ul className="mt-3 flex flex-col gap-2">
-              {legacy.map((task) => (
-                <li key={task.local_id} className="rounded-[10px] border border-[var(--hairline)] px-3 py-2">
-                  <p className="truncate text-sm text-[var(--text-primary)]">{task.package_name || task.apk_path}</p>
-                  <p className="text-[11px] text-[var(--text-tertiary)]">浏览器旧记录 · {formatDateTime(task.created_at)}</p>
-                </li>
-              ))}
-            </ul>
-          )}
         </GlassCard>
       )}
 

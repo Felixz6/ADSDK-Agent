@@ -18,7 +18,6 @@ import { ReportRuleCard } from '@/components/report/ReportRuleCard'
 import { PipelineTimeline } from '@/components/report/PipelineTimeline'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { useActiveResult, NoActiveResult } from '@/pages/shared/NoActiveResult'
-import { useAnalysisStore } from '@/stores/analysisStore'
 import { useTaskReport } from '@/hooks/useTasks'
 import { ErrorState, LoadingState } from '@/components/common/States'
 import type {
@@ -27,7 +26,7 @@ import type {
   LegacyDynamicEvent,
   StepResult,
 } from '@/types/api'
-import { formatDateTime, formatTime, cn } from '@/utils'
+import { formatTime, cn } from '@/utils'
 
 export default function DynamicAnalysis() {
   const [searchParams] = useSearchParams()
@@ -35,7 +34,6 @@ export default function DynamicAnalysis() {
   const localResp = useActiveResult('dynamic')
   const remote = useTaskReport(taskId)
   const resp = remote.data?.report ?? localResp
-  const task = useAnalysisStore((s) => s.task)
 
   if (taskId && remote.isLoading) return <GlassCard padding="none"><LoadingState title="正在加载动态报告…" /></GlassCard>
   if (taskId && remote.isError) return <GlassCard padding="none"><ErrorState icon={<AlertTriangle size={28} />} title="动态报告加载失败" description={remote.error.message} /></GlassCard>
@@ -53,7 +51,7 @@ export default function DynamicAnalysis() {
       <PageHeader
         title="动态分析"
         description="同意前/同意后敏感 API 行为取证。同意时段由单调时钟划分;未捕获同意点的事件标注为「时间不明」。"
-        eyebrow={`任务 ${taskId ?? task?.local_id ?? ''} · 完成于 ${formatDateTime(task?.created_at)}`}
+        eyebrow={taskId ? `任务 ${taskId}` : '当前分析'}
       />
 
       <MetricStrip>

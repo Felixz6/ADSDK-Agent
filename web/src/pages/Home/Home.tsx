@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useServiceHealth } from '@/hooks/useApi'
 import { useTasks } from '@/hooks/useTasks'
-import { listLocalTasks } from '@/api/tasks'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { HeroConsole } from '@/components/home/HeroConsole'
@@ -38,7 +37,6 @@ export default function Home() {
   const dynamicQuery = useTasks({ task_type: 'dynamic', page: 1, page_size: 1 })
   const comparisonQuery = useTasks({ task_type: 'comparison', page: 1, page_size: 1 })
   const recent = taskQuery.data?.items ?? []
-  const legacyRecent = listLocalTasks().slice(0, 3)
   const reachable = Boolean(health.data?.ok)
 
   return (
@@ -215,7 +213,7 @@ export default function Home() {
               <dd className={runningQuery.data ? undefined : 'stat-empty'}>{runningQuery.data?.total ?? '—'}</dd>
             </div>
           </dl>
-          {recent.length === 0 && legacyRecent.length === 0 ? (
+          {recent.length === 0 ? (
             <p className="prose">尚无持久化任务。点击「新建分析」开始。</p>
           ) : (
             <ul className="recent">
@@ -249,14 +247,6 @@ export default function Home() {
                       <span aria-hidden>→</span>
                     </button>
                   )}
-                </li>
-              ))}
-              {recent.length === 0 && legacyRecent.map((task) => (
-                <li key={task.local_id}>
-                  <span className="min-w-0">
-                    <span className="title">{task.apk_path}</span>
-                    <span className="meta">浏览器旧记录 · {formatDateTime(task.created_at)}</span>
-                  </span>
                 </li>
               ))}
             </ul>

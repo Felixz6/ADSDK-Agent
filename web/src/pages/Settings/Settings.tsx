@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import {
   Sun,
   Moon,
@@ -10,14 +10,12 @@ import {
 } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
-import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { AISettingsCard } from '@/components/settings/AISettingsCard'
 import { useUIStore, applyTheme, type Theme } from '@/stores/uiStore'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useServiceHealth } from '@/hooks/useApi'
 import { useTaskSystemStatus } from '@/hooks/useTasks'
-import { clearLocalTasks, listLocalTasks } from '@/api/tasks'
 import { API_BASE_URL } from '@/api/client'
 import { cn } from '@/utils'
 
@@ -28,22 +26,11 @@ export default function Settings() {
   const pushToast = useUIStore((s) => s.pushToast)
   const health = useServiceHealth()
   const taskSystem = useTaskSystemStatus()
-  const [confirmClearTasks, setConfirmClearTasks] = useState(false)
-  const [, force] = useState(0)
-
-  const taskCount = listLocalTasks().length
 
   function changeTheme(t: Theme) {
     setTheme(t)
     applyTheme(t)
     pushToast({ kind: 'success', message: t === 'dark' ? '已切换至深色。' : '已切换至浅色。', duration: 2000 })
-  }
-
-  function handleClearTasks() {
-    clearLocalTasks()
-    setConfirmClearTasks(false)
-    pushToast({ kind: 'success', message: '已清空全部本地任务记录。', duration: 2500 })
-    force((n) => n + 1)
   }
 
   function handleClearActive() {
@@ -117,19 +104,7 @@ export default function Settings() {
           >
             清除内存中活跃分析结果
           </button>
-          <button
-            type="button"
-            onClick={() => setConfirmClearTasks(true)}
-            disabled={taskCount === 0}
-            className={cn(
-              'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] text-sm border w-fit',
-              taskCount === 0 ? 'opacity-50 cursor-not-allowed border-[var(--border-soft)] text-[var(--text-tertiary)]' : 'border-[var(--border-soft)] text-[var(--danger)] hover:bg-[rgba(255,107,138,0.08)]',
-            )}
-          >
-            <Trash2 size={14} /> 清空全部本地任务记录({taskCount})
-          </button>
         </div>
-        <p className="text-[11px] text-[var(--text-tertiary)] mt-2">此处仅管理升级前的浏览器旧记录；新任务由后端 SQLite 任务中心管理。</p>
       </GlassCard>
 
       <GlassCard padding="md">
@@ -144,16 +119,6 @@ export default function Settings() {
           <Github size={13} /> 版本 1.0.0 · schema 1.0
         </div>
       </GlassCard>
-
-      <ConfirmDialog
-        open={confirmClearTasks}
-        title="清空全部任务记录?"
-        description="此操作将删除本设备上保存的所有本地任务记录,无法恢复。"
-        confirmLabel="清空"
-        tone="danger"
-        onConfirm={handleClearTasks}
-        onCancel={() => setConfirmClearTasks(false)}
-      />
     </div>
   )
 }

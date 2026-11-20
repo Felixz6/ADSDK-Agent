@@ -4,14 +4,11 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Home from './Home'
 import { renderWithProviders } from '@/test/render'
-import { clearLocalTasks, recordTask } from '@/api/tasks'
 import { server } from '@/test/msw-server'
-import type { AnalyzeResponse } from '@/types/api'
 import type { TaskRecord } from '@/types/tasks'
 
 beforeEach(() => {
   localStorage.clear()
-  clearLocalTasks()
 })
 
 describe('Home — 后端已连接', () => {
@@ -76,10 +73,31 @@ describe('Home — 后端已连接', () => {
     expect(router.state.location.pathname).toBe('/tasks')
   })
 
-  it('最近有本地记录时显示在「最近提交」', async () => {
-    recordTask('static', { apk_path: 'D:/authorized/a.apk' }, { run_id: 'r1', status: 'success' } as AnalyzeResponse)
+  it('有持久化任务时显示在「最近提交」', async () => {
+    server.use(
+      http.get('http://127.0.0.1:8000/tasks', () => {
+        return HttpResponse.json({
+          items: [
+            {
+              id: 'task-1',
+              task_type: 'static',
+              status: 'completed',
+              apk_path: 'D:/authorized/a.apk',
+              package_name: 'com.example.app',
+              created_at: '2026-03-01T00:00:00Z',
+              progress: 100,
+              current_stage: 'completed',
+            },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 5,
+          pages: 1,
+        })
+      }),
+    )
     renderWithProviders(<Home />)
-    expect(await screen.findByText(/D:\/authorized\/a\.apk/)).toBeInTheDocument()
+    expect(await screen.findByText(/com\.example\.app/)).toBeInTheDocument()
   })
 
   it('统计卡按静态、动态、版本对比和运行中四种清晰口径展示', async () => {

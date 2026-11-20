@@ -17,9 +17,9 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { EmptyState } from '@/components/common/States'
 import { useServiceHealth } from '@/hooks/useApi'
-import { listLocalTasks } from '@/api/tasks'
+import { useTasks } from '@/hooks/useTasks'
 import { formatDateTime } from '@/utils'
-import { riskBadgeLevel, riskLevelLabel } from '@/utils/taskPresentation'
+import { riskBadgeLevel, riskLevelLabel, taskTypeLabel } from '@/utils/taskPresentation'
 import {
   BarChart,
   Bar,
@@ -34,44 +34,44 @@ import {
 export default function Dashboard() {
   const navigate = useNavigate()
   const health = useServiceHealth()
-  const tasks = listLocalTasks()
+  const tasksQuery = useTasks({ page: 1, page_size: 100 })
+  const tasks = tasksQuery.data?.items ?? []
 
   const totals = tasks.reduce(
     (acc, t) => {
       acc.total += 1
       const st = t.status ?? 'unknown'
       acc[st] = (acc[st] ?? 0) + 1
-      const s = t.summary
-      acc.matched += s ? s.matched : 0
-      acc.notMatched += s ? s.not_matched : 0
-      acc.notEvaluated += s ? s.not_evaluated : 0
-      acc.errored += s ? s.errored : 0
       return acc
     },
     {
       total: 0,
-      succeeded: 0,
-      partial: 0,
+      completed: 0,
+      running: 0,
       failed: 0,
-      skipped: 0,
-      matched: 0,
-      notMatched: 0,
-      notEvaluated: 0,
-      errored: 0,
+      cancelled: 0,
+      queued: 0,
     } as Record<string, number>,
   )
 
   const chartData = [
-    { name: '已命中', value: totals.matched, fill: 'var(--danger)' },
-    { name: '未命中', value: totals.notMatched, fill: 'var(--success)' },
-    { name: '未评估', value: totals.notEvaluated, fill: 'var(--status-neutral)' },
-    { name: '异常', value: totals.errored, fill: 'var(--warning)' },
+    { name: '已完成', value: totals.completed, fill: 'var(--success)' },
+    { name: '分析中', value: totals.running, fill: 'var(--accent-blue)' },
+    { name: '排队中', value: totals.queued, fill: 'var(--status-neutral)' },
+    { name: '失败/取消', value: totals.failed + totals.cancelled, fill: 'var(--danger)' },
   ]
 
   const recent = tasks.slice(0, 6)
-  const riskCounts = { low: 0, medium: 0, high: 0, critical: 0 }
+  const riskCounts: Record<'low' | 'medium' | 'high' | 'critical', number> = {
+    low: 0,
+    medium: 0,
+    high: 0,
+    critical: 0,
+  }
   for (const task of tasks) {
-    if (task.risk_level) riskCounts[task.risk_level] += 1
+    if (task.risk_level && task.risk_level in riskCounts) {
+      riskCounts[task.risk_level as keyof typeof riskCounts] += 1
+    }
   }
   const latestRiskTask =
     tasks.find(
@@ -84,7 +84,7 @@ export default function Dashboard() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="概览"
-        description="后端健康状态、本地任务统计与最近一次风险评估。"
+        description="后端健康状态、持久化任务统计与最近一次风险评估。"
         eyebrow="工作台 · 概览"
       />
 
@@ -98,7 +98,7 @@ export default function Dashboard() {
         />
         <StatCard
           embedded
-          label="本地任务"
+          label="已记录任务"
           value={totals.total}
           tone="default"
           icon={<Layers size={17} />}
@@ -106,14 +106,14 @@ export default function Dashboard() {
         <StatCard
           embedded
           label="静态分析"
-          value={tasks.filter((t) => t.kind === 'static').length}
+          value={tasks.filter((t) => t.task_type === 'static').length}
           tone="accent"
           icon={<FileSearch size={17} />}
         />
         <StatCard
           embedded
           label="动态分析"
-          value={tasks.filter((t) => t.kind === 'dynamic').length}
+          value={tasks.filter((t) => t.task_type === 'dynamic').length}
           tone="accent"
           icon={<Activity size={17} />}
         />
@@ -245,24 +245,24 @@ export default function Dashboard() {
         ) : (
           <ul className="divide-y divide-[var(--hairline)]">
             {recent.map((t) => (
-              <li key={t.local_id}>
+              <li key={t.id}>
                 <button
                   type="button"
-                  onClick={() => navigate(`/tasks/${t.local_id}`)}
+                  onClick={() => navigate(`/tasks/${t.id}`)}
                   className="w-full text-left px-5 py-3 hover:bg-[var(--fill-hover)] transition-colors flex items-center gap-3"
                 >
                   <span className="shrink-0">
                     <StatusBadge
                       tone={
-                        t.status === 'success'
+                        t.status === 'completed'
                           ? 'success'
                           : t.status === 'failed'
                             ? 'danger'
-                            : t.status === 'partial'
-                              ? 'warning'
+                            : t.status === 'running'
+                              ? 'info'
                               : 'neutral'
                       }
-                      label={t.kind === 'static' ? '静态' : '动态'}
+                      label={taskTypeLabel(t.task_type)}
                       size="sm"
                     />
                   </span>

@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event'
 import Tasks from './Tasks'
 import { renderWithProviders } from '@/test/render'
 import { server } from '@/test/msw-server'
-import { clearLocalTasks, recordTask } from '@/api/tasks'
 import type { TaskRecord } from '@/types/tasks'
 
 const API = 'http://127.0.0.1:8000'
@@ -61,7 +60,6 @@ function listHandler(items: TaskRecord[]) {
 
 beforeEach(() => {
   localStorage.clear()
-  clearLocalTasks()
   server.use(listHandler([]))
 })
 
@@ -182,17 +180,6 @@ describe('Tasks — 后端持久化任务中心', () => {
     await user.click(screen.getAllByRole('button', { name: '重新分析' })[0])
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/tasks/task-retry'))
     expect(await screen.findByText('已创建重试任务。')).toBeInTheDocument()
-  })
-
-  it('旧 localStorage 记录保留为明确的只读兼容区', async () => {
-    recordTask('static', { apk_path: 'D:/legacy.apk', package_name: 'com.legacy' }, null)
-    const user = userEvent.setup()
-    renderWithProviders(<Tasks />)
-
-    const toggle = await screen.findByRole('button', { name: /浏览器旧记录/ })
-    expect(screen.getByText(/1 条 · 只读兼容/)).toBeInTheDocument()
-    await user.click(toggle)
-    expect(screen.getByText('com.legacy')).toBeInTheDocument()
   })
 
   it('隐藏资源引用、缩短设备标识并保留完整 Tooltip', async () => {

@@ -26,10 +26,23 @@ function withShell(Page: ComponentType): ComponentType {
   }
 }
 
-function Lazy({ Page }: { Page: ComponentType }) {
+const HomeRoute = withShell(HomePage)
+const DashboardRoute = withShell(DashboardPage)
+const NewAnalysisRoute = withShell(NewAnalysisPage)
+const TasksRoute = withShell(TasksPage)
+const TaskDetailRoute = withShell(TaskDetailPage)
+const ComparisonRoute = withShell(ComparisonPage)
+const StaticAnalysisRoute = withShell(StaticAnalysisPage)
+const DynamicAnalysisRoute = withShell(DynamicAnalysisPage)
+const TrafficRoute = withShell(TrafficPage)
+const ReportsRoute = withShell(ReportsPage)
+const EnvironmentRoute = withShell(EnvironmentPage)
+const SettingsRoute = withShell(SettingsPage)
+
+function Lazy({ Component }: { Component: ComponentType }) {
   return (
     <Suspense fallback={<LoadingState title="正在加载页面…" />}>
-      <Page />
+      <Component />
     </Suspense>
   )
 }
@@ -37,18 +50,18 @@ function Lazy({ Page }: { Page: ComponentType }) {
 export function AppRouter() {
   return (
     <Routes>
-      <Route path="/" element={Lazy({ Page: withShell(HomePage) })} />
-      <Route path="/dashboard" element={Lazy({ Page: withShell(DashboardPage) })} />
-      <Route path="/analysis/new" element={Lazy({ Page: withShell(NewAnalysisPage) })} />
-      <Route path="/tasks" element={Lazy({ Page: withShell(TasksPage) })} />
-      <Route path="/tasks/:id" element={Lazy({ Page: withShell(TaskDetailPage) })} />
-      <Route path="/comparisons" element={Lazy({ Page: withShell(ComparisonPage) })} />
-      <Route path="/static" element={Lazy({ Page: withShell(StaticAnalysisPage) })} />
-      <Route path="/dynamic" element={Lazy({ Page: withShell(DynamicAnalysisPage) })} />
-      <Route path="/traffic" element={Lazy({ Page: withShell(TrafficPage) })} />
-      <Route path="/reports" element={Lazy({ Page: withShell(ReportsPage) })} />
-      <Route path="/environment" element={Lazy({ Page: withShell(EnvironmentPage) })} />
-      <Route path="/settings" element={Lazy({ Page: withShell(SettingsPage) })} />
+      <Route path="/" element={<Lazy Component={HomeRoute} />} />
+      <Route path="/dashboard" element={<Lazy Component={DashboardRoute} />} />
+      <Route path="/analysis/new" element={<Lazy Component={NewAnalysisRoute} />} />
+      <Route path="/tasks" element={<Lazy Component={TasksRoute} />} />
+      <Route path="/tasks/:id" element={<Lazy Component={TaskDetailRoute} />} />
+      <Route path="/comparisons" element={<Lazy Component={ComparisonRoute} />} />
+      <Route path="/static" element={<Lazy Component={StaticAnalysisRoute} />} />
+      <Route path="/dynamic" element={<Lazy Component={DynamicAnalysisRoute} />} />
+      <Route path="/traffic" element={<Lazy Component={TrafficRoute} />} />
+      <Route path="/reports" element={<Lazy Component={ReportsRoute} />} />
+      <Route path="/environment" element={<Lazy Component={EnvironmentRoute} />} />
+      <Route path="/settings" element={<Lazy Component={SettingsRoute} />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

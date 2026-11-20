@@ -1,0 +1,3000 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AdSDK Agent",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/env/check": {
+      "get": {
+        "tags": [
+          "environment"
+        ],
+        "summary": "Env Check",
+        "operationId": "env_check_env_check_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/traffic/check": {
+      "get": {
+        "tags": [
+          "environment"
+        ],
+        "summary": "Traffic Check",
+        "operationId": "traffic_check_traffic_check_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/frida/diagnostics": {
+      "post": {
+        "tags": [
+          "environment"
+        ],
+        "summary": "Frida Diagnostics",
+        "description": "Run a read-only, exact-device diagnostic pass.",
+        "operationId": "frida_diagnostics_frida_diagnostics_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FridaDiagnosticsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/frida/status": {
+      "get": {
+        "tags": [
+          "environment"
+        ],
+        "summary": "Frida Server Status",
+        "operationId": "frida_server_status_frida_status_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/frida/server/deploy": {
+      "post": {
+        "tags": [
+          "environment"
+        ],
+        "summary": "Deploy Frida Server",
+        "operationId": "deploy_frida_server_frida_server_deploy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FridaServerActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/frida/server/start": {
+      "post": {
+        "tags": [
+          "environment"
+        ],
+        "summary": "Start Frida Server",
+        "operationId": "start_frida_server_frida_server_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FridaServerActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/frida/server/stop": {
+      "post": {
+        "tags": [
+          "environment"
+        ],
+        "summary": "Stop Frida Server",
+        "operationId": "stop_frida_server_frida_server_stop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FridaServerActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Create Task",
+        "operationId": "create_task_tasks_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List Tasks",
+        "operationId": "list_tasks_tasks_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "task_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Type"
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "-created_at",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/system/status": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Task System Status",
+        "operationId": "task_system_status_tasks_system_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskSystemStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Task",
+        "operationId": "get_task_tasks__task_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Delete Task",
+        "operationId": "delete_task_tasks__task_id__delete",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/report": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Task Report",
+        "operationId": "get_task_report_tasks__task_id__report_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/cancel": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Cancel Task",
+        "operationId": "cancel_task_tasks__task_id__cancel_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskActionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/retry": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Retry Task",
+        "operationId": "retry_task_tasks__task_id__retry_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskActionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/consent-checkpoint": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Consent Checkpoint",
+        "operationId": "get_consent_checkpoint_tasks__task_id__consent_checkpoint_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentCheckpointState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Resolve Consent Checkpoint",
+        "operationId": "resolve_consent_checkpoint_tasks__task_id__consent_checkpoint_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentCheckpointRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentCheckpointState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/artifacts/{artifact_kind}": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Download Task Artifact",
+        "operationId": "download_task_artifact_tasks__task_id__artifacts__artifact_kind__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "artifact_kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/status": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Ai Status",
+        "description": "Public AI availability.\n\nNever returns the API key (or any derivative of it). ``reachable`` is only\nevaluated when ``probe=true`` so a page load never calls the external\nmodel; otherwise it stays ``null`` (\"not probed\").",
+        "operationId": "ai_status_ai_status_get",
+        "parameters": [
+          {
+            "name": "probe",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Probe"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get Ai Settings",
+        "description": "Return the masked effective AI configuration.\n\nThe API key is never present. ``api_key_configured`` is the only key-\nderived boolean. Corrupted local settings degrade to defaults rather than\n500.",
+        "operationId": "get_ai_settings_ai_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Update Ai Settings",
+        "description": "Save editable AI configuration + optional new API key. Body is never logged.\n\nA missing or empty ``api_key`` field preserves the stored key; deletion\nis a separate authenticated action (DELETE /ai/settings/api-key).",
+        "operationId": "update_ai_settings_ai_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AISettingsSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/test": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Test Ai Settings",
+        "description": "Test the current or a temporary configuration. Temporary key is not saved.\n\nThe request body (which may carry a temporary ``api_key``) is never logged\nand never persisted. The probe tries ``/models`` first, then a minimal\nchat completion (max_tokens=1) for gateways that do not expose ``/models``.",
+        "operationId": "test_ai_settings_ai_settings_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AISettingsTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsTestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/api-key": {
+      "delete": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Delete Ai Api Key",
+        "description": "Delete the locally-saved API key only. An environment-variable key is untouched.",
+        "operationId": "delete_ai_api_key_ai_settings_api_key_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsDeleteKeyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/ai-plan": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get Task Ai Plan",
+        "operationId": "get_task_ai_plan_tasks__task_id__ai_plan_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAIArtifactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/ai-report": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get Task Ai Report",
+        "operationId": "get_task_ai_report_tasks__task_id__ai_report_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAIArtifactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/ai-runtime-diagnostics": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get Task Ai Runtime Diagnostics",
+        "description": "The ``ai-runtime-diagnostics-v1`` artifact.",
+        "operationId": "get_task_ai_runtime_diagnostics_tasks__task_id__ai_runtime_diagnostics_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAIArtifactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/ai-report/regenerate": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Regenerate Task Ai Report",
+        "operationId": "regenerate_task_ai_report_tasks__task_id__ai_report_regenerate_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "use_cache",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Use Cache"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAIArtifactSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/comparisons": {
+      "post": {
+        "tags": [
+          "comparisons"
+        ],
+        "summary": "Create Comparison",
+        "operationId": "create_comparison_comparisons_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComparisonCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "comparisons"
+        ],
+        "summary": "List Comparisons",
+        "operationId": "list_comparisons_comparisons_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ComparisonResult"
+                  },
+                  "title": "Response List Comparisons Comparisons Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/comparisons/{comparison_id}": {
+      "get": {
+        "tags": [
+          "comparisons"
+        ],
+        "summary": "Get Comparison",
+        "operationId": "get_comparison_comparisons__comparison_id__get",
+        "parameters": [
+          {
+            "name": "comparison_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Comparison Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AISettingsDeleteKeyResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "api_key_source": {
+            "type": "string",
+            "enum": [
+              "none",
+              "environment",
+              "local_store"
+            ],
+            "title": "Api Key Source"
+          },
+          "api_key_configured": {
+            "type": "boolean",
+            "title": "Api Key Configured"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "deleted",
+          "api_key_source",
+          "api_key_configured"
+        ],
+        "title": "AISettingsDeleteKeyResponse",
+        "description": "Result of DELETE /ai/settings/api-key (local key only)."
+      },
+      "AISettingsResponse": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "api_key_configured": {
+            "type": "boolean",
+            "title": "Api Key Configured"
+          },
+          "api_key_source": {
+            "type": "string",
+            "enum": [
+              "none",
+              "environment",
+              "local_store"
+            ],
+            "title": "Api Key Source"
+          },
+          "default_token_budget": {
+            "type": "integer",
+            "title": "Default Token Budget"
+          },
+          "max_rounds": {
+            "type": "integer",
+            "title": "Max Rounds"
+          },
+          "max_tool_calls": {
+            "type": "integer",
+            "title": "Max Tool Calls"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "title": "Timeout Seconds"
+          },
+          "max_input_tokens": {
+            "type": "integer",
+            "title": "Max Input Tokens"
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "title": "Max Output Tokens"
+          },
+          "cache_enabled": {
+            "type": "boolean",
+            "title": "Cache Enabled"
+          },
+          "cache_ttl_seconds": {
+            "type": "integer",
+            "title": "Cache Ttl Seconds"
+          },
+          "allow_dynamic_tools": {
+            "type": "boolean",
+            "title": "Allow Dynamic Tools"
+          },
+          "report_language": {
+            "type": "string",
+            "title": "Report Language"
+          },
+          "field_sources": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "default",
+                "environment",
+                "local_store"
+              ]
+            },
+            "type": "object",
+            "title": "Field Sources"
+          },
+          "locked_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Locked Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "enabled",
+          "provider",
+          "base_url",
+          "model",
+          "api_key_configured",
+          "api_key_source",
+          "default_token_budget",
+          "max_rounds",
+          "max_tool_calls",
+          "timeout_seconds",
+          "max_input_tokens",
+          "max_output_tokens",
+          "cache_enabled",
+          "cache_ttl_seconds",
+          "allow_dynamic_tools",
+          "report_language",
+          "field_sources",
+          "locked_fields"
+        ],
+        "title": "AISettingsResponse",
+        "description": "Masked effective AI settings returned by GET /ai/settings.\n\n``api_key_configured`` is the *only* key-derived field; the raw key, its\nlength, or any derivative is never included."
+      },
+      "AISettingsSaveRequest": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "default_token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Token Budget"
+          },
+          "max_rounds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Rounds"
+          },
+          "max_tool_calls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tool Calls"
+          },
+          "timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout Seconds"
+          },
+          "max_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Input Tokens"
+          },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
+          },
+          "cache_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Enabled"
+          },
+          "cache_ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Ttl Seconds"
+          },
+          "allow_dynamic_tools": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Dynamic Tools"
+          },
+          "report_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Language"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AISettingsSaveRequest",
+        "description": "PUT /ai/settings — editable fields + optional write-only API key.\n\n``api_key`` semantics:\n  * omitted      -> the stored key is preserved\n  * empty string -> the stored key is preserved (NOT a delete)\n  * non-empty    -> replace the stored key (DPAPI)"
+      },
+      "AISettingsTestRequest": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout Seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AISettingsTestRequest",
+        "description": "POST /ai/settings/test — optional temporary config (never persisted).\n\nA temporary ``api_key`` lives only in this request's memory: it is not\nwritten to the store, cache, DB, report, or logs."
+      },
+      "AISettingsTestResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "reachable",
+              "unreachable",
+              "invalid_configuration",
+              "authentication_failed",
+              "timeout"
+            ],
+            "title": "Status"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "title": "Latency Ms"
+          },
+          "safe_message": {
+            "type": "string",
+            "title": "Safe Message"
+          },
+          "models_endpoint_supported": {
+            "type": "boolean",
+            "title": "Models Endpoint Supported"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "provider",
+          "model",
+          "latency_ms",
+          "safe_message",
+          "models_endpoint_supported"
+        ],
+        "title": "AISettingsTestResponse",
+        "description": "Result of a connection test. No key, no host echo beyond the request."
+      },
+      "AIStatusResponse": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "reachable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reachable"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "default_token_budget": {
+            "type": "integer",
+            "title": "Default Token Budget"
+          },
+          "max_rounds": {
+            "type": "integer",
+            "title": "Max Rounds"
+          },
+          "max_tool_calls": {
+            "type": "integer",
+            "title": "Max Tool Calls"
+          },
+          "report_language": {
+            "type": "string",
+            "title": "Report Language"
+          },
+          "allow_dynamic_tools": {
+            "type": "boolean",
+            "title": "Allow Dynamic Tools"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled",
+          "provider",
+          "model",
+          "configured",
+          "default_token_budget",
+          "max_rounds",
+          "max_tool_calls",
+          "report_language",
+          "allow_dynamic_tools"
+        ],
+        "title": "AIStatusResponse",
+        "description": "Public AI availability. Never exposes the API key or its length."
+      },
+      "ComparisonCreateRequest": {
+        "properties": {
+          "base_task_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Base Task Id"
+          },
+          "target_task_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Target Task Id"
+          },
+          "allow_cross_app": {
+            "type": "boolean",
+            "title": "Allow Cross App",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "base_task_id",
+          "target_task_id"
+        ],
+        "title": "ComparisonCreateRequest"
+      },
+      "ComparisonResult": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version",
+            "default": "comparison-v1"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "base_task_id": {
+            "type": "string",
+            "title": "Base Task Id"
+          },
+          "target_task_id": {
+            "type": "string",
+            "title": "Target Task Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "base_summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Base Summary"
+          },
+          "target_summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Target Summary"
+          },
+          "risk_score_delta": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score Delta"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/DifferenceSet"
+          },
+          "high_risk_permissions": {
+            "$ref": "#/components/schemas/DifferenceSet"
+          },
+          "sdks": {
+            "$ref": "#/components/schemas/DifferenceSet"
+          },
+          "sdk_vendors": {
+            "$ref": "#/components/schemas/DifferenceSet"
+          },
+          "sdk_categories": {
+            "$ref": "#/components/schemas/DifferenceSet"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/DifferenceSet"
+          },
+          "domains": {
+            "$ref": "#/components/schemas/DifferenceSet"
+          },
+          "dynamic_behaviors": {
+            "$ref": "#/components/schemas/DifferenceSet"
+          },
+          "evidence_complete": {
+            "type": "boolean",
+            "title": "Evidence Complete"
+          },
+          "highlights": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Highlights"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "base_task_id",
+          "target_task_id",
+          "base_summary",
+          "target_summary",
+          "permissions",
+          "high_risk_permissions",
+          "sdks",
+          "sdk_vendors",
+          "sdk_categories",
+          "rules",
+          "domains",
+          "dynamic_behaviors",
+          "evidence_complete"
+        ],
+        "title": "ComparisonResult"
+      },
+      "ConsentCheckpointRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_found",
+              "skipped"
+            ],
+            "title": "Action"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 240,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "ConsentCheckpointRequest"
+      },
+      "ConsentCheckpointState": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "not_found",
+              "skipped",
+              "cancelled",
+              "awaiting",
+              "expired"
+            ],
+            "title": "Status",
+            "default": "awaiting"
+          },
+          "entered_at": {
+            "type": "string",
+            "title": "Entered At",
+            "default": ""
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by_action": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "confirmed",
+                  "not_found",
+                  "skipped"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By Action"
+          },
+          "last_heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat At"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 240,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id",
+          "run_id"
+        ],
+        "title": "ConsentCheckpointState",
+        "description": "Public, secret-free representation of a checkpoint."
+      },
+      "DifferenceSet": {
+        "properties": {
+          "added": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Added"
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Removed"
+          },
+          "unchanged": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unchanged"
+          },
+          "unavailable": {
+            "type": "boolean",
+            "title": "Unavailable",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "DifferenceSet"
+      },
+      "FridaDiagnosticsRequest": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Device Id"
+          },
+          "package_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id"
+        ],
+        "title": "FridaDiagnosticsRequest"
+      },
+      "FridaServerActionRequest": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Device Id"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id"
+        ],
+        "title": "FridaServerActionRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "TaskAIArtifactResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "available"
+        ],
+        "title": "TaskAIArtifactResponse",
+        "description": "Wrapper for ai-plan.json / ai-report.json reads."
+      },
+      "TaskAIArtifactSummary": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "ai_status": {
+            "type": "string",
+            "title": "Ai Status"
+          },
+          "ai_section": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ai Section"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "ai_status",
+          "ai_section"
+        ],
+        "title": "TaskAIArtifactSummary",
+        "description": "Identifying summary of the regenerated AI section, returned by the\n``regenerate`` route so the client can immediately poll the artifact\nendpoints. Carries no secrets and no model text."
+      },
+      "TaskActionResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/TaskRecord"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task",
+          "message"
+        ],
+        "title": "TaskActionResponse"
+      },
+      "TaskCreateRequest": {
+        "properties": {
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "static",
+              "dynamic",
+              "ai_orchestrated"
+            ],
+            "title": "Task Type"
+          },
+          "apk_path": {
+            "type": "string",
+            "maxLength": 32768,
+            "minLength": 1,
+            "title": "Apk Path"
+          },
+          "package_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Name"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "enable_traffic": {
+            "type": "boolean",
+            "title": "Enable Traffic",
+            "default": true
+          },
+          "enable_ui_stimulation": {
+            "type": "boolean",
+            "title": "Enable Ui Stimulation",
+            "default": false
+          },
+          "consent_after_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 86400.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consent After Seconds"
+          },
+          "pre_consent_seconds": {
+            "type": "integer",
+            "maximum": 3600.0,
+            "minimum": 0.0,
+            "title": "Pre Consent Seconds",
+            "default": 10
+          },
+          "post_consent_seconds": {
+            "type": "integer",
+            "maximum": 3600.0,
+            "minimum": 0.0,
+            "title": "Post Consent Seconds",
+            "default": 10
+          },
+          "collection_timeout_seconds": {
+            "type": "integer",
+            "maximum": 86400.0,
+            "minimum": 1.0,
+            "title": "Collection Timeout Seconds",
+            "default": 300
+          },
+          "dynamic_mode_policy": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "balanced",
+              "attach_only"
+            ],
+            "title": "Dynamic Mode Policy",
+            "default": "balanced"
+          },
+          "objective": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objective"
+          },
+          "analysis_scope": {
+            "type": "string",
+            "enum": [
+              "static_only",
+              "dynamic_only",
+              "full_analysis",
+              "report_only"
+            ],
+            "title": "Analysis Scope",
+            "default": "static_only"
+          },
+          "analysis_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "static_only",
+                  "full_analysis",
+                  "report_only"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Mode"
+          },
+          "allow_dynamic": {
+            "type": "boolean",
+            "title": "Allow Dynamic",
+            "default": false
+          },
+          "allow_network": {
+            "type": "boolean",
+            "title": "Allow Network",
+            "default": false
+          },
+          "ai_enabled": {
+            "type": "boolean",
+            "title": "Ai Enabled",
+            "default": true
+          },
+          "token_budget": {
+            "type": "integer",
+            "maximum": 200000.0,
+            "minimum": 256.0,
+            "title": "Token Budget",
+            "default": 6000
+          },
+          "report_language": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Report Language",
+            "default": "zh-CN"
+          },
+          "confirmed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Confirmed Tools"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_type",
+          "apk_path"
+        ],
+        "title": "TaskCreateRequest"
+      },
+      "TaskListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskRecord"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page Size"
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "TaskListResponse"
+      },
+      "TaskRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "static",
+              "dynamic",
+              "comparison",
+              "ai_orchestrated"
+            ],
+            "title": "Task Type"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "apk_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apk Path"
+          },
+          "apk_snapshot_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apk Snapshot Path"
+          },
+          "apk_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apk Sha256"
+          },
+          "package_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Name"
+          },
+          "app_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Name"
+          },
+          "version_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Name"
+          },
+          "version_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Code"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "enable_traffic": {
+            "type": "boolean",
+            "title": "Enable Traffic",
+            "default": false
+          },
+          "enable_ui_stimulation": {
+            "type": "boolean",
+            "title": "Enable Ui Stimulation",
+            "default": false
+          },
+          "progress_percent": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress Percent"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Stage"
+          },
+          "cancelled_at_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At Stage"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "report_json_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Json Path"
+          },
+          "report_markdown_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Markdown Path"
+          },
+          "report_html_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Html Path"
+          },
+          "risk_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "request_payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Request Payload"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/TaskStepRecord"
+            },
+            "type": "array",
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_type",
+          "status",
+          "progress_percent",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TaskRecord"
+      },
+      "TaskReportResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report"
+          },
+          "json_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Json Url"
+          },
+          "markdown_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Markdown Url"
+          },
+          "html_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Html Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "status"
+        ],
+        "title": "TaskReportResponse"
+      },
+      "TaskStepRecord": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "step_key": {
+            "type": "string",
+            "title": "Step Key"
+          },
+          "step_name": {
+            "type": "string",
+            "title": "Step Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "partial",
+              "failed",
+              "skipped",
+              "running"
+            ],
+            "title": "Status"
+          },
+          "progress_percent": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress Percent"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "step_key",
+          "step_name",
+          "status",
+          "progress_percent",
+          "updated_at"
+        ],
+        "title": "TaskStepRecord"
+      },
+      "TaskSystemStatus": {
+        "properties": {
+          "database_ok": {
+            "type": "boolean",
+            "title": "Database Ok"
+          },
+          "database_path": {
+            "type": "string",
+            "title": "Database Path"
+          },
+          "running_tasks": {
+            "type": "integer",
+            "title": "Running Tasks"
+          },
+          "queued_tasks": {
+            "type": "integer",
+            "title": "Queued Tasks"
+          },
+          "occupied_devices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Occupied Devices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "database_ok",
+          "database_path",
+          "running_tasks",
+          "queued_tasks"
+        ],
+        "title": "TaskSystemStatus"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
