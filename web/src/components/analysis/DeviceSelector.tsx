@@ -39,7 +39,7 @@ export function DeviceSelector({ value, onChange, disabled, allowManual = true }
             >
               <option value="">使用默认设备</option>
               {devices.map((d) => (
-                <option key={d.device_id} value={d.device_id} className="bg-[#0a1630]">
+                <option key={d.device_id} value={d.device_id}>
                   {d.device_id}（{d.status}）
                 </option>
               ))}

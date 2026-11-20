@@ -12,7 +12,7 @@ import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
 import { BehaviorTimeline } from '@/components/analysis/BehaviorTimeline'
 import { ComplianceInsight } from '@/components/report/ComplianceInsight'
 import { PageHeader } from '@/components/common/PageHeader'
-import { StatCard } from '@/components/common/StatCard'
+import { StatCard, MetricStrip } from '@/components/common/StatCard'
 import { ConsentTimeline } from '@/components/report/ConsentTimeline'
 import { ReportRuleCard } from '@/components/report/ReportRuleCard'
 import { PipelineTimeline } from '@/components/report/PipelineTimeline'
@@ -56,12 +56,12 @@ export default function DynamicAnalysis() {
         eyebrow={`任务 ${taskId ?? task?.local_id ?? ''} · 完成于 ${formatDateTime(task?.created_at)}`}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="事件总数" value={events.length} tone="default" icon={<Activity size={18} />} />
-        <StatCard label="同意前" value={counts.pre} tone="danger" icon={<Hand size={18} />} />
-        <StatCard label="同意后" value={counts.post} tone="success" />
-        <StatCard label="时间不明" value={counts.unknown} tone="warning" icon={<ShieldQuestion size={18} />} />
-      </div>
+      <MetricStrip>
+        <StatCard embedded label="事件总数" value={events.length} tone="default" icon={<Activity size={17} />} />
+        <StatCard embedded label="同意前" value={counts.pre} tone="danger" icon={<Hand size={17} />} />
+        <StatCard embedded label="同意后" value={counts.post} tone="success" />
+        <StatCard embedded label="时间不明" value={counts.unknown} tone="warning" icon={<ShieldQuestion size={17} />} />
+      </MetricStrip>
 
       <RiskSummaryCard summary={resp.risk_summary} />
 

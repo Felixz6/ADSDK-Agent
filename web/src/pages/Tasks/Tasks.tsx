@@ -17,7 +17,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/States'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { RiskBadge } from '@/components/common/RiskBadge'
-import { StatCard } from '@/components/common/StatCard'
+import { StatCard, MetricStrip } from '@/components/common/StatCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { listLocalTasks } from '@/api/tasks'
 import { useCancelTask, useDeleteTask, useRetryTask, useTasks } from '@/hooks/useTasks'
@@ -110,12 +110,12 @@ export default function Tasks() {
         eyebrow="任务 · 后端持久化"
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="全部任务" value={tasks.data?.total ?? '—'} tone="default" icon={<ListChecks size={18} />} />
-        <StatCard label="分析中" value={running.data?.total ?? '—'} tone="accent" icon={<RefreshCw size={18} />} />
-        <StatCard label="已完成" value={completed.data?.total ?? '—'} tone="success" icon={<FileText size={18} />} />
-        <StatCard label="失败" value={failed.data?.total ?? '—'} tone="danger" icon={<AlertTriangle size={18} />} />
-      </div>
+      <MetricStrip>
+        <StatCard embedded label="全部任务" value={tasks.data?.total ?? '—'} tone="default" icon={<ListChecks size={17} />} />
+        <StatCard embedded label="分析中" value={running.data?.total ?? '—'} tone="accent" icon={<RefreshCw size={17} />} />
+        <StatCard embedded label="已完成" value={completed.data?.total ?? '—'} tone="success" icon={<FileText size={17} />} />
+        <StatCard embedded label="失败" value={failed.data?.total ?? '—'} tone="danger" icon={<AlertTriangle size={17} />} />
+      </MetricStrip>
 
       <GlassCard padding="md" className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">

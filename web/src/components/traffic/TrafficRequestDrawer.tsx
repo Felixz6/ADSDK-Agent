@@ -53,7 +53,7 @@ export function TrafficRequestDrawer({ record, onClose }: TrafficRequestDrawerPr
           aria-modal="true"
           aria-label="请求详情"
         >
-          <div className="absolute inset-0 bg-[rgba(3,8,22,0.62)] backdrop-blur-sm" onClick={onClose} aria-hidden />
+          <div className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-sm" onClick={onClose} aria-hidden />
           <motion.aside
             initial={{ x: 40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}

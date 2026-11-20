@@ -19,7 +19,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { GlassCard } from '@/components/common/GlassCard'
 import { Checkbox } from '@/components/common/Checkbox'
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/States'
-import { StatCard } from '@/components/common/StatCard'
+import { StatCard, MetricStrip } from '@/components/common/StatCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { useComparisons, useCreateComparison, useTasks } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/uiStore'
@@ -283,12 +283,12 @@ function ComparisonResultView({ result }: { result: ComparisonResult }) {
           <p className="flex items-center gap-2 text-sm text-[var(--warning)]"><AlertTriangle size={16} /> {warning}</p>
         </GlassCard>
       ))}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="风险分变化" value={result.risk_score_delta == null ? '未评估' : `${result.risk_score_delta > 0 ? '+' : ''}${result.risk_score_delta}`} tone={result.risk_score_delta != null && result.risk_score_delta > 0 ? 'danger' : result.risk_score_delta == null ? 'neutral' : 'success'} icon={<ShieldAlert size={18} />} />
-        <StatCard label="新增权限" value={result.permissions.added.length} tone="warning" icon={<Plus size={18} />} />
-        <StatCard label="新增 SDK" value={result.sdks.added.length} tone="accent" icon={<Plus size={18} />} />
-        <StatCard label="证据完整性" value={result.evidence_complete ? '可比较' : '部分证据'} tone={result.evidence_complete ? 'success' : 'neutral'} icon={<CheckCircle2 size={18} />} />
-      </div>
+      <MetricStrip>
+        <StatCard embedded label="风险分变化" value={result.risk_score_delta == null ? '未评估' : `${result.risk_score_delta > 0 ? '+' : ''}${result.risk_score_delta}`} tone={result.risk_score_delta != null && result.risk_score_delta > 0 ? 'danger' : result.risk_score_delta == null ? 'neutral' : 'success'} icon={<ShieldAlert size={17} />} />
+        <StatCard embedded label="新增权限" value={result.permissions.added.length} tone="warning" icon={<Plus size={17} />} />
+        <StatCard embedded label="新增 SDK" value={result.sdks.added.length} tone="accent" icon={<Plus size={17} />} />
+        <StatCard embedded label="证据完整性" value={result.evidence_complete ? '可比较' : '部分证据'} tone={result.evidence_complete ? 'success' : 'neutral'} icon={<CheckCircle2 size={17} />} />
+      </MetricStrip>
 
       <GlassCard padding="md" highlight>
         <div className="mb-4 flex items-center justify-between gap-3">

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Activity, Cpu, Loader2, RefreshCw, Network, ShieldAlert, Hand } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
-import { StatCard } from '@/components/common/StatCard'
+import { StatCard, MetricStrip } from '@/components/common/StatCard'
 import { EnvironmentStatusCard } from '@/components/report/EnvironmentStatusCard'
 import { EmptyState, ErrorState } from '@/components/common/States'
 import { DeviceSelector } from '@/components/analysis/DeviceSelector'
@@ -43,12 +43,12 @@ export default function Environment() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="后端服务" value={health.data?.ok ? '在线' : health.isError ? '不可达' : '检测中'} tone={health.data?.ok ? 'success' : health.isError ? 'danger' : 'neutral'} icon={<Cpu size={18} />} />
-        <StatCard label="ADB 工具" value={labelFromBool(env.data?.checks.adb_available)} tone={toneFromBool(env.data?.checks.adb_available)} />
-        <StatCard label="设备在线" value={env.data ? `${env.data.details.device.online_count} 台` : '—'} tone={env.data?.checks.device_online ? 'success' : 'neutral'} />
-        <StatCard label="mitmproxy" value={labelFromBool(env.data?.checks.mitm_8080_listening)} tone={toneFromBool(env.data?.checks.mitm_8080_listening)} />
-      </div>
+      <MetricStrip>
+        <StatCard embedded label="后端服务" value={health.data?.ok ? '在线' : health.isError ? '不可达' : '检测中'} tone={health.data?.ok ? 'success' : health.isError ? 'danger' : 'neutral'} icon={<Cpu size={17} />} />
+        <StatCard embedded label="ADB 工具" value={labelFromBool(env.data?.checks.adb_available)} tone={toneFromBool(env.data?.checks.adb_available)} />
+        <StatCard embedded label="设备在线" value={env.data ? `${env.data.details.device.online_count} 台` : '—'} tone={env.data?.checks.device_online ? 'success' : 'neutral'} />
+        <StatCard embedded label="mitmproxy" value={labelFromBool(env.data?.checks.mitm_8080_listening)} tone={toneFromBool(env.data?.checks.mitm_8080_listening)} />
+      </MetricStrip>
 
       <GlassCard padding="md" highlight className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">

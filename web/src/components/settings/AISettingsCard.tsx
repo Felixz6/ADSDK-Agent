@@ -170,10 +170,7 @@ export function AISettingsCard() {
     }
   }, [load])
 
-  const locked = useMemo(
-    () => new Set(server?.locked_fields ?? []),
-    [server],
-  )
+  const locked = useMemo(() => new Set(server?.locked_fields ?? []), [server])
   const envKeyManaged = server?.api_key_source === 'environment'
 
   const errors = useMemo(() => (form ? validate(form) : {}), [form])
@@ -311,48 +308,65 @@ export function AISettingsCard() {
     )
   }
 
-  return (
-    <GlassCard padding="md" highlight>
-      <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-1.5">
-        <Bot size={15} /> AI 编排
-      </h3>
+  const keySourceLabel =
+    server.api_key_source === 'environment'
+      ? '环境变量'
+      : server.api_key_source === 'local_store'
+        ? '本机加密存储'
+        : '未配置'
 
-      {/* ---- 状态摘要 ---- */}
-      <div className="flex flex-wrap items-center gap-2 mb-3" data-testid="ai-settings-summary">
-        <StatusBadge
-          tone={server.enabled ? 'success' : 'neutral'}
-          label={server.enabled ? 'AI 已启用' : 'AI 未启用'}
-        />
-        <StatusBadge
-          tone={server.api_key_configured ? 'success' : 'warning'}
-          label={server.api_key_configured ? 'Key 已配置' : 'Key 未配置'}
-        />
-        <StatusBadge
-          tone="info"
-          label={`Key 来源:${
-            server.api_key_source === 'environment'
-              ? '环境变量'
-              : server.api_key_source === 'local_store'
-                ? '本机加密存储'
-                : '未配置'
-          }`}
-        />
-        {server.locked_fields.length > 0 && (
-          <StatusBadge tone="accent" label={`环境变量锁定 ${server.locked_fields.length} 项`} />
-        )}
+  return (
+    <GlassCard padding="md" highlight className="flex flex-col gap-5">
+      {/* ---- 标题与精简状态行（单主徽标 + 轻量元信息） ---- */}
+      <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-[var(--hairline)]">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+            <Bot size={15} /> AI 编排
+          </h3>
+          <div
+            className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[var(--text-tertiary)]"
+            data-testid="ai-settings-summary"
+          >
+            <StatusBadge
+              tone={server.enabled ? 'success' : 'neutral'}
+              label={server.enabled ? 'AI 已启用' : 'AI 未启用'}
+            />
+            <span
+              className={cn(
+                'font-medium',
+                server.api_key_configured ? 'text-[var(--success)]' : 'text-[var(--warning)]',
+              )}
+            >
+              {server.api_key_configured ? 'Key 已配置' : 'Key 未配置'}
+            </span>
+            <span aria-hidden>·</span>
+            <span>Key 来源:{keySourceLabel}</span>
+            {server.locked_fields.length > 0 && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="inline-flex items-center gap-1 rounded-md border border-[var(--hairline)] bg-[var(--bg-soft)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]">
+                  <Lock size={10} /> 环境变量锁定 {server.locked_fields.length} 项
+                </span>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {testResult && (
-        <div className="mb-3" data-testid="ai-settings-test-result">
+        <div
+          className="rounded-[10px] border border-[var(--hairline)] bg-[var(--bg-soft)] px-3.5 py-2.5"
+          data-testid="ai-settings-test-result"
+        >
           <StatusBadge
             tone={TEST_TONES[testResult.status]}
             label={`${TEST_MESSAGES[testResult.status]}(${testResult.latency_ms} ms)`}
           />
-          <details className="mt-1">
-            <summary className="text-[11px] text-[var(--text-tertiary)] cursor-pointer">
+          <details className="mt-1.5">
+            <summary className="text-xs text-[var(--text-tertiary)] cursor-pointer hover:text-[var(--text-primary)]">
               技术详情
             </summary>
-            <p className="text-[11px] text-[var(--text-tertiary)] mt-1 break-all">
+            <p className="text-xs font-mono text-[var(--text-tertiary)] mt-1 break-all">
               status={testResult.status} · provider={testResult.provider} · model=
               {testResult.model || '—'} · models_endpoint_supported=
               {String(testResult.models_endpoint_supported)}
@@ -363,21 +377,26 @@ export function AISettingsCard() {
       )}
 
       {phase === 'error' && loadError && (
-        <div className="mb-3" data-testid="ai-settings-error">
-          <p className="text-xs text-[var(--danger)]">{loadError}</p>
+        <div
+          className="rounded-[10px] border border-[var(--danger-line)] bg-[var(--danger-soft)] px-3.5 py-2.5"
+          data-testid="ai-settings-error"
+        >
+          <p className="text-xs font-medium text-[var(--danger)]">{loadError}</p>
           {errorCode && (
             <details className="mt-1">
-              <summary className="text-[11px] text-[var(--text-tertiary)] cursor-pointer">
+              <summary className="text-xs text-[var(--text-tertiary)] cursor-pointer">
                 技术错误码
               </summary>
-              <p className="text-[11px] text-[var(--text-tertiary)] mt-1 break-all">{errorCode}</p>
+              <p className="text-xs font-mono text-[var(--text-tertiary)] mt-1 break-all">{errorCode}</p>
             </details>
           )}
         </div>
       )}
 
-      {/* ---- 可编辑表单 ---- */}
-      <div className="flex flex-col gap-3 min-w-0">
+      {/* ---- 分组 1：连接与凭据 ---- */}
+      <section className="flex flex-col gap-3.5 min-w-0">
+        <GroupTitle title="连接与凭据" />
+
         <CheckboxField
           id="ai-enabled"
           label="启用 AI 编排"
@@ -386,14 +405,25 @@ export function AISettingsCard() {
           onChange={(v) => update('enabled', v)}
         />
 
-        <TextField
-          id="ai-provider"
-          label="Provider"
-          value={form.provider}
-          locked={locked.has('provider')}
-          onChange={(v) => update('provider', v)}
-          hint="支持 openai_compatible 或 deepseek（默认使用 DeepSeek）"
-        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 min-w-0">
+          <TextField
+            id="ai-provider"
+            label="Provider"
+            value={form.provider}
+            locked={locked.has('provider')}
+            onChange={(v) => update('provider', v)}
+            hint="支持 openai_compatible 或 deepseek（默认使用 DeepSeek）"
+          />
+          <TextField
+            id="ai-model"
+            label="Model"
+            value={form.model}
+            locked={locked.has('model')}
+            error={errors.model}
+            placeholder="deepseek-chat"
+            onChange={(v) => update('model', v)}
+          />
+        </div>
 
         <TextField
           id="ai-base-url"
@@ -405,23 +435,13 @@ export function AISettingsCard() {
           onChange={(v) => update('base_url', v)}
         />
 
-        <TextField
-          id="ai-model"
-          label="Model"
-          value={form.model}
-          locked={locked.has('model')}
-          error={errors.model}
-          placeholder="deepseek-chat"
-          onChange={(v) => update('model', v)}
-        />
-
         {/* ---- API Key(只提交,不回读) ---- */}
-        <div className="flex flex-col gap-1 min-w-0">
-          <label htmlFor="ai-api-key" className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wide">
+        <div className="flex flex-col gap-1.5 min-w-0">
+          <label htmlFor="ai-api-key" className="text-xs font-medium text-[var(--text-secondary)]">
             API Key
             {envKeyManaged && (
-              <span className="ml-1 inline-flex items-center gap-0.5 text-[var(--accent-purple)] normal-case tracking-normal">
-                <Lock size={10} /> 由环境变量管理
+              <span className="ml-1.5 inline-flex items-center gap-0.5 text-[var(--text-tertiary)] font-normal">
+                <Lock size={11} /> 由环境变量管理
               </span>
             )}
           </label>
@@ -442,8 +462,7 @@ export function AISettingsCard() {
                     : '请输入 API Key'
               }
               className={cn(
-                'flex-1 min-w-0 px-2.5 py-1.5 rounded-[10px] text-sm bg-transparent border',
-                'border-[var(--border-soft)] text-[var(--text-primary)]',
+                'control-input flex-1 min-w-0 font-mono',
                 envKeyManaged && 'opacity-50 cursor-not-allowed',
               )}
             />
@@ -452,17 +471,21 @@ export function AISettingsCard() {
               aria-label={showKey ? '隐藏输入' : '显示输入'}
               disabled={envKeyManaged}
               onClick={() => setShowKey((v) => !v)}
-              className="shrink-0 p-1.5 rounded-[8px] border border-[var(--border-soft)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-40"
+              className="control-icon shrink-0"
             >
-              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
-          <p className="text-[11px] text-[var(--text-tertiary)]">
+          <p className="text-xs text-[var(--text-tertiary)]">
             API Key 仅提交到本机后端,并使用 Windows 用户级加密保存。页面不会读取或显示已保存的完整密钥。
           </p>
         </div>
+      </section>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+      {/* ---- 分组 2：配额与超时 ---- */}
+      <section className="flex flex-col gap-3.5 pt-4 border-t border-[var(--hairline)] min-w-0">
+        <GroupTitle title="配额与超时" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 min-w-0">
           <NumberField
             id="ai-token-budget"
             label="默认 Token 预算"
@@ -517,6 +540,13 @@ export function AISettingsCard() {
             error={errors.max_output_tokens}
             onChange={(v) => update('max_output_tokens', v)}
           />
+        </div>
+      </section>
+
+      {/* ---- 分组 3：策略与缓存 ---- */}
+      <section className="flex flex-col gap-3.5 pt-4 border-t border-[var(--hairline)] min-w-0">
+        <GroupTitle title="策略与缓存" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 min-w-0">
           <NumberField
             id="ai-cache-ttl"
             label="缓存 TTL(秒)"
@@ -539,59 +569,69 @@ export function AISettingsCard() {
           />
         </div>
 
-        <CheckboxField
-          id="ai-cache-enabled"
-          label="启用结果缓存"
-          checked={form.cache_enabled}
-          locked={locked.has('cache_enabled')}
-          onChange={(v) => update('cache_enabled', v)}
-        />
-        <CheckboxField
-          id="ai-allow-dynamic"
-          label="允许动态工具(设备状态变更类)"
-          checked={form.allow_dynamic_tools}
-          locked={locked.has('allow_dynamic_tools')}
-          onChange={(v) => update('allow_dynamic_tools', v)}
-        />
-      </div>
+        <div className="flex flex-col gap-2.5 pt-1">
+          <CheckboxField
+            id="ai-cache-enabled"
+            label="启用结果缓存"
+            checked={form.cache_enabled}
+            locked={locked.has('cache_enabled')}
+            onChange={(v) => update('cache_enabled', v)}
+          />
+          <CheckboxField
+            id="ai-allow-dynamic"
+            label="允许动态工具(设备状态变更类)"
+            checked={form.allow_dynamic_tools}
+            locked={locked.has('allow_dynamic_tools')}
+            onChange={(v) => update('allow_dynamic_tools', v)}
+          />
+        </div>
+      </section>
 
       {/* ---- 操作按钮 ---- */}
-      <div className="flex flex-wrap items-center gap-2 mt-4">
-        <button
-          type="button"
-          onClick={handleTest}
-          disabled={busy}
-          data-testid="ai-settings-test"
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {phase === 'testing' ? <Loader2 size={14} className="animate-spin" /> : <Plug size={14} />}
-          测试连接
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={busy || hasErrors || !dirty}
-          data-testid="ai-settings-save"
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-active)] text-[var(--text-primary)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {phase === 'saving' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          保存配置
-        </button>
-        <button
-          type="button"
-          onClick={handleReset}
-          disabled={busy || !dirty}
-          data-testid="ai-settings-reset"
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <RotateCcw size={14} /> 重置未保存修改
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[var(--hairline)]">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={busy || hasErrors || !dirty}
+            data-testid="ai-settings-save"
+            className="control-primary"
+          >
+            {phase === 'saving' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            保存配置
+          </button>
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={busy}
+            data-testid="ai-settings-test"
+            className="control-button"
+          >
+            {phase === 'testing' ? <Loader2 size={14} className="animate-spin" /> : <Plug size={14} />}
+            测试连接
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={busy || !dirty}
+            data-testid="ai-settings-reset"
+            className="control-button"
+          >
+            <RotateCcw size={14} /> 重置未保存修改
+          </button>
+          {phase === 'saved' && (
+            <span className="text-xs font-medium text-[var(--success)]" data-testid="ai-settings-saved">
+              已保存
+            </span>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={() => setConfirmDelete(true)}
           disabled={busy || envKeyManaged || !server.api_key_configured}
           data-testid="ai-settings-delete-key"
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[10px] text-sm border border-[var(--border-soft)] text-[var(--danger)] hover:bg-[rgba(255,107,138,0.08)] disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 rounded-full text-xs font-medium border border-[var(--danger-line)] text-[var(--danger)] hover:bg-[var(--danger-soft)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {phase === 'deleting_key' ? (
             <Loader2 size={14} className="animate-spin" />
@@ -600,14 +640,9 @@ export function AISettingsCard() {
           )}
           删除已保存 API Key
         </button>
-        {phase === 'saved' && (
-          <span className="text-[11px] text-[var(--success)]" data-testid="ai-settings-saved">
-            已保存
-          </span>
-        )}
       </div>
 
-      <p className="text-[11px] text-[var(--text-tertiary)] mt-2">
+      <p className="text-xs text-[var(--text-tertiary)] leading-relaxed -mt-2">
         配置优先级:环境变量 &gt; 本机保存 &gt; 代码默认值。被环境变量管理的字段在此页面只读。
         AI 不可用时,确定性分析与报告仍照常生成。
       </p>
@@ -628,9 +663,15 @@ export function AISettingsCard() {
 /* -------------------------------------------------------------------------
  * 受控字段(锁定字段统一禁用 + 提示,保证「不得让本地保存覆盖环境变量」)
  * ------------------------------------------------------------------------- */
+function GroupTitle({ title }: { title: string }) {
+  return (
+    <p className="text-xs font-semibold tracking-wide text-[var(--text-tertiary)]">{title}</p>
+  )
+}
+
 function LockHint() {
   return (
-    <span className="ml-1 inline-flex items-center gap-0.5 text-[var(--accent-purple)] normal-case tracking-normal">
+    <span className="ml-1.5 inline-flex items-center gap-0.5 text-[var(--text-tertiary)] font-normal">
       <Lock size={10} /> 该字段由环境变量管理
     </span>
   )
@@ -656,8 +697,8 @@ function TextField({
   onChange: (v: string) => void
 }) {
   return (
-    <div className="flex flex-col gap-1 min-w-0">
-      <label htmlFor={id} className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wide">
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <label htmlFor={id} className="text-xs font-medium text-[var(--text-secondary)]">
         {label}
         {locked && <LockHint />}
       </label>
@@ -670,13 +711,13 @@ function TextField({
         spellCheck={false}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          'w-full min-w-0 px-2.5 py-1.5 rounded-[10px] text-sm bg-transparent border text-[var(--text-primary)]',
-          error ? 'border-[var(--danger)]' : 'border-[var(--border-soft)]',
+          'control-input w-full min-w-0',
+          error && 'border-[var(--danger)] focus:border-[var(--danger)]',
           locked && 'opacity-50 cursor-not-allowed',
         )}
       />
-      {error && <span className="text-[11px] text-[var(--danger)]">{error}</span>}
-      {hint && !error && <span className="text-[11px] text-[var(--text-tertiary)]">{hint}</span>}
+      {error && <span className="text-xs text-[var(--danger)]">{error}</span>}
+      {hint && !error && <span className="text-xs text-[var(--text-tertiary)]">{hint}</span>}
     </div>
   )
 }
@@ -699,8 +740,8 @@ function NumberField({
   onChange: (v: number) => void
 }) {
   return (
-    <div className="flex flex-col gap-1 min-w-0">
-      <label htmlFor={id} className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wide">
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <label htmlFor={id} className="text-xs font-medium text-[var(--text-secondary)]">
         {label}
         {locked && <LockHint />}
       </label>
@@ -715,12 +756,12 @@ function NumberField({
         disabled={locked}
         onChange={(e) => onChange(Number(e.target.value))}
         className={cn(
-          'w-full min-w-0 px-2.5 py-1.5 rounded-[10px] text-sm bg-transparent border text-[var(--text-primary)]',
-          error ? 'border-[var(--danger)]' : 'border-[var(--border-soft)]',
+          'control-input w-full min-w-0 tabular-nums',
+          error && 'border-[var(--danger)] focus:border-[var(--danger)]',
           locked && 'opacity-50 cursor-not-allowed',
         )}
       />
-      {error && <span className="text-[11px] text-[var(--danger)]">{error}</span>}
+      {error && <span className="text-xs text-[var(--danger)]">{error}</span>}
     </div>
   )
 }
@@ -741,8 +782,8 @@ function SelectField({
   onChange: (v: string) => void
 }) {
   return (
-    <div className="flex flex-col gap-1 min-w-0">
-      <label htmlFor={id} className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wide">
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <label htmlFor={id} className="text-xs font-medium text-[var(--text-secondary)]">
         {label}
         {locked && <LockHint />}
       </label>
@@ -752,7 +793,7 @@ function SelectField({
         disabled={locked}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          'w-full min-w-0 px-2.5 py-1.5 rounded-[10px] text-sm bg-transparent border border-[var(--border-soft)] text-[var(--text-primary)]',
+          'control-input w-full min-w-0',
           locked && 'opacity-50 cursor-not-allowed',
         )}
       >
@@ -780,16 +821,19 @@ function CheckboxField({
   onChange: (v: boolean) => void
 }) {
   return (
-    <div className="flex items-center gap-2 min-w-0">
+    <div className="flex items-center gap-2.5 min-w-0">
       <input
         id={id}
         type="checkbox"
         checked={checked}
         disabled={locked}
         onChange={(e) => onChange(e.target.checked)}
-        className={cn('shrink-0', locked && 'opacity-50 cursor-not-allowed')}
+        className={cn(
+          'h-4 w-4 shrink-0 rounded accent-[var(--text-primary)]',
+          locked && 'opacity-50 cursor-not-allowed',
+        )}
       />
-      <label htmlFor={id} className="text-sm text-[var(--text-secondary)] min-w-0">
+      <label htmlFor={id} className="text-sm text-[var(--text-primary)] min-w-0 cursor-pointer">
         {label}
         {locked && <LockHint />}
       </label>

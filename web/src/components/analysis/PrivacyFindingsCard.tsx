@@ -29,10 +29,10 @@ const SEVERITY_LABEL: Record<PrivacyFindingSeverity, string> = {
 }
 
 const SEVERITY_CLASS: Record<PrivacyFindingSeverity, string> = {
-  high: 'border-[var(--danger-line)] text-[var(--danger)]',
-  medium: 'border-[var(--warning-line)] text-[var(--warning)]',
-  low: 'border-[var(--hairline)] text-[var(--text-secondary)]',
-  info: 'border-[var(--hairline)] text-[var(--status-neutral)]',
+  high: 'bg-[var(--danger-soft)] border-[var(--danger-line)] text-[var(--danger)]',
+  medium: 'bg-[var(--warning-soft)] border-[var(--warning-line)] text-[var(--warning)]',
+  low: 'bg-[var(--fill-quiet)] border-[var(--hairline)] text-[var(--text-secondary)]',
+  info: 'bg-[var(--neutral-soft)] border-[var(--neutral-line)] text-[var(--status-neutral)]',
 }
 
 const CONFIDENCE_LABEL: Record<PrivacyFindingConfidence, string> = {
@@ -47,10 +47,10 @@ const TYPE_LABEL: Record<PrivacyFindingType, string> = {
   evidence_gap: '证据缺口',
 }
 
-const TYPE_CLASS: Record<PrivacyFindingType, string> = {
-  observed: 'border-[var(--success-line)] text-[var(--success)]',
-  suspected: 'border-[var(--warning-line)] text-[var(--warning)]',
-  evidence_gap: 'border-[var(--hairline)] text-[var(--status-neutral)]',
+const TYPE_TEXT_CLASS: Record<PrivacyFindingType, string> = {
+  observed: 'text-[var(--success)]',
+  suspected: 'text-[var(--warning)]',
+  evidence_gap: 'text-[var(--status-neutral)]',
 }
 
 const EVIDENCE_LABEL: Record<PrivacyEvidenceType, string> = {
@@ -143,11 +143,11 @@ export function PrivacyFindingsCard({
         />
       </div>
 
-      <p className="mt-3 rounded-[10px] border border-[rgba(242,203,119,0.35)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)] break-words">
+      <p className="mt-3 rounded-[10px] border border-[var(--warning-line)] bg-[var(--warning-soft)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)] break-words">
         {findings.disclaimer}
       </p>
 
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-[var(--hairline)] rounded-[12px] border border-[var(--hairline)] bg-[var(--bg-soft)] overflow-hidden">
         <Metric label="发现数量" value={summary.finding_count} />
         <Metric label="已观察事实" value={summary.confirmed_observation_count} />
         <Metric label="疑似风险提示" value={summary.suspected_risk_count} />
@@ -156,13 +156,13 @@ export function PrivacyFindingsCard({
       </div>
 
       {findings.findings.length > 0 ? (
-        <ul className="mt-4 flex flex-col gap-2 min-w-0">
+        <ul className="mt-4 divide-y divide-[var(--hairline)] border-t border-b border-[var(--hairline)] min-w-0">
           {findings.findings.map((item) => (
             <FindingRow key={item.finding_id} finding={item} />
           ))}
         </ul>
       ) : (
-        <p className="mt-4 rounded-[10px] border border-[var(--border-soft)] px-3 py-4 text-center text-sm text-[var(--text-tertiary)]">
+        <p className="mt-4 rounded-[10px] border border-[var(--hairline)] bg-[var(--bg-soft)] px-3 py-4 text-center text-sm text-[var(--text-tertiary)]">
           本次观察中没有形成可展示的隐私发现。
         </p>
       )}
@@ -172,7 +172,7 @@ export function PrivacyFindingsCard({
           <ShieldQuestion size={14} className="mt-0.5 shrink-0 text-[var(--warning)]" />
           <div className="min-w-0">
             <p className="font-medium text-[var(--text-primary)]">证据限制</p>
-            <ul className="mt-1 list-disc pl-4 break-words">
+            <ul className="mt-1 list-disc pl-4 break-words space-y-0.5">
               {findings.limitations.map((item, index) => (
                 <li key={index}>{item}</li>
               ))}
@@ -181,20 +181,20 @@ export function PrivacyFindingsCard({
         </div>
       )}
 
-      <details className="mt-4 rounded-[10px] border border-[var(--border-soft)] px-3 py-2 min-w-0">
-        <summary className="cursor-pointer text-xs text-[var(--text-tertiary)]">
-          规则评估明细
+      <details className="mt-4 rounded-[10px] border border-[var(--hairline)] px-3 py-2 min-w-0">
+        <summary className="cursor-pointer text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+          规则评估明细（{findings.rule_results.length}）
         </summary>
-        <ul className="mt-2 flex flex-col gap-1.5">
+        <ul className="mt-2 divide-y divide-[var(--hairline)]">
           {findings.rule_results.map((rule) => (
             <li
               key={rule.rule_id}
-              className="flex items-start justify-between gap-2 flex-wrap text-[11px]"
+              className="flex items-start justify-between gap-2 flex-wrap py-1.5 text-xs"
             >
               <span className="min-w-0 break-all font-mono text-[var(--text-secondary)]">
                 {rule.rule_id}
               </span>
-              <span className="shrink-0 text-[var(--text-tertiary)]">{rule.status}</span>
+              <span className="shrink-0 text-[var(--text-tertiary)] font-mono">{rule.status}</span>
             </li>
           ))}
         </ul>
@@ -205,9 +205,9 @@ export function PrivacyFindingsCard({
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[10px] border border-[var(--border-soft)] px-2.5 py-2 min-w-0">
-      <p className="text-[10px] text-[var(--text-tertiary)] truncate">{label}</p>
-      <p className="mt-0.5 text-base font-semibold text-[var(--text-primary)]">{value}</p>
+    <div className="px-3 py-2.5 min-w-0">
+      <p className="text-[11px] text-[var(--text-tertiary)] truncate">{label}</p>
+      <p className="mt-0.5 text-lg font-semibold tabular-nums text-[var(--text-primary)]">{value}</p>
     </div>
   )
 }
@@ -220,45 +220,42 @@ function FindingRow({ finding }: { finding: PrivacyFinding }) {
   })).filter((group) => group.refs.length > 0)
 
   return (
-    <li className="rounded-[12px] border border-[var(--border-soft)] p-3 min-w-0">
-      <div className="flex items-start justify-between gap-2 flex-wrap">
-        <p className="min-w-0 break-words text-sm font-medium text-[var(--text-primary)]">
-          {finding.title}
-        </p>
-        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-          <span
-            className={cn(
-              'rounded-full border px-2 py-0.5 text-[11px]',
-              SEVERITY_CLASS[finding.severity],
-            )}
-          >
-            {SEVERITY_LABEL[finding.severity]}
-          </span>
-          <span
-            className={cn(
-              'rounded-full border px-2 py-0.5 text-[11px]',
-              TYPE_CLASS[finding.finding_type],
-            )}
-          >
-            {TYPE_LABEL[finding.finding_type]}
-          </span>
-          <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[11px] text-[var(--text-tertiary)]">
-            {CONFIDENCE_LABEL[finding.confidence]}
-          </span>
+    <li className="py-3.5 min-w-0">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-sm font-semibold text-[var(--text-primary)]">
+            {finding.title}
+          </p>
+          <div className="mt-1 flex items-center gap-2 flex-wrap text-xs text-[var(--text-tertiary)]">
+            <span className={cn('font-medium', TYPE_TEXT_CLASS[finding.finding_type])}>
+              {TYPE_LABEL[finding.finding_type]}
+            </span>
+            <span aria-hidden>·</span>
+            <span>{CONFIDENCE_LABEL[finding.confidence]}</span>
+            <span aria-hidden>·</span>
+            <span className="tabular-nums">
+              {CONSENT_LABEL[finding.consent_state]} · 证据 {finding.evidence_refs.length} 条
+            </span>
+          </div>
         </div>
+        <span
+          className={cn(
+            'shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium',
+            SEVERITY_CLASS[finding.severity],
+          )}
+        >
+          {SEVERITY_LABEL[finding.severity]}
+        </span>
       </div>
 
-      <p className="mt-1.5 text-xs text-[var(--text-secondary)] break-words">
+      <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)] break-words">
         {finding.summary}
-      </p>
-      <p className="mt-1 text-[11px] text-[var(--text-tertiary)] break-words">
-        {CONSENT_LABEL[finding.consent_state]} · 证据 {finding.evidence_refs.length} 条
       </p>
 
       {finding.reason_codes.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1">
           {finding.reason_codes.map((code) => (
-            <li key={code} className="text-[11px] text-[var(--text-secondary)] break-words">
+            <li key={code} className="text-xs text-[var(--text-secondary)] break-words">
               · {REASON_COPY[code] ?? code}
             </li>
           ))}
@@ -269,28 +266,30 @@ function FindingRow({ finding }: { finding: PrivacyFinding }) {
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="mt-2 flex items-center gap-1 text-[11px] text-[var(--accent-blue)]"
+        className="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--text-primary)] hover:underline"
       >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         证据链（{chain.length} 个环节）
       </button>
 
       {open && (
-        <div className="mt-2 flex flex-col gap-2 min-w-0">
-          <p className="text-[11px] text-[var(--text-tertiary)] break-words">
+        <div className="mt-2.5 flex flex-col gap-2.5 rounded-[10px] bg-[var(--bg-soft)] p-3 min-w-0">
+          <p className="text-xs leading-relaxed text-[var(--text-secondary)] break-words">
             {finding.explanation}
           </p>
           {chain.length > 0 ? (
-            chain.map((group) => (
-              <EvidenceGroup key={group.type} type={group.type} refs={group.refs} />
-            ))
+            <div className="divide-y divide-[var(--hairline)] border-t border-[var(--hairline)]">
+              {chain.map((group) => (
+                <EvidenceGroup key={group.type} type={group.type} refs={group.refs} />
+              ))}
+            </div>
           ) : (
-            <p className="text-[11px] text-[var(--text-tertiary)]">
+            <p className="text-xs text-[var(--text-tertiary)]">
               本发现没有可展示的证据引用。
             </p>
           )}
           {finding.limitations.length > 0 && (
-            <ul className="list-disc pl-4 text-[11px] text-[var(--text-secondary)] break-words">
+            <ul className="list-disc pl-4 text-xs text-[var(--text-secondary)] break-words space-y-0.5">
               {finding.limitations.map((item, index) => (
                 <li key={index}>{item}</li>
               ))}
@@ -310,18 +309,18 @@ function EvidenceGroup({
   refs: PrivacyEvidenceRef[]
 }) {
   return (
-    <div className="rounded-[10px] border border-[var(--border-soft)] px-2.5 py-2 min-w-0">
-      <p className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+    <div className="py-2 first:pt-2 last:pb-0 min-w-0">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-tertiary)]">
         {EVIDENCE_LABEL[type]}
       </p>
       <ul className="mt-1 flex flex-col gap-1">
         {refs.map((ref) => (
           <li
             key={`${ref.evidence_type}-${ref.evidence_id}`}
-            className="min-w-0 break-words text-[11px] text-[var(--text-secondary)]"
+            className="min-w-0 break-words text-xs text-[var(--text-secondary)]"
           >
             {ref.label}
-            <span className="ml-1 break-all font-mono text-[10px] text-[var(--text-tertiary)]">
+            <span className="ml-1.5 break-all font-mono text-[11px] text-[var(--text-tertiary)]">
               {ref.artifact}#{ref.evidence_id}
             </span>
           </li>

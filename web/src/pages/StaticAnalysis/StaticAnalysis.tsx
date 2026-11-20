@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
-import { StatCard } from '@/components/common/StatCard'
+import { StatCard, MetricStrip } from '@/components/common/StatCard'
 import { PipelineTimeline } from '@/components/report/PipelineTimeline'
 import { STEP_STATUS_LABEL } from '@/components/common/StatusBadge'
 import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
@@ -47,12 +47,12 @@ export default function StaticAnalysis() {
         actions={<RiskBadge level={risk} />}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="应用包名" value={info?.package_name ?? '—'} tone="default" icon={<Package size={18} />} hint={info?.application_label ?? undefined} />
-        <StatCard label="版本" value={info?.version_name ?? '—'} tone="accent" hint={info?.version_code != null ? `versionCode ${info.version_code}` : undefined} />
-        <StatCard label="识别 SDK 数" value={resp.sdk_count} tone="success" icon={<ShieldCheck size={18} />} />
-        <StatCard label="整体状态" value={STEP_STATUS_LABEL[resp.status] ?? resp.status} tone={resp.status === 'success' ? 'success' : 'warning'} icon={<CheckCircle2 size={18} />} />
-      </div>
+      <MetricStrip>
+        <StatCard embedded label="应用包名" value={info?.package_name ?? '—'} tone="default" icon={<Package size={17} />} hint={info?.application_label ?? undefined} />
+        <StatCard embedded label="版本" value={info?.version_name ?? '—'} tone="accent" hint={info?.version_code != null ? `versionCode ${info.version_code}` : undefined} />
+        <StatCard embedded label="识别 SDK 数" value={resp.sdk_count} tone="success" icon={<ShieldCheck size={17} />} />
+        <StatCard embedded label="整体状态" value={STEP_STATUS_LABEL[resp.status] ?? resp.status} tone={resp.status === 'success' ? 'success' : 'warning'} icon={<CheckCircle2 size={17} />} />
+      </MetricStrip>
 
       <RiskSummaryCard summary={resp.risk_summary} />
       <PermissionSummaryPanel appInfo={info} />

@@ -22,9 +22,9 @@ const CONFIDENCE_LABEL: Record<CorrelationConfidence, string> = {
 }
 
 const CONFIDENCE_CLASS: Record<CorrelationConfidence, string> = {
-  high: 'border-[var(--success-line)] text-[var(--success)]',
-  medium: 'border-[var(--warning-line)] text-[var(--warning)]',
-  low: 'border-[var(--hairline)] text-[var(--status-neutral)]',
+  high: 'bg-[var(--success-soft)] border-[var(--success-line)] text-[var(--success)]',
+  medium: 'bg-[var(--warning-soft)] border-[var(--warning-line)] text-[var(--warning)]',
+  low: 'bg-[var(--neutral-soft)] border-[var(--hairline)] text-[var(--status-neutral)]',
 }
 
 export function EvidenceCorrelationCard({
@@ -69,7 +69,7 @@ export function EvidenceCorrelationCard({
         />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-[var(--hairline)] rounded-[12px] border border-[var(--hairline)] bg-[var(--bg-soft)] overflow-hidden">
         <Metric label="动态事件" value={summary.dynamic_event_count} />
         <Metric label="网络请求" value={summary.network_request_count} />
         <Metric label="关联数量" value={summary.correlated_pair_count} />
@@ -77,18 +77,18 @@ export function EvidenceCorrelationCard({
         <Metric label="中置信" value={summary.medium_confidence_count} />
         <Metric label="低置信" value={summary.low_confidence_count} />
       </div>
-      <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">
+      <p className="mt-2 text-xs text-[var(--text-tertiary)] tabular-nums">
         时间窗口 {correlation.window_ms} ms
       </p>
 
       {correlation.items.length > 0 ? (
-        <ul className="mt-4 flex flex-col gap-2 min-w-0">
+        <ul className="mt-3 divide-y divide-[var(--hairline)] border-t border-b border-[var(--hairline)] min-w-0">
           {correlation.items.slice(0, 50).map((item) => (
             <CorrelationRow key={item.correlation_id} item={item} />
           ))}
         </ul>
       ) : (
-        <p className="mt-4 rounded-[10px] border border-[var(--border-soft)] px-3 py-4 text-center text-sm text-[var(--text-tertiary)]">
+        <p className="mt-4 rounded-[10px] border border-[var(--hairline)] bg-[var(--bg-soft)] px-3 py-4 text-center text-sm text-[var(--text-tertiary)]">
           {correlation.status === 'evaluated'
             ? '未观察到时间窗口内的可关联证据。'
             : STATUS_COPY[correlation.status]}
@@ -100,7 +100,7 @@ export function EvidenceCorrelationCard({
           <ShieldQuestion size={14} className="mt-0.5 shrink-0 text-[var(--warning)]" />
           <div className="min-w-0">
             <p className="font-medium text-[var(--text-primary)]">证据限制</p>
-            <ul className="mt-1 list-disc pl-4 break-words">
+            <ul className="mt-1 list-disc pl-4 break-words space-y-0.5">
               {correlation.limitations.map((item, index) => (
                 <li key={index}>{item}</li>
               ))}
@@ -109,11 +109,11 @@ export function EvidenceCorrelationCard({
         </div>
       )}
 
-      <details className="mt-4 rounded-[10px] border border-[var(--border-soft)] px-3 py-2 min-w-0">
-        <summary className="cursor-pointer text-xs text-[var(--text-tertiary)]">
+      <details className="mt-4 rounded-[10px] border border-[var(--hairline)] px-3 py-2 min-w-0">
+        <summary className="cursor-pointer text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
           技术详情
         </summary>
-        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-[11px] text-[var(--text-secondary)]">
+        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs font-mono text-[var(--text-secondary)]">
           {JSON.stringify(correlation, null, 2)}
         </pre>
       </details>
@@ -123,34 +123,34 @@ export function EvidenceCorrelationCard({
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[10px] border border-[var(--border-soft)] px-2.5 py-2 min-w-0">
-      <p className="text-[10px] text-[var(--text-tertiary)] truncate">{label}</p>
-      <p className="mt-0.5 text-base font-semibold text-[var(--text-primary)]">{value}</p>
+    <div className="px-3 py-2.5 min-w-0">
+      <p className="text-[11px] text-[var(--text-tertiary)] truncate">{label}</p>
+      <p className="mt-0.5 text-lg font-semibold tabular-nums text-[var(--text-primary)]">{value}</p>
     </div>
   )
 }
 
 function CorrelationRow({ item }: { item: EvidenceCorrelationItem }) {
   return (
-    <li className="rounded-[12px] border border-[var(--border-soft)] p-3 min-w-0">
+    <li className="py-3 min-w-0">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <p className="min-w-0 break-all font-mono text-xs text-[var(--text-primary)]">
+        <p className="min-w-0 break-all font-mono text-xs font-medium text-[var(--text-primary)]">
           {item.event_type} ↔ {item.request_method} {item.request_host}
         </p>
         <span
           className={cn(
-            'shrink-0 rounded-full border px-2 py-0.5 text-[11px]',
+            'shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium',
             CONFIDENCE_CLASS[item.confidence],
           )}
         >
           {CONFIDENCE_LABEL[item.confidence]}置信
         </span>
       </div>
-      <p className="mt-1 text-xs text-[var(--text-secondary)] break-words">
+      <p className="mt-1 text-xs text-[var(--text-secondary)] tabular-nums break-words">
         时间差 {item.delta_ms} ms · {consentLabel(item.consent_state)}
       </p>
       <p className="mt-1 text-xs text-[var(--text-tertiary)] break-words">{item.summary}</p>
-      <p className="mt-1 break-all font-mono text-[10px] text-[var(--text-tertiary)]">
+      <p className="mt-1 break-all font-mono text-[11px] text-[var(--text-tertiary)]">
         {item.reason_codes.join(' · ')}
       </p>
     </li>

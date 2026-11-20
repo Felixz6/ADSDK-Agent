@@ -13,7 +13,7 @@ interface ModeOption {
 
 const OPTIONS: ModeOption[] = [
   { value: 'static', label: '静态分析', desc: '解包识别 SDK 与清单', icon: FileSearch },
-  { value: 'dynamic', label: '动态分析', desc: ' consenting 前后行为取证', icon: Activity },
+  { value: 'dynamic', label: '动态分析', desc: '同意前后敏感行为取证', icon: Activity },
   { value: 'traffic', label: '流量观测', desc: '记录网络外发样本', icon: Network },
   { value: 'ai', label: 'AI 编排分析', desc: '按目标编排工具并生成综合研判', icon: Bot },
 ]
