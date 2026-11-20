@@ -29,7 +29,9 @@ from app.pipelines.common import (
     _public_ai_section,
     task_service_response_payload,
 )
-from app.pipelines.full_analysis import _run_m7b_full_analysis_session
+from app.pipelines.full_analysis import (
+    run_full_analysis_session,
+)
 from app.services import AITaskService
 from app.tasks.models import (
     TaskAIArtifactSummary,
@@ -107,7 +109,7 @@ def _run_ai_orchestrated_task(
     apk_path = str(payload["apk_path"])
 
     if scope == "full_analysis":
-        return _run_m7b_full_analysis_session(task=task, payload=payload)
+        return run_full_analysis_session(task=task, payload=payload)
 
     report_step("ai_planning", "running", "正在准备确定性证据")
     deterministic: dict[str, Any] | JSONResponse

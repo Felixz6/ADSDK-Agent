@@ -241,18 +241,40 @@ AI_PROMPT_VERSION = os.getenv("AI_PROMPT_VERSION", "ai-plan-v1.1").strip() or (
     "ai-plan-v1.1"
 )
 
+def _env_int_with_alias(
+    primary_key: str,
+    alias_key: str,
+    default: int,
+    min_val: int,
+    max_val: int,
+) -> int:
+    val_str = os.getenv(primary_key)
+    if val_str is None or not val_str.strip():
+        val_str = os.getenv(alias_key)
+    if val_str is None or not val_str.strip():
+        return default
+    try:
+        val = int(val_str.strip())
+        return max(min_val, min(max_val, val))
+    except (ValueError, TypeError):
+        return default
+
+
 # ---------------------------------------------------------------------------
-# M7A — full-analysis orchestration (device lease + consent checkpoint).
+# Full-analysis orchestration (device lease + consent checkpoint).
 # ---------------------------------------------------------------------------
 # How long a device lease may go without a heartbeat before another run may
 # reclaim it. A lease whose holder is still alive is never stolen regardless of
 # this value; the window only bounds recovery after a crash.
-M7A_LEASE_STALE_SECONDS = _env_int_range(
-    "M7A_LEASE_STALE_SECONDS", 600, 30, 86400
+DEVICE_LEASE_STALE_SECONDS = _env_int_with_alias(
+    "DEVICE_LEASE_STALE_SECONDS", "M7A_LEASE_STALE_SECONDS", 600, 30, 86400
 )
+M7A_LEASE_STALE_SECONDS = DEVICE_LEASE_STALE_SECONDS
+
 # Upper bound on how long the orchestrator waits for the operator to resolve a
 # consent checkpoint. Reaching it NEVER auto-confirms consent — the wait exits
 # so cleanup can run and the run is recorded as partial.
-M7A_CONSENT_WAIT_SECONDS = _env_int_range(
-    "M7A_CONSENT_WAIT_SECONDS", 900, 30, 86400
+CONSENT_CHECKPOINT_WAIT_SECONDS = _env_int_with_alias(
+    "CONSENT_CHECKPOINT_WAIT_SECONDS", "M7A_CONSENT_WAIT_SECONDS", 900, 30, 86400
 )
+M7A_CONSENT_WAIT_SECONDS = CONSENT_CHECKPOINT_WAIT_SECONDS

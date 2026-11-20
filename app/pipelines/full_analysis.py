@@ -13,7 +13,7 @@ from app.ai.settings_service import resolve_effective_ai_settings
 from app.ai.tool_registry import AIToolRegistry
 from app.api.env import env_check
 from app.config import (
-    M7A_CONSENT_WAIT_SECONDS,
+    CONSENT_CHECKPOINT_WAIT_SECONDS,
     SCHEMA_VERSION,
 )
 from app.container import (
@@ -312,7 +312,7 @@ def _run_m7b_full_analysis_session(
         force_stop_package_action=lambda device, package: _adb_cleanup_action(
             device, ["shell", "am", "force-stop", package]
         ),
-        consent_wait_seconds=M7A_CONSENT_WAIT_SECONDS,
+        consent_wait_seconds=CONSENT_CHECKPOINT_WAIT_SECONDS,
     )
     session = FullAnalysisSession(
         task_id=task.id,
@@ -455,6 +455,14 @@ def _run_m7b_full_analysis_session(
     return report
 
 
+capture_device_session_snapshot = _capture_m7b_device_snapshot
+find_target_process_pid = _m7b_target_pid
+check_owned_resource_present = _m7b_resource_present
+match_owned_resource_identity = _m7b_resource_identity_matches
+register_session_owned_resources = _register_m7b_owned_resources
+run_full_analysis_session = _run_m7b_full_analysis_session
+
+
 __all__ = [
     "_capture_m7b_device_snapshot",
     "_m7b_resource_identity_matches",
@@ -462,4 +470,10 @@ __all__ = [
     "_m7b_target_pid",
     "_register_m7b_owned_resources",
     "_run_m7b_full_analysis_session",
+    "capture_device_session_snapshot",
+    "check_owned_resource_present",
+    "find_target_process_pid",
+    "match_owned_resource_identity",
+    "register_session_owned_resources",
+    "run_full_analysis_session",
 ]

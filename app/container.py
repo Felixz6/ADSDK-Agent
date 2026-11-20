@@ -10,12 +10,12 @@ from app.ai.settings_service import AISettingsService
 from app.ai.settings_store import AISettingsStore
 from app.comparisons import ComparisonService
 from app.config import (
+    DEVICE_LEASE_STALE_SECONDS,
     FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS,
     FRIDA_SERVER_LOCAL_PATH,
     FRIDA_SERVER_MANAGEMENT_ENABLED,
     FRIDA_SERVER_REMOTE_PATH,
     FRIDA_SERVER_START_TIMEOUT_SECONDS,
-    M7A_LEASE_STALE_SECONDS,
     STATIC_UNPACK_CACHE_DIR,
     TASK_DATABASE_PATH,
 )
@@ -69,7 +69,7 @@ ai_settings_service = AISettingsService(ai_settings_store)
 consent_checkpoint_service = ConsentCheckpointService(clock=task_utc_now)
 device_lease_registry = LeaseRegistry(
     clock=time.monotonic,
-    stale_after_seconds=M7A_LEASE_STALE_SECONDS,
+    stale_after_seconds=DEVICE_LEASE_STALE_SECONDS,
 )
 
 __all__ = [
