@@ -1,13 +1,25 @@
+# ------------------------------------------------------------------------------
+# ADSDK Agent 依赖锁定清单 (Lockfile)
+# 本清单固定了已知兼容且全量测试通过的精确版本组合。
+# 生成方式：基于 pyproject.toml 声明，在 Python 3.12 环境下通过 pip freeze 整理锁定。
+# 安装全部依赖（核心 + 动态分析 + 开发工具）：
+#   pip install -r requirements.txt
+# 或者使用 pyproject.toml 模块化安装：
+#   pip install .[dynamic,dev]
+# ------------------------------------------------------------------------------
+
+# --- 核心运行时依赖 (Core Runtime) ---
 fastapi==0.140.0
 uvicorn==0.35.0
 pydantic==2.11.10
 python-dotenv==1.1.1
-
-# --- 开发/测试依赖(可选,运行时不需要) ---
-pytest==8.4.1
 httpx==0.28.1
 
-# Dynamic analysis
+# --- 动态分析可选依赖 (Dynamic Analysis) ---
 frida==17.16.4
 frida-tools==14.10.4
 mitmproxy==12.2.1
+
+# --- 开发/测试依赖 (Development & Testing) ---
+pytest==8.4.1
+ruff>=0.8.0

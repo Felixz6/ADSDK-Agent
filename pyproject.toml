@@ -18,16 +18,22 @@ dependencies = [
     "uvicorn>=0.30.0",
     "pydantic>=2.10.0",
     "python-dotenv>=1.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dynamic = [
     "frida>=16.0.0",
     "frida-tools>=12.0.0",
     "mitmproxy>=10.0.0",
 ]
-
-[project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "httpx>=0.27.0",
     "ruff>=0.8.0",
+    "mypy>=1.10.0",
+]
+all = [
+    "adsdk-agent[dynamic,dev]",
 ]
 
 [tool.pytest.ini_options]
