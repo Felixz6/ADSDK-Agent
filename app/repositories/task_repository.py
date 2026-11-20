@@ -57,9 +57,8 @@ class TaskRepository:
             isolation_level=None,
         )
         connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA busy_timeout = 30000")
+        connection.execute("PRAGMA foreign_keys = ON")
         try:
             yield connection
         finally:
@@ -67,6 +66,10 @@ class TaskRepository:
 
     def initialize(self) -> None:
         with self._connection() as connection:
+            try:
+                connection.execute("PRAGMA journal_mode = WAL")
+            except sqlite3.OperationalError:
+                pass
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS tasks (

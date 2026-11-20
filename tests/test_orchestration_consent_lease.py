@@ -1596,6 +1596,8 @@ def test_failure_contracts_no_key_or_serial_leak(fail_at):
 
 def _api_client(tmp_path, monkeypatch):
     """Build a TestClient with an isolated repository + a stub runner."""
+    import uuid
+
     from fastapi.testclient import TestClient
 
     import app.container as container
@@ -1604,7 +1606,14 @@ def _api_client(tmp_path, monkeypatch):
     from app.repositories import TaskRepository
     from app.services import TaskService
 
-    repository = TaskRepository(tmp_path / "state" / "tasks.db")
+    if hasattr(container, "task_service") and container.task_service is not None:
+        try:
+            container.task_service.shutdown()
+        except Exception:
+            pass
+
+    db_path = tmp_path / "state" / f"tasks_{uuid.uuid4().hex}.db"
+    repository = TaskRepository(db_path)
     repository.initialize()
     report_path = tmp_path / "runs" / "report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
