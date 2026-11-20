@@ -27,9 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # ---------------------------------------------------------------------------
 AI_PLAN_SCHEMA_VERSION: Literal["ai-plan-v1"] = "ai-plan-v1"
 AI_REPORT_SCHEMA_VERSION: Literal["ai-report-v1"] = "ai-report-v1"
-EVIDENCE_DIGEST_SCHEMA_VERSION: Literal["evidence-digest-v1"] = (
-    "evidence-digest-v1"
-)
+EVIDENCE_DIGEST_SCHEMA_VERSION: Literal["evidence-digest-v1"] = "evidence-digest-v1"
 # M6C — runtime diagnostics artifact. Records observable runtime facts about
 # AI execution: per-round token provenance, error classification, latency, cache
 # status, retry counts. Contains NO API key, NO full prompt, NO full model
@@ -43,9 +41,7 @@ AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION: Literal["ai-runtime-diagnostics-v1"] = (
 # Secret-free: never the original prompt, model response, reasoning_content,
 # argument values, or API key. Stored next to ai-plan.json as
 # ai-plan-validation-v2.
-AI_PLAN_VALIDATION_SCHEMA_VERSION: Literal["ai-plan-validation-v2"] = (
-    "ai-plan-validation-v2"
-)
+AI_PLAN_VALIDATION_SCHEMA_VERSION: Literal["ai-plan-validation-v2"] = "ai-plan-validation-v2"
 
 
 def ai_plan_schema_version() -> str:
@@ -173,9 +169,7 @@ class ToolCompactResult(BaseModel):
 # ---------------------------------------------------------------------------
 # ai-plan-v1
 # ---------------------------------------------------------------------------
-PlanStrategy = Literal[
-    "static_only", "dynamic_only", "full_analysis", "report_only"
-]
+PlanStrategy = Literal["static_only", "dynamic_only", "full_analysis", "report_only"]
 
 
 class PlanStep(BaseModel):
@@ -239,9 +233,7 @@ class EvidenceDigest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["evidence-digest-v1"] = (
-        EVIDENCE_DIGEST_SCHEMA_VERSION
-    )
+    schema_version: Literal["evidence-digest-v1"] = EVIDENCE_DIGEST_SCHEMA_VERSION
     task: dict[str, Any] = Field(default_factory=dict)
     environment: dict[str, Any] = Field(default_factory=dict)
     static_summary: dict[str, Any] = Field(default_factory=dict)
@@ -249,9 +241,7 @@ class EvidenceDigest(BaseModel):
     network_summary: dict[str, Any] = Field(default_factory=dict)
     correlation_summary: dict[str, Any] = Field(default_factory=dict)
     privacy_findings_summary: dict[str, Any] = Field(default_factory=dict)
-    top_findings: list[EvidenceDigestFinding] = Field(
-        default_factory=list, max_length=10
-    )
+    top_findings: list[EvidenceDigestFinding] = Field(default_factory=list, max_length=10)
     evidence_gaps: list[str] = Field(default_factory=list)
     artifact_refs: list[EvidenceDigestArtifactRef] = Field(default_factory=list)
     digest_hash: str = Field(default="")
@@ -293,9 +283,7 @@ def _collect_evidence_ids(node: Any) -> set[str]:
 # ---------------------------------------------------------------------------
 # ai-report-v1
 # ---------------------------------------------------------------------------
-AISynthesisStatus = Literal[
-    "completed", "partial", "failed", "budget_exhausted", "disabled"
-]
+AISynthesisStatus = Literal["completed", "partial", "failed", "budget_exhausted", "disabled"]
 
 # Section 十六 — provenance tag recorded on every persisted AI report so the
 # acceptance metrics can distinguish a report the model actually authored and
@@ -334,9 +322,7 @@ class AIReport(BaseModel):
     # path that forgot to stamp it.
     report_source: AIReportSource = "deterministic_fallback"
     executive_summary: str = Field(default="", max_length=2400)
-    key_findings: list[AIKeyFinding] = Field(
-        default_factory=list, max_length=10
-    )
+    key_findings: list[AIKeyFinding] = Field(default_factory=list, max_length=10)
     evidence_gaps: list[str] = Field(default_factory=list)
     risk_priorities: list[str] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
@@ -469,9 +455,7 @@ class AIRuntimeDiagnostic(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["ai-runtime-diagnostics-v1"] = (
-        AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION
-    )
+    schema_version: Literal["ai-runtime-diagnostics-v1"] = AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION
     task_id: str
     model: str = ""
     provider_profile: str = ""
@@ -602,9 +586,7 @@ class PreparedPlan(BaseModel):
 # reasoning_content, never argument values, never an API key. The original body
 # stays in memory only for this turn; only the codes travel out.
 # ---------------------------------------------------------------------------
-AIStrategyValue = Literal[
-    "static_only", "dynamic_only", "full_analysis", "report_only"
-]
+AIStrategyValue = Literal["static_only", "dynamic_only", "full_analysis", "report_only"]
 DynamicStrategyValue = Literal["strict", "balanced", "attach_only"]
 AnalysisScopeValue = AIStrategyValue
 
@@ -649,9 +631,7 @@ class PlanValidationDiagnostics(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["ai-plan-validation-v2"] = (
-        AI_PLAN_VALIDATION_SCHEMA_VERSION
-    )
+    schema_version: Literal["ai-plan-validation-v2"] = AI_PLAN_VALIDATION_SCHEMA_VERSION
     task_id: str = ""
     requested_strategy: AIStrategyValue = "static_only"
     effective_strategy: AIStrategyValue = "static_only"
@@ -719,4 +699,3 @@ class AIOrchestrationResult:
         if self.diagnostic is None:
             return None
         return self.diagnostic.model_dump(mode="json")
-

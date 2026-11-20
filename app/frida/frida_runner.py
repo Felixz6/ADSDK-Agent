@@ -47,21 +47,14 @@ def check_frida_device_runtime(device_id: str | None) -> dict[str, Any]:
         }
     device = DeviceContext(serial=device_id)
     process_result = run_cmd(device.adb_command("shell", "ps", "-A"))
-    abi_result = run_cmd(
-        device.adb_command("shell", "getprop", "ro.product.cpu.abi")
-    )
+    abi_result = run_cmd(device.adb_command("shell", "getprop", "ro.product.cpu.abi"))
     process_names = []
     if process_result.get("returncode") == 0:
         process_names = [
-            line.casefold()
-            for line in str(process_result.get("stdout") or "").splitlines()
+            line.casefold() for line in str(process_result.get("stdout") or "").splitlines()
         ]
     server_running = any("frida-server" in line for line in process_names)
-    abi = (
-        str(abi_result.get("stdout") or "").strip()
-        if abi_result.get("returncode") == 0
-        else None
-    )
+    abi = str(abi_result.get("stdout") or "").strip() if abi_result.get("returncode") == 0 else None
     return {
         "status": "server_available" if server_running else "server_not_observed",
         "server_running": server_running,

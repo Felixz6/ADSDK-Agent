@@ -30,9 +30,7 @@ _stop_owned_host_pid = stop_owned_host_pid
 
 
 def read_device_proxy(device: str) -> str | None:
-    result = run_cmd(
-        ["adb", "-s", device, "shell", "settings", "get", "global", "http_proxy"]
-    )
+    result = run_cmd(["adb", "-s", device, "shell", "settings", "get", "global", "http_proxy"])
     if result.get("returncode") != 0:
         return None
     value = str(result.get("stdout") or "").strip()
@@ -45,9 +43,7 @@ _read_device_proxy = read_device_proxy
 def device_process_command(device: str, pid: int) -> str | None:
     if not device or pid <= 0:
         return None
-    result = run_cmd(
-        ["adb", "-s", device, "shell", "cat", f"/proc/{pid}/cmdline"]
-    )
+    result = run_cmd(["adb", "-s", device, "shell", "cat", f"/proc/{pid}/cmdline"])
     if result.get("returncode") != 0:
         return None
     return str(result.get("stdout") or "").replace("\x00", " ").strip() or None
@@ -60,18 +56,12 @@ def device_package_pids(device: str, package_name: str) -> list[int] | None:
     """Return every live package PID; ``None`` means the probe itself failed."""
     if not device or not package_name:
         return None
-    result = run_cmd(
-        ["adb", "-s", device, "shell", "pidof", package_name]
-    )
+    result = run_cmd(["adb", "-s", device, "shell", "pidof", package_name])
     stdout = str(result.get("stdout") or "").strip()
     stderr = str(result.get("stderr") or "").strip()
     if result.get("returncode") != 0 and stderr:
         return None
-    return [
-        int(value)
-        for value in stdout.split()
-        if value.isdigit() and int(value) > 0
-    ]
+    return [int(value) for value in stdout.split() if value.isdigit() and int(value) > 0]
 
 
 _device_package_pids = device_package_pids

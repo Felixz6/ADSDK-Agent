@@ -54,9 +54,7 @@ def _execute_ai_orchestration(
     report_step("ai_tool_execution", "running", "正在执行 AI 编排工具")
     scope = str(payload.get("analysis_scope") or "static_only")
     allow_dynamic = bool(payload.get("allow_dynamic"))
-    confirmed = frozenset(
-        str(item) for item in (payload.get("confirmed_tools") or [])
-    )
+    confirmed = frozenset(str(item) for item in (payload.get("confirmed_tools") or []))
     effective = resolve_effective_ai_settings(ai_settings_service.store)
     ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
 
@@ -102,7 +100,6 @@ def _run_ai_orchestrated_task(
     """Run one ``ai_orchestrated`` task."""
     from app.pipelines.dynamic import dynamic_analyze
     from app.pipelines.static import analyze
-
 
     scope = str(payload.get("analysis_mode") or payload.get("analysis_scope") or "static_only")
     allow_dynamic = bool(payload.get("allow_dynamic"))
@@ -165,7 +162,6 @@ def _run_persisted_task(task: TaskRecord):
     from app.pipelines.dynamic import dynamic_analyze
     from app.pipelines.static import analyze
 
-
     payload = dict(task.request_payload)
     if task.task_type == "static":
         return analyze(AnalyzeRequest(apk_path=str(payload["apk_path"])))
@@ -208,9 +204,7 @@ def regenerate_task_ai_report(
 
     payload = dict(task.request_payload or {})
     try:
-        base_report = json.loads(
-            (run_dir / "report.json").read_text(encoding="utf-8")
-        )
+        base_report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
     except Exception:
         raise HTTPException(
             status_code=409,
@@ -230,16 +224,12 @@ def regenerate_task_ai_report(
 
     scope = str(payload.get("analysis_scope") or "static_only")
     allow_dynamic = bool(payload.get("allow_dynamic"))
-    confirmed = frozenset(
-        str(item) for item in (payload.get("confirmed_tools") or [])
-    )
+    confirmed = frozenset(str(item) for item in (payload.get("confirmed_tools") or []))
     effective = resolve_effective_ai_settings(ai_settings_service.store)
     ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
 
     cache_enabled_default = bool(effective["cache_enabled"])
-    cache_enabled = (
-        cache_enabled_default if use_cache is None else bool(use_cache)
-    )
+    cache_enabled = cache_enabled_default if use_cache is None else bool(use_cache)
 
     provider = ai_settings_service.factory.current() if ai_enabled else None
     orchestrator = AIOrchestrator(

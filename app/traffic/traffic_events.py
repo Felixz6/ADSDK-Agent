@@ -86,11 +86,7 @@ def normalize_timestamp_utc(value: datetime | str | int | float) -> str:
 
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp_utc must include a timezone")
-    return (
-        parsed.astimezone(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
+    return parsed.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def normalize_hostname(hostname: str) -> str:
@@ -114,10 +110,7 @@ def normalize_hostname(hostname: str) -> str:
     if any(not label for label in labels):
         raise ValueError("hostname contains an empty label")
     try:
-        normalized = ".".join(
-            label.encode("idna").decode("ascii").casefold()
-            for label in labels
-        )
+        normalized = ".".join(label.encode("idna").decode("ascii").casefold() for label in labels)
     except UnicodeError as exc:
         raise ValueError("hostname is not valid IDNA") from exc
     if len(normalized) > 253:
@@ -437,15 +430,13 @@ class TrafficReadResult:
 
     @property
     def malformed_count(self) -> int:
-        return sum(
-            issue.code.startswith("traffic_malformed")
-            for issue in self.issues
-        )
+        return sum(issue.code.startswith("traffic_malformed") for issue in self.issues)
 
     @property
     def mismatch_count(self) -> int:
         return sum(
-            issue.code in {
+            issue.code
+            in {
                 "traffic_run_mismatch",
                 "traffic_session_mismatch",
             }
@@ -464,9 +455,7 @@ def load_traffic_jsonl(
     result = TrafficReadResult()
     source = Path(path)
     if not source.is_file():
-        result.issues.append(
-            TrafficValidationIssue("traffic_file_missing", 0)
-        )
+        result.issues.append(TrafficValidationIssue("traffic_file_missing", 0))
         return result
 
     with source.open("r", encoding="utf-8", errors="strict") as stream:
@@ -570,15 +559,13 @@ class TrafficCollectionResult:
 
     @property
     def malformed_count(self) -> int:
-        return sum(
-            issue.code.startswith("traffic_malformed")
-            for issue in self.issues
-        )
+        return sum(issue.code.startswith("traffic_malformed") for issue in self.issues)
 
     @property
     def mismatch_count(self) -> int:
         return sum(
-            issue.code in {
+            issue.code
+            in {
                 "traffic_run_mismatch",
                 "traffic_session_mismatch",
             }
@@ -595,12 +582,9 @@ class TrafficCollectionResult:
             "malformed_count": self.malformed_count,
             "mismatch_count": self.mismatch_count,
             "issues": [
-                {"code": issue.code, "line_number": issue.line_number}
-                for issue in self.issues
+                {"code": issue.code, "line_number": issue.line_number} for issue in self.issues
             ],
-            "records": [
-                record.model_dump(mode="json") for record in self.records
-            ],
+            "records": [record.model_dump(mode="json") for record in self.records],
         }
 
 
@@ -618,16 +602,10 @@ def validate_traffic_jsonl(
         run_id=run_id,
         session_id=session_id,
     )
-    failed = (
-        not process_ready
-        or not read_result.ready_seen
-        or bool(read_result.issues)
-    )
+    failed = not process_ready or not read_result.ready_seen or bool(read_result.issues)
     if failed:
         outcome = TrafficCollectionOutcome.COLLECTOR_FAILED
-        coverage: Literal[
-            "unavailable", "no_observations", "observed"
-        ] = "unavailable"
+        coverage: Literal["unavailable", "no_observations", "observed"] = "unavailable"
     elif read_result.records:
         outcome = TrafficCollectionOutcome.SUCCESS_REQUESTS_OBSERVED
         coverage = "observed"

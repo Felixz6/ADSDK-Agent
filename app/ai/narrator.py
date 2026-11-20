@@ -131,9 +131,7 @@ class AINarrator:
         try:
             response = self._call_model(prompt, [], usage, stage="report", request=request)
         except ProviderError as exc:
-            self._record_provider_error(
-                exc, stage="report", attempt=1, finalized=True
-            )
+            self._record_provider_error(exc, stage="report", attempt=1, finalized=True)
             report = self.deterministic_report(
                 digest, status="partial", usage=usage, reason=exc.code
             )
@@ -154,9 +152,7 @@ class AINarrator:
                     candidate = AIReport.model_validate(retry.content_json)
                 except (ProviderError, ValidationError) as exc:
                     if isinstance(exc, ProviderError):
-                        self._record_provider_error(
-                            exc, stage="repair", attempt=2, finalized=True
-                        )
+                        self._record_provider_error(exc, stage="repair", attempt=2, finalized=True)
                     report = self.deterministic_report(
                         digest,
                         status="partial",
@@ -193,9 +189,7 @@ class AINarrator:
         request: AIOrchestrationRequest,
         digest: EvidenceDigest,
     ) -> str:
-        payload = json.dumps(
-            digest.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
-        )
+        payload = json.dumps(digest.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
         return (
             "__ai_phase__:report\n"
             "Produce a JSON object conforming to schema ai-report-v1.\n"

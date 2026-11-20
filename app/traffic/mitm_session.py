@@ -119,11 +119,7 @@ class PortPool:
         host: str,
         requested_port: int | None = None,
     ) -> int:
-        candidates = (
-            (requested_port,)
-            if requested_port is not None
-            else self.ports
-        )
+        candidates = (requested_port,) if requested_port is not None else self.ports
         if requested_port is not None and requested_port not in self.ports:
             raise PortAllocationError(
                 "mitm_port_not_configured",
@@ -251,10 +247,7 @@ def _validate_owner_identifier(value: str, name: str) -> str:
         raise ValueError(f"{name} must not be empty")
     if len(normalized) > 256:
         raise ValueError(f"{name} is too long")
-    if any(
-        character in normalized
-        for character in ("\x00", "\r", "\n", "/", "\\")
-    ):
+    if any(character in normalized for character in ("\x00", "\r", "\n", "/", "\\")):
         raise ValueError(f"{name} contains control characters")
     return normalized
 
@@ -326,9 +319,7 @@ class MitmSession:
     # addresses and payloads are never stored.
     proxy_reachable: bool | None = field(default=None, init=False)
     proxy_probe_available: bool = field(default=True, init=False)
-    network_observation: dict[str, Any] = field(
-        default_factory=dict, init=False
-    )
+    network_observation: dict[str, Any] = field(default_factory=dict, init=False)
     flow_path: Path = field(init=False)
     jsonl_path: Path = field(init=False)
     stderr_path: Path = field(init=False)
@@ -390,22 +381,14 @@ class MitmSession:
                 raise ValueError("device_proxy_host is invalid")
 
         self.traffic_dir = Path(self.traffic_dir).resolve(strict=False)
-        if (
-            self.traffic_dir.name != "traffic"
-            or self.traffic_dir.parent.name != self.run_id
-        ):
-            raise ValueError(
-                "traffic_dir must be the current run's traffic directory"
-            )
+        if self.traffic_dir.name != "traffic" or self.traffic_dir.parent.name != self.run_id:
+            raise ValueError("traffic_dir must be the current run's traffic directory")
         self.flow_path = self.traffic_dir / "flows.mitm"
         self.jsonl_path = self.traffic_dir / "requests.jsonl"
         self.stderr_path = self.traffic_dir / "mitm.stderr.log"
         if self.addon_path is None:
             self.addon_path = (
-                Path(__file__).resolve().parents[1]
-                / "analyzers"
-                / "traffic"
-                / "mitm_addon.py"
+                Path(__file__).resolve().parents[1] / "analyzers" / "traffic" / "mitm_addon.py"
             )
         else:
             self.addon_path = Path(self.addon_path).resolve(strict=False)
@@ -488,9 +471,7 @@ class MitmSession:
                     self.stderr_path,
                 ):
                     if artifact.exists():
-                        raise FileExistsError(
-                            "owned mitm artifact already exists"
-                        )
+                        raise FileExistsError("owned mitm artifact already exists")
                 self.jsonl_path.touch(exist_ok=False)
                 self._stderr_handle = self.stderr_path.open(
                     "x",
@@ -808,9 +789,7 @@ class MitmSession:
         if not pid_text or not pid_text[0].isdigit():
             return None
         status_result = self.command_runner(
-            self.device.adb_command(
-                "shell", "cat", f"/proc/{pid_text[0]}/status"
-            )
+            self.device.adb_command("shell", "cat", f"/proc/{pid_text[0]}/status")
         )
         for line in str(status_result.get("stdout") or "").splitlines():
             if line.startswith("Uid:"):
@@ -828,9 +807,7 @@ class MitmSession:
                 self.device.adb_command("shell", "cat", f"/proc/net/{name}")
             )
             tables[name] = (
-                str(result.get("stdout") or "")
-                if result.get("returncode") == 0
-                else None
+                str(result.get("stdout") or "") if result.get("returncode") == 0 else None
             )
         summary = summarize_proc_net(**tables)
         summary["target_uid"] = self._resolve_target_uid()
@@ -841,9 +818,7 @@ class MitmSession:
             return
         assert self.listen_port is not None
         current = self.command_runner(
-            self.device.adb_command(
-                "shell", "settings", "get", "global", "http_proxy"
-            )
+            self.device.adb_command("shell", "settings", "get", "global", "http_proxy")
         )
         if current.get("returncode") != 0:
             self._set_failure(
@@ -857,9 +832,7 @@ class MitmSession:
         self.original_device_proxy = str(current.get("stdout") or "").strip()
         target = f"{self.device_proxy_host}:{self.listen_port}"
         updated = self.command_runner(
-            self.device.adb_command(
-                "shell", "settings", "put", "global", "http_proxy", target
-            )
+            self.device.adb_command("shell", "settings", "put", "global", "http_proxy", target)
         )
         if updated.get("returncode") != 0:
             self._set_failure(
@@ -882,9 +855,7 @@ class MitmSession:
                 "shell", "settings", "put", "global", "http_proxy", original
             )
         else:
-            command = self.device.adb_command(
-                "shell", "settings", "delete", "global", "http_proxy"
-            )
+            command = self.device.adb_command("shell", "settings", "delete", "global", "http_proxy")
         result = self.command_runner(command)
         restored = result.get("returncode") == 0
         self.device_proxy_restored = restored
@@ -966,21 +937,9 @@ class MitmSession:
             "flow_file": str(self.flow_path),
             "jsonl_path": str(self.jsonl_path),
             "stderr_path": str(self.stderr_path),
-            "started_at": (
-                self.started_at.isoformat()
-                if self.started_at is not None
-                else None
-            ),
-            "ready_at": (
-                self.ready_at.isoformat()
-                if self.ready_at is not None
-                else None
-            ),
-            "stopped_at": (
-                self.stopped_at.isoformat()
-                if self.stopped_at is not None
-                else None
-            ),
+            "started_at": (self.started_at.isoformat() if self.started_at is not None else None),
+            "ready_at": (self.ready_at.isoformat() if self.ready_at is not None else None),
+            "stopped_at": (self.stopped_at.isoformat() if self.stopped_at is not None else None),
             "exit_code": self.exit_code,
             "error_code": self.error_code,
             "error": self.error_message,

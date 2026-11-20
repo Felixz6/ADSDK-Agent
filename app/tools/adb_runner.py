@@ -38,10 +38,7 @@ def current_focus():
     result = run_cmd(["adb", "shell", "dumpsys", "window"])
     if result["returncode"] != 0:
         return result
-    lines = [
-        line for line in result["stdout"].splitlines()
-        if "mCurrentFocus" in line
-    ]
+    lines = [line for line in result["stdout"].splitlines() if "mCurrentFocus" in line]
     result["stdout"] = "\n".join(lines)
     return result
 
@@ -118,9 +115,7 @@ def select_device_context(device_id: str | None = None) -> DeviceContext:
                 (
                     item
                     for item in online
-                    if DeviceContext(
-                        serial=str(item.get("device_id") or "")
-                    ).public_serial
+                    if DeviceContext(serial=str(item.get("device_id") or "")).public_serial
                     == device_id
                 ),
                 None,

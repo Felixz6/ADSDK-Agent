@@ -138,7 +138,9 @@ class LocalSettings:
     max_retry_after_seconds: int | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {f.name: getattr(self, f.name) for f in fields(self) if getattr(self, f.name) is not None}
+        return {
+            f.name: getattr(self, f.name) for f in fields(self) if getattr(self, f.name) is not None
+        }
 
     @classmethod
     def from_dict(cls, data: object) -> LocalSettings:
@@ -165,20 +167,12 @@ class LocalSettings:
             report_language=_opt_str(filtered.get("report_language")),
             provider_profile=_opt_str(filtered.get("provider_profile")),
             thinking_mode=_opt_str(filtered.get("thinking_mode")),
-            planner_max_output_tokens=_opt_int(
-                filtered.get("planner_max_output_tokens")
-            ),
-            report_max_output_tokens=_opt_int(
-                filtered.get("report_max_output_tokens")
-            ),
-            repair_max_output_tokens=_opt_int(
-                filtered.get("repair_max_output_tokens")
-            ),
+            planner_max_output_tokens=_opt_int(filtered.get("planner_max_output_tokens")),
+            report_max_output_tokens=_opt_int(filtered.get("report_max_output_tokens")),
+            repair_max_output_tokens=_opt_int(filtered.get("repair_max_output_tokens")),
             request_retries=_opt_int(filtered.get("request_retries")),
             retry_base_delay_ms=_opt_int(filtered.get("retry_base_delay_ms")),
-            max_retry_after_seconds=_opt_int(
-                filtered.get("max_retry_after_seconds")
-            ),
+            max_retry_after_seconds=_opt_int(filtered.get("max_retry_after_seconds")),
         )
 
 
@@ -273,9 +267,7 @@ class AISettingsStore:
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise SettingsCorruptionError(
-                f"ai-settings.json is not valid JSON: {exc.msg}"
-            ) from exc
+            raise SettingsCorruptionError(f"ai-settings.json is not valid JSON: {exc.msg}") from exc
         if not isinstance(parsed, dict):
             raise SettingsCorruptionError("ai-settings.json root is not an object")
         # Older schemas may carry its own schema_version; we only consume the
@@ -340,10 +332,7 @@ class AISettingsStore:
     def field_source(self, field_name: str) -> str:
         """``environment`` | ``local_store`` | ``default`` for one editable field."""
 
-        env_name = (
-            _ENV_BINDINGS.get(field_name)
-            or _ENV_NUMERIC_BINDINGS.get(field_name)
-        )
+        env_name = _ENV_BINDINGS.get(field_name) or _ENV_NUMERIC_BINDINGS.get(field_name)
         if env_name:
             raw = self._env.get(env_name)
             if raw is not None and raw.strip() != "":
@@ -368,10 +357,7 @@ class AISettingsStore:
         it take effect.
         """
 
-        env_name = (
-            _ENV_BINDINGS.get(field_name)
-            or _ENV_NUMERIC_BINDINGS.get(field_name)
-        )
+        env_name = _ENV_BINDINGS.get(field_name) or _ENV_NUMERIC_BINDINGS.get(field_name)
         if not env_name:
             return None
         raw = self._env.get(env_name)

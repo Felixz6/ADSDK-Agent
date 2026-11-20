@@ -138,9 +138,7 @@ def test_insight_only_uses_risk_evidence():
 
 
 def test_old_report_without_enrichment_fields_remains_readable():
-    response = AnalyzeResponse.model_validate(
-        {"ok": True, "apk_path": "sample.apk", "sdks": []}
-    )
+    response = AnalyzeResponse.model_validate({"ok": True, "apk_path": "sample.apk", "sdks": []})
     assert response.risk_summary is None
     assert response.timeline is None
     assert response.compliance_insight is None

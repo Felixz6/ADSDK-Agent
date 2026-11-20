@@ -121,4 +121,3 @@ def test_accepts_spaces_and_chinese_characters_in_path(tmp_path: Path) -> None:
     validated = _validator(tmp_path).validate(str(apk_path))
 
     assert validated == apk_path.resolve()
-

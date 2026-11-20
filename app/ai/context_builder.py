@@ -181,21 +181,14 @@ def build_static_summary(report: Mapping[str, Any] | None) -> dict[str, Any]:
         # Package name comes from the APK: untrusted, sanitised, source-tagged.
         "package_name": sanitize_untrusted_text(app_info.get("package_name"), limit=180),
         "package_name_source": "apk_manifest_untrusted",
-        "application_label": sanitize_untrusted_text(
-            app_info.get("application_label"), limit=120
-        ),
+        "application_label": sanitize_untrusted_text(app_info.get("application_label"), limit=120),
         "application_label_source": "apk_manifest_untrusted",
         "permission_count": len(app_info.get("permissions") or []),
-        "sensitive_permission_count": len(
-            app_info.get("sensitive_permissions") or []
-        ),
-        "high_attention_permission_count": len(
-            app_info.get("high_attention_permissions") or []
-        ),
+        "sensitive_permission_count": len(app_info.get("sensitive_permissions") or []),
+        "high_attention_permission_count": len(app_info.get("high_attention_permissions") or []),
         "sdk_count": _int(report.get("sdk_count"), len(sdks)),
         "sdk_categories": categories,
-        "manifest_status": _clean(manifest_evidence.get("status"), 40)
-        or "not_evaluated",
+        "manifest_status": _clean(manifest_evidence.get("status"), 40) or "not_evaluated",
         "risk_score": risk.get("score") if isinstance(risk.get("score"), int) else None,
         "risk_level": _clean(risk.get("level"), 24) or None,
         "risk_confidence": _clean(risk.get("confidence"), 24) or None,
@@ -290,11 +283,7 @@ def build_correlation_summary(
 ) -> dict[str, Any]:
     if not isinstance(correlation, Mapping):
         return {"status": "not_available", "correlated_pair_count": 0}
-    summary = (
-        correlation.get("summary")
-        if isinstance(correlation.get("summary"), Mapping)
-        else {}
-    )
+    summary = correlation.get("summary") if isinstance(correlation.get("summary"), Mapping) else {}
     return {
         "status": _clean(correlation.get("status"), 40) or "unknown",
         "window_ms": _int(correlation.get("window_ms")),
@@ -313,11 +302,7 @@ def build_privacy_findings_summary(
 ) -> dict[str, Any]:
     if not isinstance(findings, Mapping):
         return {"status": "not_available", "finding_count": 0}
-    summary = (
-        findings.get("summary")
-        if isinstance(findings.get("summary"), Mapping)
-        else {}
-    )
+    summary = findings.get("summary") if isinstance(findings.get("summary"), Mapping) else {}
     rule_statuses: dict[str, int] = {}
     for rule in findings.get("rule_results") or []:
         if isinstance(rule, Mapping):
@@ -326,14 +311,10 @@ def build_privacy_findings_summary(
     return {
         "status": _clean(findings.get("status"), 40) or "unknown",
         "finding_count": _int(summary.get("finding_count")),
-        "confirmed_observation_count": _int(
-            summary.get("confirmed_observation_count")
-        ),
+        "confirmed_observation_count": _int(summary.get("confirmed_observation_count")),
         "suspected_risk_count": _int(summary.get("suspected_risk_count")),
         "evidence_gap_count": _int(summary.get("evidence_gap_count")),
-        "not_evaluated_rule_count": _int(
-            summary.get("not_evaluated_rule_count")
-        ),
+        "not_evaluated_rule_count": _int(summary.get("not_evaluated_rule_count")),
         "rule_status_counts": rule_statuses,
         "limitations": _bounded_list(findings.get("limitations")),
     }
@@ -380,9 +361,7 @@ def build_top_findings(
                 title=_clean(item.get("title"), MAX_TITLE_CHARS),
                 finding_type=_clean(item.get("finding_type"), 40) or "unknown",
                 severity=severity if severity in severity_rank else "info",
-                confidence=confidence
-                if confidence in {"high", "medium", "low"}
-                else "low",
+                confidence=confidence if confidence in {"high", "medium", "low"} else "low",
                 summary=_clean(item.get("summary"), MAX_SUMMARY_CHARS),
                 evidence_refs=refs,
                 limitations=_bounded_list(item.get("limitations"), limit=4),
@@ -413,9 +392,7 @@ def build_evidence_gaps(
     if correlation_summary.get("status") in {"not_available", "error", "unknown"}:
         gaps.append("本次没有可用的事件—请求关联结果，关联类结论未评估")
     if _int(privacy_summary.get("not_evaluated_rule_count")) > 0:
-        gaps.append(
-            "存在未评估的隐私规则；未评估不等同于不存在对应行为"
-        )
+        gaps.append("存在未评估的隐私规则；未评估不等同于不存在对应行为")
     return gaps[:MAX_LIST_ITEMS]
 
 
@@ -478,9 +455,7 @@ class AIContextBuilder:
         network_summary = build_network_summary(report, traffic_summary)
         correlation_summary = build_correlation_summary(correlation)
         privacy_summary = build_privacy_findings_summary(privacy_findings)
-        top_findings = build_top_findings(
-            privacy_findings, limit=self._max_top_findings
-        )
+        top_findings = build_top_findings(privacy_findings, limit=self._max_top_findings)
         digest = EvidenceDigest(
             task=self._task_section(task),
             environment=self._environment_section(environment),
@@ -506,8 +481,7 @@ class AIContextBuilder:
         return {
             "task_id": _clean(task.get("task_id") or task.get("id"), 64),
             "task_type": _clean(task.get("task_type"), 40) or "ai_orchestrated",
-            "analysis_scope": _clean(task.get("analysis_scope"), 40)
-            or "static_only",
+            "analysis_scope": _clean(task.get("analysis_scope"), 40) or "static_only",
             # The objective is user-supplied free text: still treated as data.
             "objective": sanitize_untrusted_text(task.get("objective"), limit=400),
             "allow_dynamic": bool(task.get("allow_dynamic")),
@@ -521,11 +495,7 @@ class AIContextBuilder:
     ) -> dict[str, Any]:
         if not isinstance(environment, Mapping):
             return {"status": "not_evaluated", "native_bridge_detected": False}
-        checks = (
-            environment.get("checks")
-            if isinstance(environment.get("checks"), Mapping)
-            else {}
-        )
+        checks = environment.get("checks") if isinstance(environment.get("checks"), Mapping) else {}
         # Section 十六 — a deterministic Native Bridge flag the Evidence
         # Validator can read. The probe payload never carries a raw serial; it
         # exposes either an explicit ``native_bridge_detected`` boolean or an
@@ -538,8 +508,7 @@ class AIContextBuilder:
             "ok": bool(environment.get("ok")),
             # Only boolean capability flags; never raw serials or paths.
             "checks": {
-                _clean(key, 60): bool(value)
-                for key, value in list(checks.items())[:MAX_LIST_ITEMS]
+                _clean(key, 60): bool(value) for key, value in list(checks.items())[:MAX_LIST_ITEMS]
             },
             "native_bridge_detected": native_bridge,
         }
@@ -560,9 +529,7 @@ def enforce_result_char_limit(
     """
 
     def size(candidate: ToolCompactResult) -> int:
-        return len(
-            json.dumps(candidate.model_dump(mode="json"), ensure_ascii=False)
-        )
+        return len(json.dumps(candidate.model_dump(mode="json"), ensure_ascii=False))
 
     current = result
     if size(current) <= max_chars:
@@ -590,9 +557,7 @@ def enforce_result_char_limit(
     if size(current) > max_chars:
         overflow = size(current) - max_chars
         trimmed_summary = current.summary[: max(0, len(current.summary) - overflow - 8)]
-        current = current.model_copy(
-            update={"summary": _clean(trimmed_summary, MAX_SUMMARY_CHARS)}
-        )
+        current = current.model_copy(update={"summary": _clean(trimmed_summary, MAX_SUMMARY_CHARS)})
     return current
 
 

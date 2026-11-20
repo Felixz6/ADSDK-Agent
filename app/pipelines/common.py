@@ -76,9 +76,7 @@ _CRITICAL_STEPS = {
 
 def resolve_frida_hook_script(hooks_dir: Path | None = None) -> Path:
     """Pick the hook agent source injected into target processes."""
-    directory = hooks_dir or (
-        Path(__file__).resolve().parent.parent / "frida_hooks"
-    )
+    directory = hooks_dir or (Path(__file__).resolve().parent.parent / "frida_hooks")
     bundled = directory / "agent.compiled.js"
     if bundled.is_file():
         return bundled
@@ -161,9 +159,7 @@ def run_static_stage(
     unpack_started = _utc_now()
     try:
         apktool_info = check_apktool()
-        apktool_version = str(
-            apktool_info.get("apktool_version") or "unknown"
-        )
+        apktool_version = str(apktool_info.get("apktool_version") or "unknown")
         cache_root = Path(STATIC_UNPACK_CACHE_DIR)
         unpacker_fn = unpack_apk
         cache_result = prepare_static_unpack(
@@ -211,9 +207,7 @@ def run_static_stage(
                 None
                 if unpack_ok
                 else str(
-                    unpack_result.get("stderr")
-                    or unpack_result.get("stdout")
-                    or "apktool failed"
+                    unpack_result.get("stderr") or unpack_result.get("stdout") or "apktool failed"
                 )
             ),
             outputs=[str(analysis_dir)] if unpack_ok else [],
@@ -222,9 +216,7 @@ def run_static_stage(
                     "cache_hit": bool(unpack_result.get("cache_hit")),
                     "cache_key": unpack_result.get("cache_key"),
                     "apktool_version": unpack_result.get("apktool_version"),
-                    "cache_format_version": unpack_result.get(
-                        "cache_format_version"
-                    ),
+                    "cache_format_version": unpack_result.get("cache_format_version"),
                 }
                 if unpack_ok
                 else {}
@@ -244,9 +236,7 @@ def run_static_stage(
                 **parsed_app_info,
             }
             if not app_info.get("package_name") and package_name_input:
-                app_info["package_name"] = (
-                    str(package_name_input or "").strip() or None
-                )
+                app_info["package_name"] = str(package_name_input or "").strip() or None
             manifest_evidence = {
                 "status": "evaluated",
                 "error_code": None,
@@ -663,12 +653,8 @@ def _base_report(
         "apk_path": context.source_apk_display or context.apk_path.name,
         "apk_sha256": context.apk_sha256,
         "apk_snapshot": {
-            "source_path_display": (
-                context.source_apk_display or context.apk_path.name
-            ),
-            "snapshot_relative_path": (
-                context.apk_snapshot_relative_path or "input/app.apk"
-            ),
+            "source_path_display": (context.source_apk_display or context.apk_path.name),
+            "snapshot_relative_path": (context.apk_snapshot_relative_path or "input/app.apk"),
             "snapshot_sha256": context.apk_sha256,
             "snapshot_size_bytes": context.apk_snapshot_size_bytes,
             "snapshot_status": "success",
@@ -722,10 +708,7 @@ def _finalize_report(
             "warnings": _collect_warnings(steps),
         }
     )
-    step_durations = {
-        step.name: step.duration_ms or 0
-        for step in steps
-    }
+    step_durations = {step.name: step.duration_ms or 0 for step in steps}
     report["diagnostics"] = {
         "snapshot_duration_ms": step_durations.get("apk_snapshot", 0),
         "apktool_duration_ms": step_durations.get("apk_unpack", 0),
@@ -765,9 +748,7 @@ def _finalize_report(
                 "warnings": _collect_warnings(candidate_steps),
             }
         )
-        report["diagnostics"]["report_write_duration_ms"] = (
-            report_write_duration_ms
-        )
+        report["diagnostics"]["report_write_duration_ms"] = report_write_duration_ms
         report["diagnostics"]["total_duration_ms"] = max(
             0,
             int((_utc_now() - context.started_at).total_seconds() * 1000),
@@ -856,16 +837,12 @@ def _network_consent_states(
         if not isinstance(record, dict):
             continue
         request_id = str(
-            record.get("request_id")
-            or record.get("flow_id")
-            or f"request-{index + 1}"
+            record.get("request_id") or record.get("flow_id") or f"request-{index + 1}"
         )
         observed = _parse_utc(record.get("timestamp_utc") or record.get("timestamp"))
         if observed is None:
             continue
-        states[request_id] = (
-            "pre_consent" if observed < consent_dt else "post_consent"
-        )
+        states[request_id] = "pre_consent" if observed < consent_dt else "post_consent"
     return states
 
 

@@ -123,10 +123,13 @@ def _assert_degraded_result(body: dict[str, Any], expected_keyword: str) -> None
         if isinstance(step, dict) and step.get("status") in {"partial", "failed"}
     ]
     assert degraded_steps
-    assert expected_keyword.casefold() in json.dumps(
-        degraded_steps,
-        ensure_ascii=False,
-    ).casefold()
+    assert (
+        expected_keyword.casefold()
+        in json.dumps(
+            degraded_steps,
+            ensure_ascii=False,
+        ).casefold()
+    )
 
     statuses = _rule_statuses(body)
     assert "not_evaluated" in statuses
@@ -163,12 +166,8 @@ def _install_common_fakes(
     monkeypatch.setattr(dynamic_module.time, "sleep", lambda _: None)
 
     def fake_unpack(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        apk_path = Path(
-            _extract_argument(args, kwargs, keyword="apk_path", position=0)
-        ).resolve()
-        out_dir = Path(
-            _extract_argument(args, kwargs, keyword="out_dir", position=1)
-        )
+        apk_path = Path(_extract_argument(args, kwargs, keyword="apk_path", position=0)).resolve()
+        out_dir = Path(_extract_argument(args, kwargs, keyword="out_dir", position=1))
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / ".source_apk").write_text(str(apk_path), encoding="utf-8")
         (out_dir / "AndroidManifest.xml").write_text(
@@ -247,6 +246,7 @@ def _install_common_fakes(
                 TrafficCollectionOutcome,
                 TrafficCollectionResult,
             )
+
             if traffic_mode == "missing":
                 raise FileNotFoundError("traffic evidence is missing")
             if traffic_mode == "empty":
@@ -367,8 +367,7 @@ def test_dynamic_derived_artifacts_and_response_do_not_contain_raw_identifier(
     def write_sensitive_hook(log_path: Path, _: int) -> None:
         append_log(
             str(log_path),
-            "[HOOK] Settings.Secure.getString "
-            f"name=android_id ret={raw_android_id}",
+            f"[HOOK] Settings.Secure.getString name=android_id ret={raw_android_id}",
         )
 
     _install_common_fakes(
@@ -429,30 +428,29 @@ def test_same_basename_and_static_dynamic_calls_have_independent_run_directories
     client = TestClient(main_module.app, raise_server_exceptions=False)
 
     static_a_response = client.post("/analyze", json={"apk_path": str(apk_a)})
-    assert static_a_response.headers.get("content-type", "").startswith(
-        "application/json"
-    )
+    assert static_a_response.headers.get("content-type", "").startswith("application/json")
     static_a = static_a_response.json()
     static_a_dir = _run_dir(static_a, output_root)
     static_a_snapshot = _read_artifacts(static_a_dir)
 
     static_b_response = client.post("/analyze", json={"apk_path": str(apk_b)})
-    assert static_b_response.headers.get("content-type", "").startswith(
-        "application/json"
-    )
+    assert static_b_response.headers.get("content-type", "").startswith("application/json")
     static_b = static_b_response.json()
     static_b_dir = _run_dir(static_b, output_root)
 
     dynamic_a = _post_dynamic(client, apk_a)
     dynamic_a_dir = _run_dir(dynamic_a, output_root)
 
-    assert len(
-        {
-            static_a["run_id"],
-            static_b["run_id"],
-            dynamic_a["run_id"],
-        }
-    ) == 3
+    assert (
+        len(
+            {
+                static_a["run_id"],
+                static_b["run_id"],
+                dynamic_a["run_id"],
+            }
+        )
+        == 3
+    )
     assert len({static_a_dir, static_b_dir, dynamic_a_dir}) == 3
     assert static_a_snapshot == _read_artifacts(static_a_dir)
     assert static_a["app_info"] != static_b["app_info"]
@@ -540,17 +538,13 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
         monkeypatch.setattr(
             common_module,
             "parse_manifest_info",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                ValueError("manifest parse failed")
-            ),
+            lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("manifest parse failed")),
         )
     elif failure_mode == "sdk_error":
         monkeypatch.setattr(
             common_module,
             "scan_for_sdks",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                RuntimeError("sdk scan failed")
-            ),
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("sdk scan failed")),
         )
 
     client = TestClient(main_module.app, raise_server_exceptions=False)
@@ -570,9 +564,7 @@ def test_manifest_value_error_keeps_structured_reports_and_correlation(
     monkeypatch.setattr(
         common_module,
         "parse_manifest_info",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            ValueError("manifest parse failed")
-        ),
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("manifest parse failed")),
     )
 
     client = TestClient(main_module.app, raise_server_exceptions=True)

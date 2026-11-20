@@ -55,10 +55,7 @@ class LogcatCollector:
             )
         ][-self.max_lines :]
         redacted = [
-            self.device.redactor.redact_text(
-                line, {"device_serial": self.device.serial}
-            )
-            or ""
+            self.device.redactor.redact_text(line, {"device_serial": self.device.serial}) or ""
             for line in selected
         ]
         text = "\n".join(redacted)

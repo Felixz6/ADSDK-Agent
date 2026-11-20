@@ -244,9 +244,7 @@ def test_b_length_finish_reason_with_valid_json_is_accepted():
     rounds = result.diagnostic_payload()["rounds"]
     assert rounds[0]["finish_reason"] == "length"
     assert rounds[0]["requested_output_tokens"] > 0
-    assert rounds[0]["response_chars"] == len(
-        json.dumps(_VALID_PLAN, ensure_ascii=False)
-    )
+    assert rounds[0]["response_chars"] == len(json.dumps(_VALID_PLAN, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------------------

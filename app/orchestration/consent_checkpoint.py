@@ -93,9 +93,7 @@ class ConsentCheckpointService:
         with self._registry_lock:
             return self._locks.setdefault(task_id, threading.RLock())
 
-    def enter(
-        self, *, task_id: str, run_id: str
-    ) -> ConsentCheckpointState:
+    def enter(self, *, task_id: str, run_id: str) -> ConsentCheckpointState:
         """Mark a checkpoint as awaiting. Re-entering for the same task+run is
         a no-op refresh (heartbeats). Re-entering after resolution is rejected
         unless the prior resolution was a non-terminal ``awaiting``."""
@@ -231,9 +229,7 @@ class ConsentCheckpointService:
                 event = threading.Event()
                 self._events[task_id] = event
         deadline = (
-            monotonic() + max(0.0, float(timeout_seconds))
-            if timeout_seconds is not None
-            else None
+            monotonic() + max(0.0, float(timeout_seconds)) if timeout_seconds is not None else None
         )
         while True:
             if event.is_set():

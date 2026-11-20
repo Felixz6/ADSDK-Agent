@@ -20,9 +20,7 @@ class FakeTestFridaSession:
         self.run_id = kwargs.get("run_id", "test-run")
         self.device = kwargs.get("device", DeviceContext(serial="emulator-5554"))
         self.package_name = kwargs.get("package_name", "com.example.demo")
-        self.event_log_path = Path(
-            kwargs.get("event_log_path", Path.cwd() / "events.raw.jsonl")
-        )
+        self.event_log_path = Path(kwargs.get("event_log_path", Path.cwd() / "events.raw.jsonl"))
         self.event_log_path.parent.mkdir(parents=True, exist_ok=True)
         self.event_log_path.touch()
         self.protocol_error_path = Path(

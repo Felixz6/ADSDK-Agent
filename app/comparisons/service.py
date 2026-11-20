@@ -19,7 +19,9 @@ def _strings(values: Iterable[Any]) -> set[str]:
     return {str(value) for value in values if value is not None and str(value)}
 
 
-def _diff(base: Iterable[Any], target: Iterable[Any], *, unavailable: bool = False) -> DifferenceSet:
+def _diff(
+    base: Iterable[Any], target: Iterable[Any], *, unavailable: bool = False
+) -> DifferenceSet:
     left = _strings(base)
     right = _strings(target)
     return DifferenceSet(

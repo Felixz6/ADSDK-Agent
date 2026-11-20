@@ -54,16 +54,16 @@ class OpenAICompatibleProvider:
         self._base_url = (base_url if base_url is not None else AI_BASE_URL).strip()
         self._api_key = api_key if api_key is not None else AI_API_KEY
         self._model = (model if model is not None else AI_MODEL).strip()
-        self._timeout = (
-            timeout_seconds if timeout_seconds is not None else AI_TIMEOUT_SECONDS
-        )
+        self._timeout = timeout_seconds if timeout_seconds is not None else AI_TIMEOUT_SECONDS
         # ``transport`` is injected by tests; production builds the client
         # lazily so importing this module never opens a socket.
         self._transport = transport
         # M6C compatibility knobs. ``_profile`` is resolved at construction
         # (from explicit choice or base_url host) and re-resolvable per call
         # when the caller supplies an override. These are non-secret.
-        self._profile_choice = provider_profile if provider_profile is not None else AI_PROVIDER_PROFILE
+        self._profile_choice = (
+            provider_profile if provider_profile is not None else AI_PROVIDER_PROFILE
+        )
         self._thinking_mode = thinking_mode if thinking_mode is not None else AI_THINKING_MODE
         self._request_retries = (
             request_retries if request_retries is not None else AI_REQUEST_RETRIES
@@ -109,8 +109,7 @@ class OpenAICompatibleProvider:
             return None
         return {
             "error_code": "ai_not_configured",
-            "safe_message": "AI provider is missing configuration: "
-            + ", ".join(missing),
+            "safe_message": "AI provider is missing configuration: " + ", ".join(missing),
             "missing": missing,
         }
 
@@ -276,7 +275,7 @@ class OpenAICompatibleProvider:
             secs = error.retry_after_ms / 1000.0
         else:
             base = max(0, int(self._retry_base_delay_ms)) / 1000.0
-            secs = base * (2 ** attempt)
+            secs = base * (2**attempt)
         ceiling = max(0, int(self._max_retry_after_seconds))
         if ceiling > 0:
             secs = min(secs, float(ceiling))
@@ -435,9 +434,7 @@ class OpenAICompatibleProvider:
             return self._probe_failure("unreachable", "网关不可达", started)
 
         if models_resp.status_code in (401, 403):
-            return self._probe_failure(
-                "authentication_failed", "鉴权失败", started
-            )
+            return self._probe_failure("authentication_failed", "鉴权失败", started)
         if 200 <= models_resp.status_code < 300:
             return {
                 "status": "reachable",
@@ -465,12 +462,16 @@ class OpenAICompatibleProvider:
                 )
         except httpx.TimeoutException:
             return self._probe_failure(
-                "timeout", "探测超时（最小聊天探测）", started,
+                "timeout",
+                "探测超时（最小聊天探测）",
+                started,
                 models_supported=False,
             )
         except httpx.HTTPError:
             return self._probe_failure(
-                "unreachable", "网关不可达（最小聊天探测）", started,
+                "unreachable",
+                "网关不可达（最小聊天探测）",
+                started,
                 models_supported=False,
             )
 
@@ -494,9 +495,7 @@ class OpenAICompatibleProvider:
                 started,
                 models_supported=False,
             )
-        return self._probe_failure(
-            "unreachable", "网关响应异常", started, models_supported=False
-        )
+        return self._probe_failure("unreachable", "网关响应异常", started, models_supported=False)
 
     def _probe_failure(
         self,
@@ -514,7 +513,6 @@ class OpenAICompatibleProvider:
             "safe_message": safe_message,
             "models_endpoint_supported": bool(models_supported),
         }
-
 
 
 def _parse_chat_completion(
@@ -584,7 +582,9 @@ def _parse_chat_completion(
             stage="provider_call",
         )
 
-    finish_reason = first.get("finish_reason") if isinstance(first.get("finish_reason"), str) else None
+    finish_reason = (
+        first.get("finish_reason") if isinstance(first.get("finish_reason"), str) else None
+    )
 
     # Usage provenance. A usage block with at least one real token count is
     # authoritative; an empty/absent block is ``unavailable``.
@@ -592,10 +592,7 @@ def _parse_chat_completion(
     prompt_tokens = usage_raw.get("prompt_tokens") if isinstance(usage_raw, dict) else None
     completion_tokens = usage_raw.get("completion_tokens") if isinstance(usage_raw, dict) else None
     cached_tokens = _cached_tokens_from_usage(usage_raw)
-    has_real = any(
-        isinstance(v, int)
-        for v in (prompt_tokens, completion_tokens, cached_tokens)
-    )
+    has_real = any(isinstance(v, int) for v in (prompt_tokens, completion_tokens, cached_tokens))
     if has_real:
         usage_source = "provider"
     else:

@@ -93,9 +93,7 @@ class DeviceSessionSnapshot(BaseModel):
     environment_notes: list[str] = Field(default_factory=list)
     # Whether the snapshot is read-only-validated vs a full preflight. Phase B
     # produces read_only snapshots; Phase D re-captures before state changes.
-    capture_kind: Literal["read_only", "preflight", "pre_state_change", "postflight"] = (
-        "read_only"
-    )
+    capture_kind: Literal["read_only", "preflight", "pre_state_change", "postflight"] = "read_only"
 
     def safe_dump(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
@@ -158,8 +156,7 @@ def build_snapshot(
     except BaseException:
         devices = {}
     online = isinstance(devices, dict) and any(
-        str(item.get("device_id") or "") == device_id
-        and str(item.get("status") or "") == "device"
+        str(item.get("device_id") or "") == device_id and str(item.get("status") or "") == "device"
         for item in devices.get("devices", [])
     )
     state.online = online
@@ -176,9 +173,7 @@ def build_snapshot(
     state.boot_id = _prop("ro.boot.boot_id") or _prop("ro.bootime.boot_id")
 
     try:
-        state.http_proxy = probe.settings_get(
-            device_id, "global", "http_proxy"
-        )
+        state.http_proxy = probe.settings_get(device_id, "global", "http_proxy")
     except BaseException:
         state.http_proxy = None
     # Normalise: adb returns "" or ":0" (or, on some MuMu builds, the literal
@@ -198,16 +193,12 @@ def build_snapshot(
         pids = []
     state.frida_server_present = bool(pids) if online else None
     state.frida_server_pid = pids[0] if pids else None
-    state.frida_server_version = (
-        probe.frida_server_version(device_id) if pids else None
-    )
+    state.frida_server_version = probe.frida_server_version(device_id) if pids else None
     try:
         helper_pids = probe.pidof(device_id, "re.frida.helper")
     except BaseException:
         helper_pids = []
-    state.frida_helper_pids = [
-        pid for pid in helper_pids if isinstance(pid, int) and pid > 0
-    ]
+    state.frida_helper_pids = [pid for pid in helper_pids if isinstance(pid, int) and pid > 0]
 
     try:
         state.foreground_package = probe.current_focus(device_id)

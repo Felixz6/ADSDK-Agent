@@ -96,9 +96,7 @@ class _FakeProbe:
     def adb_devices(self) -> dict[str, Any]:
         self.calls.append(("adb_devices",))
         status = "device" if self._online else "offline"
-        return {
-            "devices": [{"device_id": "127.0.0.1:16416", "status": status}]
-        }
+        return {"devices": [{"device_id": "127.0.0.1:16416", "status": status}]}
 
     def getprop(self, device: str, name: str) -> str | None:
         self.calls.append(("getprop", device, name))
@@ -151,7 +149,8 @@ def _make_snapshot(
     helper_pids: list[int] | None = None,
 ) -> DeviceSessionSnapshot:
     probe = _FakeProbe(
-        http_proxy=http_proxy, frida_pids=frida_pids or [],
+        http_proxy=http_proxy,
+        frida_pids=frida_pids or [],
         helper_pids=helper_pids or [],
     )
     return build_snapshot(
@@ -228,7 +227,9 @@ def test_snapshot_records_helper_pids_as_read_only_provenance():
 def test_snapshot_offline_records_frida_present_none():
     probe = _FakeProbe(online=False, frida_pids=[4321])
     snap = build_snapshot(
-        run_id="r", device_id="127.0.0.1:16416", probe=probe,
+        run_id="r",
+        device_id="127.0.0.1:16416",
+        probe=probe,
         captured_at="T",
     )
     assert snap.initial_state.online is False
@@ -260,9 +261,7 @@ class _FakeClock:
 def test_lease_acquire_release_roundtrip():
     clock = _FakeClock()
     reg = LeaseRegistry(clock=clock, stale_after_seconds=600)
-    lease = reg.acquire(
-        device_key="redacted:dev1", run_id="run-a", task_id="t1"
-    )
+    lease = reg.acquire(device_key="redacted:dev1", run_id="run-a", task_id="t1")
     assert reg.state("redacted:dev1") == "held"
     assert lease.owner_run_id == "run-a"
     ok = reg.release(device_key="redacted:dev1", run_id="run-a")
@@ -290,9 +289,7 @@ def test_lease_reclaim_after_crash_via_mark_dead():
     reg.acquire(device_key="redacted:dev1", run_id="run-a", task_id="t1")
     tasks_alive["t1"] = False  # holder process crashed
     reg.mark_dead("t1")
-    reclaimed = reg.acquire(
-        device_key="redacted:dev1", run_id="run-b", task_id="t2"
-    )
+    reclaimed = reg.acquire(device_key="redacted:dev1", run_id="run-b", task_id="t2")
     assert reclaimed.owner_run_id == "run-b"
 
 
@@ -302,9 +299,7 @@ def test_lease_reclaim_after_stale_heartbeat():
     reg.acquire(device_key="redacted:dev1", run_id="run-a", task_id="t1")
     # alive() still True, but heartbeat went stale past the window.
     clock.advance(20)
-    reclaimed = reg.acquire(
-        device_key="redacted:dev1", run_id="run-b", task_id="t2"
-    )
+    reclaimed = reg.acquire(device_key="redacted:dev1", run_id="run-b", task_id="t2")
     assert reclaimed.owner_run_id == "run-b"
 
 
@@ -447,7 +442,9 @@ def test_cleanup_restores_proxy_to_initial_value_when_set():
     reg.mark_owned("mitm_process", "port_8080", pid=1234)
     actions = _FakeActions(fail_proxy=False)
     outcome = CleanupManager(
-        registry=reg, actions=actions, snapshot=snap,
+        registry=reg,
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     assert outcome.proxy_restore_attempted is True
@@ -461,7 +458,9 @@ def test_cleanup_deletes_proxy_when_initial_was_empty():
     snap = _make_snapshot(http_proxy="")
     actions = _FakeActions()
     outcome = CleanupManager(
-        registry=ResourceOwnershipRegistry(), actions=actions, snapshot=snap,
+        registry=ResourceOwnershipRegistry(),
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     assert ("delete_proxy", "127.0.0.1:16416") in actions.call_log
@@ -472,7 +471,9 @@ def test_cleanup_proxy_restore_failure_recorded_not_aborting():
     snap = _make_snapshot(http_proxy="http://old-proxy:80")
     actions = _FakeActions(fail_proxy=True)
     outcome = CleanupManager(
-        registry=ResourceOwnershipRegistry(), actions=actions, snapshot=snap,
+        registry=ResourceOwnershipRegistry(),
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     assert outcome.proxy_restore_failed is True
@@ -486,7 +487,9 @@ def test_cleanup_never_touches_external_frida_server():
     reg = _registry_with_external_frida(999)
     actions = _FakeActions()
     outcome = CleanupManager(
-        registry=reg, actions=actions, snapshot=snap,
+        registry=reg,
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     # External frida-server pid 999 is never killed.
@@ -504,7 +507,9 @@ def test_cleanup_stops_owned_frida_server():
     reg.mark_owned("frida_server", "pid_777", pid=777)
     actions = _FakeActions()
     outcome = CleanupManager(
-        registry=reg, actions=actions, snapshot=snap,
+        registry=reg,
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     assert ("kill_pid", "127.0.0.1:16416", 777) in actions.call_log
@@ -516,7 +521,9 @@ def test_cleanup_policy_no_ops_recorded_app_data_other_apps_reboot_evidence():
     snap = _make_snapshot()
     actions = _FakeActions()
     outcome = CleanupManager(
-        registry=ResourceOwnershipRegistry(), actions=actions, snapshot=snap,
+        registry=ResourceOwnershipRegistry(),
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     rules = {s.rule for s in outcome.steps}
@@ -538,7 +545,9 @@ def test_cleanup_detaches_owned_frida_sessions():
     reg.mark_owned("frida_session", "session-ref-1")
     actions = _FakeActions()
     outcome = CleanupManager(
-        registry=reg, actions=actions, snapshot=snap,
+        registry=reg,
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     assert ("stop_frida_session", "session-ref-1") in actions.call_log
@@ -549,12 +558,17 @@ def test_cleanup_detaches_owned_frida_sessions():
 def test_cleanup_no_device_skips_proxy():
     # A static-only snapshot with no device: proxy not applicable.
     snap = build_snapshot(
-        run_id="r", device_id=None, probe=_FakeProbe(),
-        captured_at="T", capture_kind="read_only",
+        run_id="r",
+        device_id=None,
+        probe=_FakeProbe(),
+        captured_at="T",
+        capture_kind="read_only",
     )
     actions = _FakeActions()
     outcome = CleanupManager(
-        registry=ResourceOwnershipRegistry(), actions=actions, snapshot=snap,
+        registry=ResourceOwnershipRegistry(),
+        actions=actions,
+        snapshot=snap,
         device_id=None,
     ).run()
     proxy = [s for s in outcome.steps if s.rule == "restore_proxy"]
@@ -566,12 +580,17 @@ def test_cleanup_unknown_initial_proxy_left_untouched():
     # We could not determine the initial proxy: cleanup must NOT guess.
     probe = _FakeProbe(http_proxy=None)
     snap = build_snapshot(
-        run_id="r", device_id="127.0.0.1:16416", probe=probe,
-        captured_at="T", capture_kind="preflight",
+        run_id="r",
+        device_id="127.0.0.1:16416",
+        probe=probe,
+        captured_at="T",
+        capture_kind="preflight",
     )
     actions = _FakeActions()
     outcome = CleanupManager(
-        registry=ResourceOwnershipRegistry(), actions=actions, snapshot=snap,
+        registry=ResourceOwnershipRegistry(),
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     proxy = [s for s in outcome.steps if s.rule == "restore_proxy"]
@@ -584,7 +603,9 @@ def test_cleanup_cancelled_flag_propagates_to_outcome():
     snap = _make_snapshot()
     actions = _FakeActions()
     outcome = CleanupManager(
-        registry=ResourceOwnershipRegistry(), actions=actions, snapshot=snap,
+        registry=ResourceOwnershipRegistry(),
+        actions=actions,
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run(cancelled=True)
     assert outcome.cancelled is True
@@ -594,10 +615,16 @@ def test_cleanup_cancelled_flag_propagates_to_outcome():
 def test_cleanup_result_is_secret_free():
     snap = _make_snapshot()
     actions = _FakeActions()
-    dump = CleanupManager(
-        registry=ResourceOwnershipRegistry(), actions=actions, snapshot=snap,
-        device_id="127.0.0.1:16416",
-    ).run().model_dump(mode="json")
+    dump = (
+        CleanupManager(
+            registry=ResourceOwnershipRegistry(),
+            actions=actions,
+            snapshot=snap,
+            device_id="127.0.0.1:16416",
+        )
+        .run()
+        .model_dump(mode="json")
+    )
     text = repr(dump)
     assert "16416" not in text  # no raw device serial leaks
 
@@ -779,7 +806,9 @@ def test_validate_accepts_valid_full_analysis_dag():
         ]
     )
     build = build_full_analysis_plan(
-        objective="o", strategy="full_analysis", allow_dynamic=True,
+        objective="o",
+        strategy="full_analysis",
+        allow_dynamic=True,
         allow_network=True,
         confirmed_tools=frozenset({"dynamic_analysis"}),
         ai_plan=plan,
@@ -790,7 +819,9 @@ def test_validate_accepts_valid_full_analysis_dag():
 def test_validate_rejects_tool_not_in_dag():
     plan = _ai_plan([("s1", "environment_check"), ("s2", "shell_exec")])
     out = build_full_analysis_plan(
-        objective="o", strategy="full_analysis", allow_dynamic=True,
+        objective="o",
+        strategy="full_analysis",
+        allow_dynamic=True,
         allow_network=True,
         confirmed_tools=frozenset({"dynamic_analysis"}),
         ai_plan=plan,
@@ -803,7 +834,9 @@ def test_validate_rejects_tool_not_in_dag():
 def test_validate_rejects_dynamic_without_confirmation():
     plan = _ai_plan([("s1", "dynamic_analysis")])
     out = build_full_analysis_plan(
-        objective="o", strategy="full_analysis", allow_dynamic=True,
+        objective="o",
+        strategy="full_analysis",
+        allow_dynamic=True,
         allow_network=True,
         confirmed_tools=frozenset(),  # not confirmed
         ai_plan=plan,
@@ -814,7 +847,9 @@ def test_validate_rejects_dynamic_without_confirmation():
 def test_validate_rejects_dynamic_when_allow_dynamic_false():
     plan = _ai_plan([("s1", "dynamic_analysis")])
     out = build_full_analysis_plan(
-        objective="o", strategy="full_analysis", allow_dynamic=False,
+        objective="o",
+        strategy="full_analysis",
+        allow_dynamic=False,
         allow_network=True,
         confirmed_tools=frozenset({"dynamic_analysis"}),
         ai_plan=plan,
@@ -825,7 +860,9 @@ def test_validate_rejects_dynamic_when_allow_dynamic_false():
 def test_validate_rejects_traffic_without_dynamic_or_network():
     plan = _ai_plan([("s1", "traffic_analysis")])
     out = build_full_analysis_plan(
-        objective="o", strategy="dynamic_only", allow_dynamic=False,
+        objective="o",
+        strategy="dynamic_only",
+        allow_dynamic=False,
         allow_network=False,
         confirmed_tools=frozenset(),
         ai_plan=plan,
@@ -834,11 +871,11 @@ def test_validate_rejects_traffic_without_dynamic_or_network():
 
 
 def test_validate_rejects_duplicate_steps():
-    plan = _ai_plan(
-        [("s1", "static_analysis"), ("s2", "static_analysis")]
-    )
+    plan = _ai_plan([("s1", "static_analysis"), ("s2", "static_analysis")])
     out = build_full_analysis_plan(
-        objective="o", strategy="static_only", allow_dynamic=False,
+        objective="o",
+        strategy="static_only",
+        allow_dynamic=False,
         allow_network=False,
         confirmed_tools=frozenset(),
         ai_plan=plan,
@@ -849,7 +886,9 @@ def test_validate_rejects_duplicate_steps():
 def test_validate_rejects_tool_not_in_dag():  # noqa: F811
     plan = _ai_plan([("s1", "environment_check"), ("s2", "shell_exec")])
     out = build_full_analysis_plan(
-        objective="o", strategy="full_analysis", allow_dynamic=True,
+        objective="o",
+        strategy="full_analysis",
+        allow_dynamic=True,
         allow_network=True,
         confirmed_tools=frozenset({"dynamic_analysis"}),
         ai_plan=plan,
@@ -863,7 +902,9 @@ def test_validate_rejects_tool_not_in_dag():  # noqa: F811
 def test_default_plan_never_exceeds_six_steps_schema_cap():
     for strategy in ("full_analysis", "dynamic_only", "static_only", "report_only"):
         plan = build_default_plan(
-            objective="o", strategy=strategy, allow_dynamic=True,
+            objective="o",
+            strategy=strategy,
+            allow_dynamic=True,
             confirmed_tools=frozenset({"dynamic_analysis"}),
         )
         assert len(plan.steps) <= 6, strategy
@@ -903,7 +944,9 @@ def test_validate_repaired_plan_accepted():
         ]
     )
     out = build_full_analysis_plan(
-        objective="o", strategy="static_only", allow_dynamic=False,
+        objective="o",
+        strategy="static_only",
+        allow_dynamic=False,
         allow_network=False,
         confirmed_tools=frozenset(),
         ai_plan=bad,
@@ -914,7 +957,9 @@ def test_validate_repaired_plan_accepted():
 
 def test_default_plan_full_analysis_drops_dynamic_without_confirmation():
     plan = build_default_plan(
-        objective="o", strategy="full_analysis", allow_dynamic=True,
+        objective="o",
+        strategy="full_analysis",
+        allow_dynamic=True,
         confirmed_tools=frozenset(),
     )
     names = [s.tool_name for s in plan.steps]
@@ -926,7 +971,9 @@ def test_default_plan_full_analysis_drops_dynamic_without_confirmation():
 
 def test_default_plan_with_confirmation_keeps_dynamic():
     plan = build_default_plan(
-        objective="o", strategy="full_analysis", allow_dynamic=True,
+        objective="o",
+        strategy="full_analysis",
+        allow_dynamic=True,
         confirmed_tools=frozenset({"dynamic_analysis"}),
     )
     names = [s.tool_name for s in plan.steps]
@@ -935,7 +982,9 @@ def test_default_plan_with_confirmation_keeps_dynamic():
 
 def test_default_plan_strategy_subset_constraints():
     plan = build_default_plan(
-        objective="o", strategy="static_only", allow_dynamic=False,
+        objective="o",
+        strategy="static_only",
+        allow_dynamic=False,
         confirmed_tools=frozenset(),
     )
     names = set(s.tool_name for s in plan.steps)
@@ -959,27 +1008,42 @@ def _make_orch_result(
 ) -> AIOrchestrationResult:
     steps = [
         PlanStep(
-            step_id="s1", tool_name="static_analysis", reason="r",
-            arguments={}, depends_on=[], requires_confirmation=False,
+            step_id="s1",
+            tool_name="static_analysis",
+            reason="r",
+            arguments={},
+            depends_on=[],
+            requires_confirmation=False,
         )
     ]
     if plan_uses_dynamic:
         steps.append(
             PlanStep(
-                step_id="s2", tool_name="dynamic_analysis", reason="r",
-                arguments={}, depends_on=[], requires_confirmation=True,
+                step_id="s2",
+                tool_name="dynamic_analysis",
+                reason="r",
+                arguments={},
+                depends_on=[],
+                requires_confirmation=True,
             )
         )
     plan = AIPlan(
-        objective="o", strategy="full_analysis", steps=steps,
-        expected_outputs=[], stop_conditions=[], limitations=[],
+        objective="o",
+        strategy="full_analysis",
+        steps=steps,
+        expected_outputs=[],
+        stop_conditions=[],
+        limitations=[],
         generated_by="ai",
     )
     digest = EvidenceDigest(
-        task={}, environment={}, static_summary={"evidence_id": "EV-1"},
+        task={},
+        environment={},
+        static_summary={"evidence_id": "EV-1"},
     )
     report = AIReport(
-        schema_version="ai-report-v1", status=status,  # type: ignore[arg-type]
+        schema_version="ai-report-v1",
+        status=status,  # type: ignore[arg-type]
         executive_summary="ok",
         key_findings=[],
         limitations=[],
@@ -989,9 +1053,7 @@ def _make_orch_result(
         plan=plan,
         digest=digest,
         report=report,
-        trace=__import__(
-            "app.ai.models", fromlist=["AIToolTrace"]
-        ).AIToolTrace(),
+        trace=__import__("app.ai.models", fromlist=["AIToolTrace"]).AIToolTrace(),
         usage=AITokenUsage(),
         tool_results=[],
         error_code=None,
@@ -1065,9 +1127,7 @@ class _FakeEffects:
         result = self._orch_result or _make_orch_result(plan_uses_dynamic=True)
         return PreparedPlan(plan=result.plan)
 
-    def execute_prepared_orchestration(
-        self, prepared, request, effective_plan, strategy_decision
-    ):
+    def execute_prepared_orchestration(self, prepared, request, effective_plan, strategy_decision):
         self.execute_count += 1
         self.phase_log.append("execute")
         self.effective_plan_seen = effective_plan
@@ -1094,7 +1154,8 @@ class _FakeEffects:
         if self._consent_action == "cancelled":
             return self.consent_svc.cancel(task_id=task_id)
         return self.consent_svc.resolve(
-            task_id=task_id, action=self._consent_action  # type: ignore[arg-type]
+            task_id=task_id,
+            action=self._consent_action,  # type: ignore[arg-type]
         )
 
     # CleanupActions ------------------------------------------------
@@ -1150,9 +1211,7 @@ def _build_session(
         allow_dynamic=allow_dynamic,
         allow_network=True,
         confirmed_tools=(
-            confirmed_tools
-            if confirmed_tools is not None
-            else frozenset({"dynamic_analysis"})
+            confirmed_tools if confirmed_tools is not None else frozenset({"dynamic_analysis"})
         ),
         token_budget=6000,
         report_language="zh-CN",
@@ -1196,9 +1255,7 @@ def test_session_consent_race_persists_confirmed_then_closes_checkpoint():
                 timeout_seconds=2.0,
             )
 
-    effects = _BlockingConsentEffects(
-        orch_result=_make_orch_result(plan_uses_dynamic=True)
-    )
+    effects = _BlockingConsentEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
     session = _build_session(effects, consent=shared)
     transitions: list[SessionTransition] = []
     worker = threading.Thread(target=lambda: transitions.append(session.run()))
@@ -1243,9 +1300,7 @@ def test_session_never_labels_an_awaiting_checkpoint_as_resolved():
             assert state is not None
             return state
 
-    effects = _StillAwaitingEffects(
-        orch_result=_make_orch_result(plan_uses_dynamic=True)
-    )
+    effects = _StillAwaitingEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
     transition = _build_session(effects).run()
 
     assert transition.final_state == "failed"
@@ -1258,7 +1313,9 @@ def test_session_never_labels_an_awaiting_checkpoint_as_resolved():
 def test_session_static_only_does_not_take_lease():
     effects = _FakeEffects(orch_result=_make_orch_result(plan_uses_dynamic=False))
     sess = _build_session(
-        effects, strategy="static_only", allow_dynamic=False,
+        effects,
+        strategy="static_only",
+        allow_dynamic=False,
         confirmed_tools=frozenset(),
     )
     transition = sess.run()
@@ -1271,18 +1328,24 @@ def test_session_static_only_does_not_take_lease():
 def test_session_lease_busy_yields_failed_and_no_cleanup_leak():
     clock = _FakeClock()
     lease = LeaseRegistry(clock=clock, stale_after_seconds=600)
-    lease.acquire(
-        device_key=_make_snapshot().device_ref, run_id="other-run", task_id="other"
-    )
+    lease.acquire(device_key=_make_snapshot().device_ref, run_id="other-run", task_id="other")
     effects = _FakeEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
     sess = FullAnalysisSession(
-        task_id="t1", run_id="run-1", device_id="127.0.0.1:16416",
-        package_name="com.phoenix.read", objective="o",
-        strategy="full_analysis", allow_dynamic=True, allow_network=True,
+        task_id="t1",
+        run_id="run-1",
+        device_id="127.0.0.1:16416",
+        package_name="com.phoenix.read",
+        objective="o",
+        strategy="full_analysis",
+        allow_dynamic=True,
+        allow_network=True,
         confirmed_tools=frozenset({"dynamic_analysis"}),
-        token_budget=6000, report_language="zh-CN",
-        lease=lease, consent=ConsentCheckpointService(clock=lambda: "T"),
-        registry=ResourceOwnershipRegistry(), effects=effects,  # type: ignore[arg-type]
+        token_budget=6000,
+        report_language="zh-CN",
+        lease=lease,
+        consent=ConsentCheckpointService(clock=lambda: "T"),
+        registry=ResourceOwnershipRegistry(),
+        effects=effects,  # type: ignore[arg-type]
     )
     transition = sess.run()
     assert transition.final_state == "failed"
@@ -1328,7 +1391,8 @@ def test_session_consent_not_found_yields_partial_limitation():
     transition = sess.run()
     assert transition.consent is not None and transition.consent.status == "not_found"
     acceptance = build_full_analysis_acceptance(
-        transition=transition, result=effects._orch_result,
+        transition=transition,
+        result=effects._orch_result,
     )
     assert any("consent UI was not reached" in l for l in acceptance.limitations)  # noqa: E741
 
@@ -1351,12 +1415,15 @@ def test_session_budget_exhausted_yields_partial_acceptance_limitation():
         consent_action="confirmed",
     )
     sess = _build_session(
-        effects, strategy="static_only", allow_dynamic=False,
+        effects,
+        strategy="static_only",
+        allow_dynamic=False,
         confirmed_tools=frozenset(),
     )
     transition = sess.run()
     acceptance = build_full_analysis_acceptance(
-        transition=transition, result=effects._orch_result,
+        transition=transition,
+        result=effects._orch_result,
     )
     assert acceptance.orchestration_status == "budget_exhausted"
     assert any("budget exhausted" in l for l in acceptance.limitations)  # noqa: E741
@@ -1381,7 +1448,8 @@ def test_acceptance_record_is_secret_free_and_copies_evidence_ids():
     sess = _build_session(effects)
     transition = sess.run()
     acceptance = build_full_analysis_acceptance(
-        transition=transition, result=effects._orch_result,
+        transition=transition,
+        result=effects._orch_result,
     )
     assert acceptance.schema_version == "m7a-acceptance-v1"
     assert acceptance.run_id == "run-1"
@@ -1395,7 +1463,9 @@ def test_verify_cleanup_reports_proxy_and_external_frida_state():
     snap = _make_snapshot()
     reg = _registry_with_external_frida(999)
     outcome = CleanupManager(
-        registry=reg, actions=_FakeActions(), snapshot=snap,
+        registry=reg,
+        actions=_FakeActions(),
+        snapshot=snap,
         device_id="127.0.0.1:16416",
     ).run()
     report = verify_cleanup(outcome)
@@ -1416,14 +1486,14 @@ def test_verify_cleanup_none_outcome():
 # ---------------------------------------------------------------------------
 
 
-def _failure_session_failure_then_cleanup(fail_at: str) -> tuple[
-    SessionTransition, _FakeEffects
-]:
+def _failure_session_failure_then_cleanup(fail_at: str) -> tuple[SessionTransition, _FakeEffects]:
     """Run a session that fails at a named point; return transition + effects."""
     if fail_at == "snapshot":
+
         class _E(_FakeEffects):
             def capture_snapshot(self, device_id, package_name):
                 raise RuntimeError("snapshot fail")
+
         eff = _E(orch_result=_make_orch_result(plan_uses_dynamic=True))
     elif fail_at == "orchestration":
         eff = _FakeEffects(orch_raises=RuntimeError("orch fail"))
@@ -1433,18 +1503,26 @@ def _failure_session_failure_then_cleanup(fail_at: str) -> tuple[
             consent_action="cancelled",
         )
     else:  # proxy restore failure
+
         class _E(_FakeEffects):
             def delete_proxy(self, device):
                 self.actions_log.append(("delete_proxy", device))
                 return False
+
         eff = _E(orch_result=_make_orch_result(plan_uses_dynamic=True))
     sess = _build_session(eff)
     return sess.run(), eff
 
 
-@pytest.mark.parametrize("fail_at", [
-    "snapshot", "orchestration", "consent", "proxy_restore",
-])
+@pytest.mark.parametrize(
+    "fail_at",
+    [
+        "snapshot",
+        "orchestration",
+        "consent",
+        "proxy_restore",
+    ],
+)
 def test_failure_contracts_lease_released_and_cleanup_ran(fail_at):
     transition, effects = _failure_session_failure_then_cleanup(fail_at)
     # Lease is always released (or never acquired for snapshot failure).
@@ -1458,9 +1536,15 @@ def test_failure_contracts_lease_released_and_cleanup_ran(fail_at):
     )  # snapshots != orch; orch is one-shot by construction above.
 
 
-@pytest.mark.parametrize("fail_at", [
-    "snapshot", "orchestration", "consent", "proxy_restore",
-])
+@pytest.mark.parametrize(
+    "fail_at",
+    [
+        "snapshot",
+        "orchestration",
+        "consent",
+        "proxy_restore",
+    ],
+)
 def test_failure_contracts_external_frida_untouched(fail_at):
     registry = _registry_with_external_frida(999)
     transition, effects = _failure_session_failure_then_cleanup(fail_at)
@@ -1471,22 +1555,34 @@ def test_failure_contracts_external_frida_untouched(fail_at):
         assert pid != 999
 
 
-@pytest.mark.parametrize("fail_at", [
-    "orchestration", "consent", "proxy_restore",
-])
+@pytest.mark.parametrize(
+    "fail_at",
+    [
+        "orchestration",
+        "consent",
+        "proxy_restore",
+    ],
+)
 def test_failure_contracts_proxy_restore_attempted(fail_at):
     transition, effects = _failure_session_failure_then_cleanup(fail_at)
     proxy_actions = [c for c in effects.actions_log if c[0] in {"set_proxy", "delete_proxy"}]
     assert proxy_actions  # restore attempted
 
 
-@pytest.mark.parametrize("fail_at", [
-    "snapshot", "orchestration", "consent", "proxy_restore",
-])
+@pytest.mark.parametrize(
+    "fail_at",
+    [
+        "snapshot",
+        "orchestration",
+        "consent",
+        "proxy_restore",
+    ],
+)
 def test_failure_contracts_no_key_or_serial_leak(fail_at):
     transition, effects = _failure_session_failure_then_cleanup(fail_at)
     acceptance = build_full_analysis_acceptance(
-        transition=transition, result=effects._orch_result,
+        transition=transition,
+        result=effects._orch_result,
     )
     text = acceptance.model_dump_json() + transition.model_dump_json()
     assert "16416" not in text
@@ -1579,32 +1675,22 @@ def test_consent_api_resolves_confirmed_and_is_idempotent(tmp_path, monkeypatch)
     assert repeat.json()["status"] == "confirmed"
 
 
-def test_consent_api_conflicting_action_after_resolution_is_409(
-    tmp_path, monkeypatch
-):
+def test_consent_api_conflicting_action_after_resolution_is_409(tmp_path, monkeypatch):
     client, _svc, checkpoint_svc, _repo = _api_client(tmp_path, monkeypatch)
     task_id = _make_api_task(client)
     checkpoint_svc.enter(task_id=task_id, run_id="run-1")
-    client.post(
-        f"/tasks/{task_id}/consent-checkpoint", json={"action": "confirmed"}
-    )
-    conflict = client.post(
-        f"/tasks/{task_id}/consent-checkpoint", json={"action": "skipped"}
-    )
+    client.post(f"/tasks/{task_id}/consent-checkpoint", json={"action": "confirmed"})
+    conflict = client.post(f"/tasks/{task_id}/consent-checkpoint", json={"action": "skipped"})
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["code"] == "checkpoint_already_resolved"
 
 
 @pytest.mark.parametrize("action", ["confirmed", "not_found", "skipped"])
-def test_consent_api_accepts_all_three_human_actions(
-    tmp_path, monkeypatch, action
-):
+def test_consent_api_accepts_all_three_human_actions(tmp_path, monkeypatch, action):
     client, _svc, checkpoint_svc, _repo = _api_client(tmp_path, monkeypatch)
     task_id = _make_api_task(client)
     checkpoint_svc.enter(task_id=task_id, run_id="run-1")
-    resp = client.post(
-        f"/tasks/{task_id}/consent-checkpoint", json={"action": action}
-    )
+    resp = client.post(f"/tasks/{task_id}/consent-checkpoint", json={"action": action})
     assert resp.status_code == 200
     assert resp.json()["status"] == action
 
@@ -1652,6 +1738,7 @@ def test_consent_api_note_is_length_bounded(tmp_path, monkeypatch):
     )
     assert resp.status_code == 422  # note max_length=240
 
+
 # M7B — session production-path runtime/freshness integration (all effects injected).
 def test_session_rechecks_freshness_before_dynamic_consent_resolution():
     effects = _FakeEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
@@ -1664,15 +1751,21 @@ def test_session_rechecks_freshness_before_dynamic_consent_resolution():
 
 def test_session_offline_freshness_blocks_and_still_cleans_up():
     effects = _FakeEffects(orch_result=_make_orch_result(plan_uses_dynamic=True))
+
     def offline_snapshot(device_id, package_name):
         snap = _make_snapshot(device_id=device_id)
-        return snap.model_copy(update={"initial_state": snap.initial_state.model_copy(update={"online": False})})
+        return snap.model_copy(
+            update={"initial_state": snap.initial_state.model_copy(update={"online": False})}
+        )
+
     effects.capture_fresh_snapshot = offline_snapshot
     session = _build_session(effects)
     transition = execute_full_analysis_plan(session=session)
     assert transition.final_state == "failed"
     assert transition.cleanup is not None and transition.cleanup.ran
-    assert any(item.error_code == "device_disconnected_since_preflight" for item in transition.events)
+    assert any(
+        item.error_code == "device_disconnected_since_preflight" for item in transition.events
+    )
 
 
 class _RealTwoPhaseEffects(_FakeEffects):
@@ -1723,9 +1816,7 @@ class _RealTwoPhaseEffects(_FakeEffects):
         self.prepared_seen = self.orchestrator.prepare_plan(request)
         return self.prepared_seen
 
-    def execute_prepared_orchestration(
-        self, prepared, request, effective_plan, strategy_decision
-    ):
+    def execute_prepared_orchestration(self, prepared, request, effective_plan, strategy_decision):
         self.execute_count += 1
         self.phase_log.append("execute")
         self.effective_plan_seen = effective_plan
@@ -1733,9 +1824,7 @@ class _RealTwoPhaseEffects(_FakeEffects):
 
         def execute_tool(name, _arguments):
             self.tool_calls.append(name)
-            return ToolCompactResult(
-                tool_name=name, status="success", summary=f"ran:{name}"
-            )
+            return ToolCompactResult(tool_name=name, status="success", summary=f"ran:{name}")
 
         builder = AIContextBuilder()
         result = self.orchestrator.execute_prepared_plan(
@@ -1759,7 +1848,10 @@ def test_full_session_real_two_phase_order_and_single_execution():
 
     assert transition.final_state == "completed"
     assert effects.phase_log[:4] == [
-        "planning_preflight", "prepare", "execution_preflight", "execute"
+        "planning_preflight",
+        "prepare",
+        "execution_preflight",
+        "execute",
     ]
     assert effects.prepare_count == 1
     assert effects.execute_count == 1
@@ -1784,11 +1876,7 @@ def test_runtime_gate_blocks_before_tools_consent_and_second_model_round(
     state_update, expected_code
 ):
     snapshot = _make_snapshot().model_copy(
-        update={
-            "initial_state": _make_snapshot().initial_state.model_copy(
-                update=state_update
-            )
-        }
+        update={"initial_state": _make_snapshot().initial_state.model_copy(update=state_update)}
     )
     effects = _RealTwoPhaseEffects(execution_snapshot=snapshot)
     transition = _build_session(effects).run()
@@ -1873,4 +1961,3 @@ def test_attach_only_missing_target_and_launch_forbidden_blocks_cleanly():
     assert effects.execute_count == 0
     assert effects.tool_calls == []
     assert effects.consent_entered == []
-

@@ -41,6 +41,7 @@ def _int(value: Any, default: int = 0) -> int:
         return int(value)
     return default
 
+
 FIXED_DISCLAIMER = (
     "AI 综合研判基于本次任务中已有的结构化技术证据生成。"
     "AI 不直接读取或验证原始敏感数据，本结果不构成法律合规结论。"
@@ -87,6 +88,7 @@ def _is_forbidden_action(text: str) -> bool:
     """True if a recommended action names a shell/adb/frida/mitm command."""
 
     return bool(_FORBIDDEN_ACTION_PATTERN.search(text or ""))
+
 
 # Legal / regulatory conclusion markers. The AI may describe technical risk;
 # it may never assert legality, compliance status, or violation of a statute.
@@ -157,9 +159,7 @@ class AIReportComposer:
         consent_state = _consent_state(digest)
         native_bridge = _native_bridge_flag(digest)
         total_requests = _int(digest.network_summary.get("total_requests"))
-        correlated_pairs = _int(
-            digest.correlation_summary.get("correlated_pair_count")
-        )
+        correlated_pairs = _int(digest.correlation_summary.get("correlated_pair_count"))
 
         validated_findings: list[AIKeyFinding] = []
         for finding in report.key_findings:
@@ -202,17 +202,13 @@ class AIReportComposer:
             # (4) correlation-as-causation: a finding that asserts causation from
             # a (low-confidence) correlation pair is downgraded.
             downgrade_native = native_bridge and _downplays_process_risk(summary)
-            downgrade_zero_net = (
-                total_requests == 0 and _asserts_network_finding(summary)
-            )
-            downgrade_causation = (
-                correlated_pairs > 0 and _asserts_causation_from_correlation(summary)
+            downgrade_zero_net = total_requests == 0 and _asserts_network_finding(summary)
+            downgrade_causation = correlated_pairs > 0 and _asserts_causation_from_correlation(
+                summary
             )
 
             severity = _cap_rank(finding.severity, severity_cap, _SEVERITY_RANK)
-            confidence = _cap_rank(
-                finding.confidence, confidence_cap, _CONFIDENCE_RANK
-            )
+            confidence = _cap_rank(finding.confidence, confidence_cap, _CONFIDENCE_RANK)
             if severity != finding.severity or confidence != finding.confidence:
                 downgraded.append(title[:80])
 
@@ -239,9 +235,7 @@ class AIReportComposer:
                 downgraded.append(f"zero_requests_no_network_inference:{title[:60]}")
             if downgrade_causation:
                 confidence = "low"
-                summary = _append_limitation_marker(
-                    summary, "（关联不等于因果，因果性结论已降级）"
-                )
+                summary = _append_limitation_marker(summary, "（关联不等于因果，因果性结论已降级）")
                 downgraded.append(f"correlation_as_causation:{title[:60]}")
 
             validated_findings.append(
@@ -255,9 +249,7 @@ class AIReportComposer:
             )
 
         top_level_refs = [ref for ref in report.evidence_refs if ref in known_ids]
-        removed_refs.extend(
-            [ref for ref in report.evidence_refs if ref not in known_ids]
-        )
+        removed_refs.extend([ref for ref in report.evidence_refs if ref not in known_ids])
 
         summary_text = sanitize_untrusted_text(report.executive_summary, limit=2400)
         if _LEGAL_MARKERS.search(summary_text):
@@ -302,12 +294,8 @@ class AIReportComposer:
         # otherwise a forbidden recommendation would survive detection simply
         # by being rewritten into a neutralised token.
         raw_recommended = list(report.recommended_actions or [])
-        forbidden_actions = [
-            a for a in raw_recommended if _is_forbidden_action(str(a))
-        ]
-        kept_raw = [
-            a for a in raw_recommended if not _is_forbidden_action(str(a))
-        ]
+        forbidden_actions = [a for a in raw_recommended if _is_forbidden_action(str(a))]
+        kept_raw = [a for a in raw_recommended if not _is_forbidden_action(str(a))]
         recommended = _bounded_text_list(kept_raw)
         if forbidden_actions:
             limitations.append("部分 AI 建议动作包含设备命令，已按只读策略移除")
@@ -405,9 +393,7 @@ def _cap_rank(value: str, cap: str | None, ranks: Mapping[str, int]) -> str:
 # transitions the digest did not record, (2) downplays a process crash /
 # anti-debug event on a Native Bridge device, (3) asserts a network finding
 # from a zero-request run, or (4) turns a correlation into causation.
-_CONSENT_POST_PATTERN = re.compile(
-    r"同意后|用户同意之后|consent[_\s-]?after|post[_\s-]?consent"
-)
+_CONSENT_POST_PATTERN = re.compile(r"同意后|用户同意之后|consent[_\s-]?after|post[_\s-]?consent")
 _CONSENT_PRE_PATTERN = re.compile(
     r"同意前|未经用户同意|consent[_\s-]?before|pre[_\s-]?consent|without\s+consent"
 )
@@ -538,7 +524,7 @@ def _allowed_terms(digest: EvidenceDigest) -> set[str]:
     package = str(static.get("package_name") or "").strip().lower()
     if package:
         terms.add(package)
-    for category in (static.get("sdk_categories") or {}):
+    for category in static.get("sdk_categories") or {}:
         terms.add(str(category).strip().lower())
     for finding in digest.top_findings:
         terms.add(finding.rule_id.lower())
@@ -650,9 +636,7 @@ def _deterministic_risk_priorities(digest: EvidenceDigest) -> list[str]:
     priorities: list[str] = []
     for finding in digest.top_findings[:5]:
         if finding.severity in {"high", "medium"}:
-            priorities.append(
-                f"[{finding.severity}] {finding.title or finding.rule_id}"
-            )
+            priorities.append(f"[{finding.severity}] {finding.title or finding.rule_id}")
     if not priorities:
         priorities.append("本次证据未形成高于低severity的风险提示")
     return priorities

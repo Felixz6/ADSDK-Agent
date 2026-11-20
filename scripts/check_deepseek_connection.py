@@ -47,9 +47,7 @@ def mask_key(key: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Test DeepSeek AI connectivity for adsdk-agent"
-    )
+    parser = argparse.ArgumentParser(description="Test DeepSeek AI connectivity for adsdk-agent")
     parser.add_argument(
         "api_key",
         nargs="?",
@@ -197,7 +195,9 @@ def main() -> int:
         store = AISettingsStore()
         store.save_settings(store.load_settings())  # ensure dir exists
         store.set_local_api_key(api_key)
-        print("\n[+] API Key 已通过 Windows DPAPI 加密保存到本机存储 (output/config/ai-secret.bin)。")
+        print(
+            "\n[+] API Key 已通过 Windows DPAPI 加密保存到本机存储 (output/config/ai-secret.bin)。"
+        )
 
     print("\n" + "=" * 60)
     print("  DeepSeek AI 编排配置已验证就绪！")

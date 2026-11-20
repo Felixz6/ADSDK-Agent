@@ -80,9 +80,7 @@ def build_traffic_summary(
     else:
         # Compatibility semantics for historical human-readable mitmdump logs.
         status = "success" if source_available and records else "partial"
-        evaluation_status = (
-            "not_matched" if source_available and records else "not_evaluated"
-        )
+        evaluation_status = "not_matched" if source_available and records else "not_evaluated"
         coverage = "observed" if source_available and records else "unavailable"
         warnings = (
             []
@@ -110,16 +108,10 @@ def write_traffic_summary(summary: dict[str, Any], output_path: str):
 def build_structured_traffic_summary(
     collection: TrafficCollectionResult,
 ) -> dict[str, Any]:
-    records = [
-        record.model_dump(mode="json")
-        for record in collection.records
-    ]
+    records = [record.model_dump(mode="json") for record in collection.records]
     summary = build_traffic_summary(
         records,
-        source_available=(
-            collection.outcome
-            is not TrafficCollectionOutcome.COLLECTOR_FAILED
-        ),
+        source_available=(collection.outcome is not TrafficCollectionOutcome.COLLECTOR_FAILED),
         collection_outcome=collection.outcome,
     )
     summary["validation"] = {
@@ -128,8 +120,7 @@ def build_structured_traffic_summary(
         "malformed_count": collection.malformed_count,
         "mismatch_count": collection.mismatch_count,
         "issues": [
-            {"code": issue.code, "line_number": issue.line_number}
-            for issue in collection.issues
+            {"code": issue.code, "line_number": issue.line_number} for issue in collection.issues
         ],
     }
     return summary
@@ -147,9 +138,7 @@ def parse_structured_traffic_to_summary_json(
 
     source = Path(jsonl_path)
     if not source.is_file():
-        raise FileNotFoundError(
-            f"structured traffic evidence is missing: {source}"
-        )
+        raise FileNotFoundError(f"structured traffic evidence is missing: {source}")
     collection = validate_traffic_jsonl(
         source,
         run_id=run_id,

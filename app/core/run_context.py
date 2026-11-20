@@ -132,9 +132,7 @@ def create_analysis_run_context(
     resolved_output_root = Path(output_root).resolve(strict=False)
     normalized_run_id = _normalize_run_id(run_id)
     normalized_sha256 = (
-        sha256_file(resolved_apk)
-        if apk_sha256 is None
-        else _normalize_sha256(apk_sha256)
+        sha256_file(resolved_apk) if apk_sha256 is None else _normalize_sha256(apk_sha256)
     )
     normalized_device_id = device_id.strip() if device_id and device_id.strip() else None
     normalized_apk_name = _normalize_apk_name(resolved_apk)

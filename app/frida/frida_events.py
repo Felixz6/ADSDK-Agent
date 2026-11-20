@@ -211,13 +211,9 @@ class FridaStructuredEvent(BaseModel):
             if self.identifier_present is None:
                 raise ValueError("identifier_present is required")
             if self.identifier_present:
-                if not self.value_token or not self.value_token.startswith(
-                    "redacted:"
-                ):
+                if not self.value_token or not self.value_token.startswith("redacted:"):
                     raise ValueError("a redacted value_token is required")
-            elif self.value_token is not None and not self.value_token.startswith(
-                "redacted:"
-            ):
+            elif self.value_token is not None and not self.value_token.startswith("redacted:"):
                 raise ValueError("value_token must be redacted")
         elif self.value_token is not None:
             raise ValueError("value_token is only valid for identifier events")
@@ -273,9 +269,7 @@ class FridaControlEvent(BaseModel):
 
     @model_validator(mode="after")
     def validate_control_shape(self) -> FridaControlEvent:
-        if self.event == "hook_ready" and not (
-            self.installed_hooks or self.failed_hooks
-        ):
+        if self.event == "hook_ready" and not (self.installed_hooks or self.failed_hooks):
             # An empty target set is almost always a script/protocol defect.
             raise ValueError("hook_ready must report attempted hooks")
         if self.event == "consent_granted" and not self.source:
@@ -366,9 +360,7 @@ def normalize_frida_payload(
                     else raw_identifier.strip()
                 ),
             )
-        elif normalized.get("identifier_present") and not normalized.get(
-            "value_token"
-        ):
+        elif normalized.get("identifier_present") and not normalized.get("value_token"):
             # The default JS collector intentionally withholds the raw value.
             # This explicit token signals presence without pretending that a
             # cross-event stable value comparison was possible.
@@ -415,10 +407,7 @@ def normalize_consent_states(
 
     consent_monotonic_ms: float | int | None = None
     for item in messages:
-        if (
-            item.get("type") == "control"
-            and item.get("event") == "consent_granted"
-        ):
+        if item.get("type") == "control" and item.get("event") == "consent_granted":
             consent_monotonic_ms = item.get("monotonic_ms")
             break
 
@@ -527,9 +516,7 @@ class StructuredEventWriter:
             )
         except FridaEventValidationError as exc:
             message_type = (
-                safe_message_type(payload.get("type"))
-                if isinstance(payload, Mapping)
-                else None
+                safe_message_type(payload.get("type")) if isinstance(payload, Mapping) else None
             )
             self.record_protocol_error(exc.code, message_type=message_type)
             return None

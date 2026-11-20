@@ -85,4 +85,3 @@ def request_cancel(task_id: str) -> bool:
             # The owning analysis thread performs and records final cleanup.
             pass
     return True
-

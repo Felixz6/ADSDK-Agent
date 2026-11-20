@@ -127,9 +127,7 @@ def get_task_report(
 def cancel_task(
     task_id: str,
     task_service: TaskService = Depends(get_task_service),
-    consent_checkpoint_service: ConsentCheckpointService = Depends(
-        get_consent_checkpoint_service
-    ),
+    consent_checkpoint_service: ConsentCheckpointService = Depends(get_consent_checkpoint_service),
 ):
     try:
         result = task_service.cancel(task_id)
@@ -167,9 +165,7 @@ def retry_task(
 def get_consent_checkpoint(
     task_id: str,
     task_service: TaskService = Depends(get_task_service),
-    consent_checkpoint_service: ConsentCheckpointService = Depends(
-        get_consent_checkpoint_service
-    ),
+    consent_checkpoint_service: ConsentCheckpointService = Depends(get_consent_checkpoint_service),
 ):
     if task_service.get(task_id) is None:
         raise task_not_found(task_id)
@@ -193,9 +189,7 @@ def resolve_consent_checkpoint(
     task_id: str,
     req: ConsentCheckpointRequest,
     task_service: TaskService = Depends(get_task_service),
-    consent_checkpoint_service: ConsentCheckpointService = Depends(
-        get_consent_checkpoint_service
-    ),
+    consent_checkpoint_service: ConsentCheckpointService = Depends(get_consent_checkpoint_service),
 ):
     if task_service.get(task_id) is None:
         raise task_not_found(task_id)
@@ -256,9 +250,7 @@ def download_task_artifact(
             detail={"code": "artifact_not_found", "message": "报告产物尚未生成"},
         )
     path = Path(path_text).resolve(strict=False)
-    allowed = (
-        Path(app_config.OUTPUT_DIR).resolve(strict=False) / "runs"
-    ).resolve(strict=False)
+    allowed = (Path(app_config.OUTPUT_DIR).resolve(strict=False) / "runs").resolve(strict=False)
     if not path.is_relative_to(allowed) or not path.is_file():
         raise HTTPException(
             status_code=404,

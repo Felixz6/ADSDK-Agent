@@ -145,46 +145,81 @@ class RunScopedExecution:
         }
         self._events.append(payload)
         if self._diagnostics_path is not None:
-            atomic_write_json(self._diagnostics_path, {
-                "schema_version": "run-context-claims-v1",
-                "events": self._events,
-            })
+            atomic_write_json(
+                self._diagnostics_path,
+                {
+                    "schema_version": "run-context-claims-v1",
+                    "events": self._events,
+                },
+            )
 
-    def request(self, strategy: str, *, caller_role: str, service_instance_token: str) -> dict[str, Any]:
+    def request(
+        self, strategy: str, *, caller_role: str, service_instance_token: str
+    ) -> dict[str, Any]:
         with self._condition:
             if self._running:
-                self._record(phase="unified_execution", caller_role=caller_role,
-                    operation="reuse_existing_execution", single_flight_role="waiter",
-                    service_instance_token=service_instance_token, result="waiting")
+                self._record(
+                    phase="unified_execution",
+                    caller_role=caller_role,
+                    operation="reuse_existing_execution",
+                    single_flight_role="waiter",
+                    service_instance_token=service_instance_token,
+                    result="waiting",
+                )
                 while self._running:
                     self._condition.wait()
                 if self._error is not None:
-                    self._record(phase="unified_execution", caller_role=caller_role,
-                        operation="reuse_same_failure", single_flight_role="reuser",
-                        service_instance_token=service_instance_token, result="failure",
-                        exception_type=type(self._error).__name__)
+                    self._record(
+                        phase="unified_execution",
+                        caller_role=caller_role,
+                        operation="reuse_same_failure",
+                        single_flight_role="reuser",
+                        service_instance_token=service_instance_token,
+                        result="failure",
+                        exception_type=type(self._error).__name__,
+                    )
                     raise self._error
                 assert self._result is not None
-                self._record(phase="unified_execution", caller_role=caller_role,
-                    operation="reuse_existing_execution", single_flight_role="reuser",
-                    service_instance_token=service_instance_token, result="success")
+                self._record(
+                    phase="unified_execution",
+                    caller_role=caller_role,
+                    operation="reuse_existing_execution",
+                    single_flight_role="reuser",
+                    service_instance_token=service_instance_token,
+                    result="success",
+                )
                 return dict(self._result)
             if self._completed:
                 if self._error is not None:
-                    self._record(phase="unified_execution", caller_role=caller_role,
-                        operation="reuse_same_failure", single_flight_role="reuser",
-                        service_instance_token=service_instance_token, result="failure",
-                        exception_type=type(self._error).__name__)
+                    self._record(
+                        phase="unified_execution",
+                        caller_role=caller_role,
+                        operation="reuse_same_failure",
+                        single_flight_role="reuser",
+                        service_instance_token=service_instance_token,
+                        result="failure",
+                        exception_type=type(self._error).__name__,
+                    )
                     raise self._error
                 assert self._result is not None
-                self._record(phase="unified_execution", caller_role=caller_role,
-                    operation="reuse_existing_execution", single_flight_role="reuser",
-                    service_instance_token=service_instance_token, result="success")
+                self._record(
+                    phase="unified_execution",
+                    caller_role=caller_role,
+                    operation="reuse_existing_execution",
+                    single_flight_role="reuser",
+                    service_instance_token=service_instance_token,
+                    result="success",
+                )
                 return dict(self._result)
             self._running = True
-            self._record(phase="run_context", caller_role=caller_role, operation="create",
-                single_flight_role="owner", service_instance_token=service_instance_token,
-                result="started")
+            self._record(
+                phase="run_context",
+                caller_role=caller_role,
+                operation="create",
+                single_flight_role="owner",
+                service_instance_token=service_instance_token,
+                result="started",
+            )
         try:
             result = dict(self._runner(strategy))
         except BaseException as exc:
@@ -192,24 +227,39 @@ class RunScopedExecution:
                 self._error = exc
                 self._completed = True
                 self._running = False
-                self._record(phase="run_context", caller_role=caller_role, operation="create",
-                    single_flight_role="owner", service_instance_token=service_instance_token,
-                    result="failure", exception_type=type(exc).__name__,
-                    path_existed=Path(self._run_context_path).exists() if self._run_context_path else None)
+                self._record(
+                    phase="run_context",
+                    caller_role=caller_role,
+                    operation="create",
+                    single_flight_role="owner",
+                    service_instance_token=service_instance_token,
+                    result="failure",
+                    exception_type=type(exc).__name__,
+                    path_existed=Path(self._run_context_path).exists()
+                    if self._run_context_path
+                    else None,
+                )
                 self._condition.notify_all()
             raise
         with self._condition:
             self._result = result
             self._completed = True
             self._running = False
-            self._record(phase="run_context", caller_role=caller_role, operation="create",
-                single_flight_role="owner", service_instance_token=service_instance_token,
-                result="success")
+            self._record(
+                phase="run_context",
+                caller_role=caller_role,
+                operation="create",
+                single_flight_role="owner",
+                service_instance_token=service_instance_token,
+                result="success",
+            )
             self._condition.notify_all()
         return dict(result)
 
     def __call__(self, strategy: str) -> dict[str, Any]:
-        return self.request(strategy, caller_role="execution_owner", service_instance_token="direct")
+        return self.request(
+            strategy, caller_role="execution_owner", service_instance_token="direct"
+        )
 
 
 class AITaskService:
@@ -293,13 +343,27 @@ class AITaskService:
         strategy = self._effective_dynamic_strategy
         runner = self._unified_runner_with_strategy
         request = getattr(runner, "request", None)
-        report = dict(request(strategy, caller_role=caller_role, service_instance_token=self._service_instance_token) if callable(request) else runner(strategy))
+        report = dict(
+            request(
+                strategy,
+                caller_role=caller_role,
+                service_instance_token=self._service_instance_token,
+            )
+            if callable(request)
+            else runner(strategy)
+        )
         receipt = report.get("executor_strategy_receipt")
         if isinstance(receipt, Mapping):
             self._executor_strategy_receipt = {
-                "executor_received_strategy": str(receipt.get("executor_received_strategy") or strategy),
-                "executor_execution_strategy": str(receipt.get("executor_execution_strategy") or strategy),
-                "executor_provenance_source": str(receipt.get("executor_provenance_source") or "unknown"),
+                "executor_received_strategy": str(
+                    receipt.get("executor_received_strategy") or strategy
+                ),
+                "executor_execution_strategy": str(
+                    receipt.get("executor_execution_strategy") or strategy
+                ),
+                "executor_provenance_source": str(
+                    receipt.get("executor_provenance_source") or "unknown"
+                ),
             }
         return report
 
@@ -405,9 +469,7 @@ class AITaskService:
                 status="success",
                 summary="复用已有静态分析产物，未重复执行",
                 metrics=_static_summary_metrics(existing),
-                artifact_refs=make_artifact_refs(
-                    {"report_json": self._artifacts.report_json}
-                ),
+                artifact_refs=make_artifact_refs({"report_json": self._artifacts.report_json}),
                 reused=True,
                 decision_summary="existing static artifact reused",
                 recommended_next_tools=["privacy_findings"],
@@ -445,9 +507,7 @@ class AITaskService:
             status=status,  # type: ignore[arg-type]
             summary="静态分析完成",
             metrics=_static_summary_metrics(report),
-            artifact_refs=make_artifact_refs(
-                {"report_json": self._artifacts.report_json}
-            ),
+            artifact_refs=make_artifact_refs({"report_json": self._artifacts.report_json}),
             recommended_next_tools=["privacy_findings"],
         )
 
@@ -460,9 +520,7 @@ class AITaskService:
                 status="success",
                 summary="复用已有动态分析产物，未重复采集",
                 metrics=_dynamic_summary_metrics(existing),
-                artifact_refs=make_artifact_refs(
-                    {"report_json": self._artifacts.report_json}
-                ),
+                artifact_refs=make_artifact_refs({"report_json": self._artifacts.report_json}),
                 reused=True,
                 confirmation_required=True,
                 decision_summary="existing dynamic artifact reused",
@@ -488,11 +546,7 @@ class AITaskService:
             elif self._dynamic_runner_with_strategy is not None:
                 if not self._effective_dynamic_strategy:
                     raise RuntimeError("effective_dynamic_strategy_missing")
-                report = dict(
-                    self._dynamic_runner_with_strategy(
-                        self._effective_dynamic_strategy
-                    )
-                )
+                report = dict(self._dynamic_runner_with_strategy(self._effective_dynamic_strategy))
             else:
                 assert self._dynamic_runner is not None
                 report = dict(self._dynamic_runner())
@@ -514,9 +568,7 @@ class AITaskService:
             status="success" if report.get("status") != "failed" else "partial",
             summary="动态分析完成",
             metrics=_dynamic_summary_metrics(report),
-            artifact_refs=make_artifact_refs(
-                {"report_json": self._artifacts.report_json}
-            ),
+            artifact_refs=make_artifact_refs({"report_json": self._artifacts.report_json}),
             confirmation_required=True,
             recommended_next_tools=["traffic_analysis", "evidence_correlation"],
         )
@@ -524,9 +576,7 @@ class AITaskService:
     def _tool_traffic_analysis(self, _arguments: dict[str, Any]) -> ToolCompactResult:
         report = self._load_report()
         traffic: Mapping[str, Any] | None = None
-        if isinstance(report, Mapping) and isinstance(
-            report.get("traffic_summary"), Mapping
-        ):
+        if isinstance(report, Mapping) and isinstance(report.get("traffic_summary"), Mapping):
             traffic = report["traffic_summary"]
         else:
             traffic = read_json_artifact(self._artifacts.traffic_summary)
@@ -547,16 +597,12 @@ class AITaskService:
                 "collector_outcome": str(traffic.get("collector_outcome") or ""),
                 "coverage": str(traffic.get("coverage") or ""),
             },
-            artifact_refs=make_artifact_refs(
-                {"traffic_summary": self._artifacts.traffic_summary}
-            ),
+            artifact_refs=make_artifact_refs({"traffic_summary": self._artifacts.traffic_summary}),
             reused=True,
             recommended_next_tools=["evidence_correlation"],
         )
 
-    def _tool_evidence_correlation(
-        self, _arguments: dict[str, Any]
-    ) -> ToolCompactResult:
+    def _tool_evidence_correlation(self, _arguments: dict[str, Any]) -> ToolCompactResult:
         correlation = self._load_correlation(self._load_report())
         if correlation is None:
             return ToolCompactResult(
@@ -566,9 +612,7 @@ class AITaskService:
                 limitations=["关联类结论未评估"],
             )
         summary = (
-            correlation.get("summary")
-            if isinstance(correlation.get("summary"), Mapping)
-            else {}
+            correlation.get("summary") if isinstance(correlation.get("summary"), Mapping) else {}
         )
         return ToolCompactResult(
             tool_name="evidence_correlation",
@@ -576,17 +620,11 @@ class AITaskService:
             summary="读取 correlation-v1 结果完成",
             metrics={
                 "status": str(correlation.get("status") or "unknown"),
-                "correlated_pair_count": int(
-                    summary.get("correlated_pair_count") or 0
-                ),
-                "high_confidence_count": int(
-                    summary.get("high_confidence_count") or 0
-                ),
+                "correlated_pair_count": int(summary.get("correlated_pair_count") or 0),
+                "high_confidence_count": int(summary.get("high_confidence_count") or 0),
                 "window_ms": int(correlation.get("window_ms") or 0),
             },
-            artifact_refs=make_artifact_refs(
-                {"correlations": self._artifacts.correlations}
-            ),
+            artifact_refs=make_artifact_refs({"correlations": self._artifacts.correlations}),
             reused=True,
             recommended_next_tools=["privacy_findings"],
         )
@@ -600,11 +638,7 @@ class AITaskService:
                 summary="本次没有可用的隐私发现结果",
                 limitations=["隐私发现未评估；未评估不代表不存在风险"],
             )
-        summary = (
-            findings.get("summary")
-            if isinstance(findings.get("summary"), Mapping)
-            else {}
-        )
+        summary = findings.get("summary") if isinstance(findings.get("summary"), Mapping) else {}
         evidence_ids = [
             str(item.get("finding_id"))
             for item in findings.get("findings") or []
@@ -617,12 +651,8 @@ class AITaskService:
             metrics={
                 "status": str(findings.get("status") or "unknown"),
                 "finding_count": int(summary.get("finding_count") or 0),
-                "suspected_risk_count": int(
-                    summary.get("suspected_risk_count") or 0
-                ),
-                "not_evaluated_rule_count": int(
-                    summary.get("not_evaluated_rule_count") or 0
-                ),
+                "suspected_risk_count": int(summary.get("suspected_risk_count") or 0),
+                "not_evaluated_rule_count": int(summary.get("not_evaluated_rule_count") or 0),
             },
             evidence_refs=make_evidence_refs(evidence_ids),
             artifact_refs=make_artifact_refs(
@@ -632,9 +662,7 @@ class AITaskService:
             recommended_next_tools=["deterministic_report"],
         )
 
-    def _tool_deterministic_report(
-        self, _arguments: dict[str, Any]
-    ) -> ToolCompactResult:
+    def _tool_deterministic_report(self, _arguments: dict[str, Any]) -> ToolCompactResult:
         present = {
             name: path
             for name, path in {
@@ -661,9 +689,7 @@ class AITaskService:
         )
 
     def _tool_task_status(self, _arguments: dict[str, Any]) -> ToolCompactResult:
-        available = {
-            name: path.is_file() for name, path in self._artifacts.paths().items()
-        }
+        available = {name: path.is_file() for name, path in self._artifacts.paths().items()}
         return ToolCompactResult(
             tool_name="task_status",
             status="success",
@@ -682,11 +708,7 @@ class AITaskService:
                 summary=f"产物 {kind} 不存在",
                 limitations=[f"{kind} 不可用"],
             )
-        payload = (
-            read_json_list_artifact(path)
-            if kind == "events"
-            else read_json_artifact(path)
-        )
+        payload = read_json_list_artifact(path) if kind == "events" else read_json_artifact(path)
         if payload is None:
             return ToolCompactResult(
                 tool_name="artifact_summary",
@@ -724,21 +746,13 @@ class AITaskService:
             self._report_cache = report
         return report
 
-    def _load_correlation(
-        self, report: Mapping[str, Any] | None
-    ) -> dict[str, Any] | None:
-        if isinstance(report, Mapping) and isinstance(
-            report.get("evidence_correlation"), Mapping
-        ):
+    def _load_correlation(self, report: Mapping[str, Any] | None) -> dict[str, Any] | None:
+        if isinstance(report, Mapping) and isinstance(report.get("evidence_correlation"), Mapping):
             return dict(report["evidence_correlation"])
         return read_json_artifact(self._artifacts.correlations)
 
-    def _load_privacy_findings(
-        self, report: Mapping[str, Any] | None
-    ) -> dict[str, Any] | None:
-        if isinstance(report, Mapping) and isinstance(
-            report.get("privacy_findings"), Mapping
-        ):
+    def _load_privacy_findings(self, report: Mapping[str, Any] | None) -> dict[str, Any] | None:
+        if isinstance(report, Mapping) and isinstance(report.get("privacy_findings"), Mapping):
             return dict(report["privacy_findings"])
         return read_json_artifact(self._artifacts.privacy_findings)
 

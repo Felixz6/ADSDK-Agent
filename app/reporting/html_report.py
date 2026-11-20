@@ -29,10 +29,13 @@ def _items(values: Iterable[Any], empty: str) -> str:
 
 
 def _kv(rows: Iterable[tuple[str, Any]]) -> str:
-    return '<dl class="kv">' + "".join(
-        f"<div><dt>{escape(label)}</dt><dd>{_text(value)}</dd></div>"
-        for label, value in rows
-    ) + "</dl>"
+    return (
+        '<dl class="kv">'
+        + "".join(
+            f"<div><dt>{escape(label)}</dt><dd>{_text(value)}</dd></div>" for label, value in rows
+        )
+        + "</dl>"
+    )
 
 
 def _section(section_id: str, title: str, body: str) -> str:
@@ -45,8 +48,7 @@ def _table(headers: list[str], rows: Iterable[Iterable[Any]], empty: str) -> str
         rendered = [[empty, *([""] * (len(headers) - 1))]]
     head = "".join(f"<th>{escape(item)}</th>" for item in headers)
     body = "".join(
-        "<tr>" + "".join(f"<td>{_text(cell)}</td>" for cell in row) + "</tr>"
-        for row in rendered
+        "<tr>" + "".join(f"<td>{_text(cell)}</td>" for cell in row) + "</tr>" for row in rendered
     )
     return f'<div class="table-wrap"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
 
@@ -73,8 +75,7 @@ def render_html_report(report: dict[str, Any]) -> str:
         events is not None
         and report.get("collection_status") == "success"
         and not any(
-            step.get("name") == "event_validation"
-            and step.get("status") == "failed"
+            step.get("name") == "event_validation" and step.get("status") == "failed"
             for step in steps
         )
     )
@@ -87,13 +88,16 @@ def render_html_report(report: dict[str, Any]) -> str:
         )
 
     categories = risk.get("category_scores") or []
-    category_html = "".join(
-        '<div class="bar-row">'
-        f"<span>{_text(item.get('label') or item.get('category'))}</span>"
-        f'<div class="bar"><i style="width:{max(0, min(100, int(item.get("score") or 0)))}%"></i></div>'
-        f"<b>{_text(item.get('score'))}</b></div>"
-        for item in categories
-    ) or '<p class="empty">暂无风险维度评分。</p>'
+    category_html = (
+        "".join(
+            '<div class="bar-row">'
+            f"<span>{_text(item.get('label') or item.get('category'))}</span>"
+            f'<div class="bar"><i style="width:{max(0, min(100, int(item.get("score") or 0)))}%"></i></div>'
+            f"<b>{_text(item.get('score'))}</b></div>"
+            for item in categories
+        )
+        or '<p class="empty">暂无风险维度评分。</p>'
+    )
 
     permissions = app.get("permissions") or []
     sensitive = set(app.get("sensitive_permissions") or [])
@@ -149,7 +153,10 @@ def render_html_report(report: dict[str, Any]) -> str:
             "权限分析",
             _table(
                 ["权限", "关注度"],
-                ((permission, "高关注" if permission in sensitive else "普通") for permission in permissions),
+                (
+                    (permission, "高关注" if permission in sensitive else "普通")
+                    for permission in permissions
+                ),
                 "未解析到权限。",
             ),
         ),
@@ -173,22 +180,33 @@ def render_html_report(report: dict[str, Any]) -> str:
         _section(
             "dynamic-quality",
             "动态可靠性：环境能力与本次采集结果",
-            '<h3>环境能力</h3>'
+            "<h3>环境能力</h3>"
             + _kv(
                 [
                     ("Frida 通信", environment_capabilities.get("transport_available")),
                     ("进程枚举", environment_capabilities.get("process_enumeration_available")),
                     ("Attach", environment_capabilities.get("attach_available")),
-                    ("Suspended spawn 创建", environment_capabilities.get("spawn_creation_available")),
+                    (
+                        "Suspended spawn 创建",
+                        environment_capabilities.get("spawn_creation_available"),
+                    ),
                     ("恢复稳定性", environment_capabilities.get("spawn_resume_stable")),
                 ]
             )
-            + '<h3>本次采集结果</h3>'
+            + "<h3>本次采集结果</h3>"
             + _kv(
                 [
-                    ("最终执行模式", execution.get("selected_mode") or evidence_quality.get("mode") or "旧版报告未记录"),
+                    (
+                        "最终执行模式",
+                        execution.get("selected_mode")
+                        or evidence_quality.get("mode")
+                        or "旧版报告未记录",
+                    ),
                     ("执行策略", execution.get("policy") or "旧版报告未记录"),
-                    ("进程结果", task_result.get("process_result") or process_diagnostics.get("status")),
+                    (
+                        "进程结果",
+                        task_result.get("process_result") or process_diagnostics.get("status"),
+                    ),
                     ("证据等级", evidence_quality.get("level") or "待评定"),
                     ("崩溃信号", process_diagnostics.get("signal")),
                     ("崩溃码", process_diagnostics.get("signal_code")),
@@ -217,15 +235,15 @@ def render_html_report(report: dict[str, Any]) -> str:
                 "旧版报告未记录动态证据限制。",
             )
             + (
-                '<details><summary>技术详情 · 完整 Native backtrace</summary><pre>'
+                "<details><summary>技术详情 · 完整 Native backtrace</summary><pre>"
                 + _text("\n".join(process_diagnostics.get("native_frames") or []))
-                + '</pre></details>'
+                + "</pre></details>"
                 if process_diagnostics.get("native_frames")
                 else ""
             )
             + '<div class="notice warning"><strong>证据边界</strong>'
-            '<p>环境能力与单次任务结果独立；零请求仅表示本次未观察到请求；'
-            'attach 与 launch_then_attach 存在启动覆盖边界；兼容性提示不等同于单一根因证明。</p></div>',
+            "<p>环境能力与单次任务结果独立；零请求仅表示本次未观察到请求；"
+            "attach 与 launch_then_attach 存在启动覆盖边界；兼容性提示不等同于单一根因证明。</p></div>",
         ),
         _section(
             "dynamic",
@@ -271,21 +289,15 @@ def render_html_report(report: dict[str, Any]) -> str:
                             ("状态", correlation.get("status")),
                             (
                                 "动态事件",
-                                (correlation.get("summary") or {}).get(
-                                    "dynamic_event_count"
-                                ),
+                                (correlation.get("summary") or {}).get("dynamic_event_count"),
                             ),
                             (
                                 "网络请求",
-                                (correlation.get("summary") or {}).get(
-                                    "network_request_count"
-                                ),
+                                (correlation.get("summary") or {}).get("network_request_count"),
                             ),
                             (
                                 "关联数量",
-                                (correlation.get("summary") or {}).get(
-                                    "correlated_pair_count"
-                                ),
+                                (correlation.get("summary") or {}).get("correlated_pair_count"),
                             ),
                             ("时间窗口(ms)", correlation.get("window_ms")),
                             (
@@ -344,9 +356,7 @@ def render_html_report(report: dict[str, Any]) -> str:
                             ("状态", privacy_findings.get("status")),
                             (
                                 "发现数量",
-                                (privacy_findings.get("summary") or {}).get(
-                                    "finding_count"
-                                ),
+                                (privacy_findings.get("summary") or {}).get("finding_count"),
                             ),
                             (
                                 "已观察事实",
@@ -356,15 +366,11 @@ def render_html_report(report: dict[str, Any]) -> str:
                             ),
                             (
                                 "疑似风险提示",
-                                (privacy_findings.get("summary") or {}).get(
-                                    "suspected_risk_count"
-                                ),
+                                (privacy_findings.get("summary") or {}).get("suspected_risk_count"),
                             ),
                             (
                                 "证据缺口",
-                                (privacy_findings.get("summary") or {}).get(
-                                    "evidence_gap_count"
-                                ),
+                                (privacy_findings.get("summary") or {}).get("evidence_gap_count"),
                             ),
                             (
                                 "未评估规则",
@@ -507,11 +513,7 @@ def render_html_report(report: dict[str, Any]) -> str:
             ("dynamic-quality", "证据质量"),
             ("network", "网络"),
             *(([("correlation", "关联")]) if isinstance(correlation, dict) else []),
-            *(
-                ([("privacy-findings", "隐私发现")])
-                if isinstance(privacy_findings, dict)
-                else []
-            ),
+            *(([("privacy-findings", "隐私发现")]) if isinstance(privacy_findings, dict) else []),
             ("rules", "规则"),
             ("actions", "整改"),
             ("pipeline", "完整性"),
@@ -535,7 +537,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:28px auto 64px}}section{{backgr
 <h1>Android APK<br>隐私与合规分析报告</h1>
 <p>结构化静态分析、动态证据、网络观测和确定性规则评估。</p>
 <div class="meta">{_kv([("应用", app.get("application_label")), ("包名", app.get("package_name")), ("版本", app.get("version_name")), ("Run ID", report.get("run_id"))])}</div>
-</header><nav>{nav}</nav><main>{''.join(sections)}</main></body></html>"""
+</header><nav>{nav}</nav><main>{"".join(sections)}</main></body></html>"""
 
 
 def write_html_report(report: dict[str, Any], output_path: str | Path) -> Path:

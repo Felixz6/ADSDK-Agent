@@ -151,11 +151,7 @@ class FridaServerManager:
 
     def status(self, device: DeviceContext) -> FridaServerActionResponse:
         result = self._run(device.adb_command("shell", "pidof", "frida-server"))
-        pids = [
-            int(value)
-            for value in str(result.get("stdout") or "").split()
-            if value.isdigit()
-        ]
+        pids = [int(value) for value in str(result.get("stdout") or "").split() if value.isdigit()]
         owned = self._owned.get(device.public_serial)
         owned_alive = bool(owned and owned.pid in pids)
         return self._response(
@@ -171,9 +167,7 @@ class FridaServerManager:
             },
         )
 
-    def deploy(
-        self, device: DeviceContext, *, confirm: bool
-    ) -> FridaServerActionResponse:
+    def deploy(self, device: DeviceContext, *, confirm: bool) -> FridaServerActionResponse:
         guarded = self._guard("deploy", device, confirm=confirm)
         if guarded:
             return guarded
@@ -188,9 +182,7 @@ class FridaServerManager:
                 error_code=code,
                 message="本地 frida-server 校验失败",
             )
-        abi_result = self._run(
-            device.adb_command("shell", "getprop", "ro.product.cpu.abi")
-        )
+        abi_result = self._run(device.adb_command("shell", "getprop", "ro.product.cpu.abi"))
         abi = str(abi_result.get("stdout") or "").strip()
         if abi != binary.architecture:
             return self._response(
@@ -223,9 +215,7 @@ class FridaServerManager:
                 error_code="frida_server_deploy_failed",
                 message="服务文件上传失败",
             )
-        remote_size = self._run(
-            device.adb_command("shell", "stat", "-c", "%s", temporary)
-        )
+        remote_size = self._run(device.adb_command("shell", "stat", "-c", "%s", temporary))
         if str(remote_size.get("stdout") or "").strip() != str(binary.size):
             self._run(device.adb_command("shell", "rm", "-f", temporary))
             return self._response(
@@ -259,9 +249,7 @@ class FridaServerManager:
             },
         )
 
-    def start(
-        self, device: DeviceContext, *, confirm: bool
-    ) -> FridaServerActionResponse:
+    def start(self, device: DeviceContext, *, confirm: bool) -> FridaServerActionResponse:
         guarded = self._guard("start", device, confirm=confirm)
         if guarded:
             return guarded
@@ -285,10 +273,7 @@ class FridaServerManager:
                 error_code=DynamicErrorCode.FRIDA_SERVER_NOT_EXECUTABLE.value,
                 message="已配置的设备端服务文件不存在或不可执行",
             )
-        command = (
-            f"{self.remote_path} >/data/local/tmp/adsdk-frida-server.log 2>&1 "
-            "& echo $!"
-        )
+        command = f"{self.remote_path} >/data/local/tmp/adsdk-frida-server.log 2>&1 & echo $!"
         started = self._run(
             device.adb_command("shell", "su", "-c", command),
             timeout=self.start_timeout_seconds,
@@ -311,9 +296,7 @@ class FridaServerManager:
         # a plain adb-shell ``kill -0`` on it fails with EPERM even while the
         # process is alive, which would misreport every successful start as
         # ``frida_server_exited``. Probe aliveness under the same su context.
-        alive = self._run(
-            device.adb_command("shell", "su", "-c", f"kill -0 {pid}")
-        )
+        alive = self._run(device.adb_command("shell", "su", "-c", f"kill -0 {pid}"))
         if alive.get("returncode") != 0:
             return self._response(
                 "start",
@@ -339,9 +322,7 @@ class FridaServerManager:
             pid=pid,
         )
 
-    def stop(
-        self, device: DeviceContext, *, confirm: bool
-    ) -> FridaServerActionResponse:
+    def stop(self, device: DeviceContext, *, confirm: bool) -> FridaServerActionResponse:
         guarded = self._guard("stop", device, confirm=confirm)
         if guarded:
             return guarded
@@ -354,9 +335,7 @@ class FridaServerManager:
                 status="not_owned",
                 message="当前服务并非由平台启动，未执行停止",
             )
-        stopped = self._run(
-            device.adb_command("shell", "su", "-c", f"kill {owned.pid}")
-        )
+        stopped = self._run(device.adb_command("shell", "su", "-c", f"kill {owned.pid}"))
         if stopped.get("returncode") != 0:
             return self._response(
                 "stop",

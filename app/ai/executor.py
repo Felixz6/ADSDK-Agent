@@ -73,9 +73,7 @@ class AIPlanExecutor:
                 continue
 
             started_at = _utc_now_iso()
-            result, trace_status, safe_summary = self._execute_step(
-                step, request, execute_tool
-            )
+            result, trace_status, safe_summary = self._execute_step(step, request, execute_tool)
             if result.status != "not_run":
                 executed += 1
             results.append(result)
@@ -133,9 +131,7 @@ class AIPlanExecutor:
 
         # device_state_change requires explicit confirmation.
         if self._registry.requires_confirmation(tool_name):
-            confirmed = (
-                tool_name in request.confirmed_tools and request.allow_dynamic
-            )
+            confirmed = tool_name in request.confirmed_tools and request.allow_dynamic
             if not confirmed:
                 result = ToolCompactResult(
                     tool_name=tool_name,

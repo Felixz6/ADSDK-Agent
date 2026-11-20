@@ -21,9 +21,7 @@ ARTIFACT = HOOKS_DIR / "agent.compiled.js"
 def test_bundled_hook_agent_artifact_exists():
     """The fixed artifact is committed and present for offline runs."""
 
-    assert ARTIFACT.is_file(), (
-        "agent.compiled.js missing; run scripts/build_frida_agent.py"
-    )
+    assert ARTIFACT.is_file(), "agent.compiled.js missing; run scripts/build_frida_agent.py"
 
 
 def test_artifact_is_frida_compile_bundle_not_raw_script():
@@ -37,18 +35,14 @@ def test_artifact_is_frida_compile_bundle_not_raw_script():
     artifact = ARTIFACT.read_text(encoding="utf-8", errors="replace")
     raw = RAW_SCRIPT.read_text(encoding="utf-8")
 
-    assert "globalThis.Java" in artifact, (
-        "bundle does not restore the globalThis.Java contract"
-    )
+    assert "globalThis.Java" in artifact, "bundle does not restore the globalThis.Java contract"
     assert "libart" in artifact, "java bridge is not bundled in the artifact"
     assert len(artifact) >= 8 * len(raw)
     assert artifact != raw, (
-        "artifact is a verbatim copy of the raw script; rebuild with "
-        "frida-compile"
+        "artifact is a verbatim copy of the raw script; rebuild with frida-compile"
     )
     assert not artifact.lstrip().startswith("📦"), (
-        "multi-chunk bundle format would break the __ADSDK_CONTEXT__ "
-        "prepend; build with -B iife"
+        "multi-chunk bundle format would break the __ADSDK_CONTEXT__ prepend; build with -B iife"
     )
 
 
@@ -82,9 +76,7 @@ def test_resolver_prefers_bundle_and_falls_back_to_raw(tmp_path):
     populated.mkdir()
     (populated / "agent.compiled.js").write_text("bundle", encoding="utf-8")
     (populated / "sensitive_apis.js").write_text("raw", encoding="utf-8")
-    assert resolve_frida_hook_script(hooks_dir=populated) == (
-        populated / "agent.compiled.js"
-    )
+    assert resolve_frida_hook_script(hooks_dir=populated) == (populated / "agent.compiled.js")
 
     assert resolve_frida_hook_script() == ARTIFACT
 
@@ -105,6 +97,7 @@ def test_session_context_prepend_wraps_bundle_intact(tmp_path: Path):
     source = session._script_source()
     assert source.startswith("globalThis.__ADSDK_CONTEXT__ = Object.freeze(")
     assert "globalThis.Java" in source
-    assert 'globalThis.__ADSDK_CONTEXT__' not in ARTIFACT.read_text(
-        encoding="utf-8", errors="replace"
-    )[:200]
+    assert (
+        "globalThis.__ADSDK_CONTEXT__"
+        not in ARTIFACT.read_text(encoding="utf-8", errors="replace")[:200]
+    )

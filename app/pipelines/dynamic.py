@@ -92,10 +92,7 @@ def _build_dynamic_findings(
 
         if api == "Settings.Secure.getString":
             secure_calls += 1
-            if (
-                arg == "android_id"
-                or event.get("identifier_type") == "android_id"
-            ):
+            if arg == "android_id" or event.get("identifier_type") == "android_id":
                 android_id_calls += 1
         elif api == "ClipboardManager.getPrimaryClip":
             clipboard_calls += 1
@@ -106,9 +103,7 @@ def _build_dynamic_findings(
     else:
         pre_consent_evaluation = "matched" if secure_calls > 0 else "not_matched"
         high_frequency_evaluation = (
-            "matched"
-            if android_id_calls > 3 or clipboard_calls > 1
-            else "not_matched"
+            "matched" if android_id_calls > 3 or clipboard_calls > 1 else "not_matched"
         )
 
     def legacy_status(value: str) -> str:
@@ -165,9 +160,7 @@ def _emit_frida_control(session: Any, event: dict[str, Any]) -> Any:
     if name == "consent_granted":
         method = getattr(session, "emit_consent", None)
         if callable(method):
-            return method(
-                source=str(event.get("source") or "configured_delay")
-            )
+            return method(source=str(event.get("source") or "configured_delay"))
     method = getattr(session, "emit_control_event", None)
     if callable(method):
         return method(event)
@@ -184,17 +177,12 @@ def _normalize_events(
         str(source_path),
         str(output_path),
         sensitive_identifiers=(
-            {"device_serial": device_context.serial}
-            if device_context is not None
-            else None
+            {"device_serial": device_context.serial} if device_context is not None else None
         ),
     )
     consent_ms: float | int | None = None
     for event in events:
-        if (
-            event.get("type") == "control"
-            and event.get("event") == "consent_granted"
-        ):
+        if event.get("type") == "control" and event.get("event") == "consent_granted":
             consent_ms = event.get("monotonic_ms")
             break
     for event in events:
@@ -235,13 +223,8 @@ def _traffic_summary_from_result(
             )
         ),
         "total_requests": result.valid_request_count,
-        "top_hosts": [
-            {"host": host, "count": count}
-            for host, count in hosts.most_common(20)
-        ],
-        "sample_requests": [
-            record.model_dump(mode="json") for record in result.records[:50]
-        ],
+        "top_hosts": [{"host": host, "count": count} for host, count in hosts.most_common(20)],
+        "sample_requests": [record.model_dump(mode="json") for record in result.records[:50]],
         "validation": result.to_dict(),
     }
 
@@ -270,9 +253,7 @@ def _session_status(session: Any, device: DeviceContext) -> dict[str, Any]:
     }
     command = value.get("command")
     if isinstance(command, list):
-        safe["command"] = [
-            _redact_device_diagnostic(argument, device) for argument in command
-        ]
+        safe["command"] = [_redact_device_diagnostic(argument, device) for argument in command]
     for name in (
         "listen_host",
         "listen_port",
@@ -292,11 +273,7 @@ def _session_status(session: Any, device: DeviceContext) -> dict[str, Any]:
     ):
         if value.get(name) is not None:
             item = value[name]
-            safe[name] = (
-                _redact_device_diagnostic(item, device)
-                if isinstance(item, str)
-                else item
-            )
+            safe[name] = _redact_device_diagnostic(item, device) if isinstance(item, str) else item
     for name in (
         "traffic_dir",
         "flow_file",
@@ -343,9 +320,7 @@ def _append_collection_steps(
         and result.outcomes.get("app_resume") == "success"
     )
     if network_only:
-        required.difference_update(
-            {"frida_spawn", "frida_script_load", "frida_ready"}
-        )
+        required.difference_update({"frida_spawn", "frida_script_load", "frida_ready"})
     for name in names:
         status_text = result.outcomes.get(name)
         if status_text is None:
@@ -364,12 +339,8 @@ def _append_collection_steps(
         details: dict[str, Any] = {}
         if name == "frida_ready":
             details = {
-                "installed_hooks": list(
-                    getattr(frida_session, "installed_hooks", [])
-                ),
-                "failed_hooks": list(
-                    getattr(frida_session, "failed_hooks", [])
-                ),
+                "installed_hooks": list(getattr(frida_session, "installed_hooks", [])),
+                "failed_hooks": list(getattr(frida_session, "failed_hooks", [])),
             }
             if status is StepStatus.SUCCESS and details["failed_hooks"]:
                 status = StepStatus.PARTIAL
@@ -382,14 +353,11 @@ def _append_collection_steps(
                 error_code=error_code,
                 error_message=error_message,
                 warnings=(
-                    list(result.cleanup_errors)
-                    if name in {"frida_stop", "mitm_stop"}
-                    else []
+                    list(result.cleanup_errors) if name in {"frida_stop", "mitm_stop"} else []
                 ),
                 details=details,
             )
         )
-
 
 
 @dataclass(slots=True)
@@ -489,9 +457,7 @@ def _install_and_select_device(
                 StepStatus.SKIPPED,
                 started,
                 required=False,
-                warnings=[
-                    "attach_only 保留当前目标进程，本次任务跳过 APK 重新安装"
-                ],
+                warnings=["attach_only 保留当前目标进程，本次任务跳过 APK 重新安装"],
             )
         )
     elif device_context is not None:
@@ -542,9 +508,7 @@ def _install_and_select_device(
     return context, device_context, device_failure, install_ok, package_name
 
 
-def _noop_register_runtime_target(
-    pid: int, *, ownership_source: str, created_by_run: bool
-) -> None:
+def _noop_register_runtime_target(pid: int, *, ownership_source: str, created_by_run: bool) -> None:
     # Compatibility collectors never manufacture Android target ownership from
     # a host-side helper process.
     del pid, ownership_source, created_by_run
@@ -580,14 +544,12 @@ def _report_frida_diagnostics(
             required=req.dynamic_mode_policy == "strict",
             error_code=(
                 diagnostic_result.issues[0].code
-                if diagnostic_status is StepStatus.FAILED
-                and diagnostic_result.issues
+                if diagnostic_status is StepStatus.FAILED and diagnostic_result.issues
                 else None
             ),
             error_message=(
                 diagnostic_result.issues[0].summary
-                if diagnostic_status is StepStatus.FAILED
-                and diagnostic_result.issues
+                if diagnostic_status is StepStatus.FAILED and diagnostic_result.issues
                 else None
             ),
             details={
@@ -625,10 +587,7 @@ def _make_launch_target_for_attach(
                 device_context.adb_command("shell", "pidof", package_name),
                 timeout=3,
             )
-            if (
-                pid_result.get("returncode") == 0
-                and str(pid_result.get("stdout") or "").strip()
-            ):
+            if pid_result.get("returncode") == 0 and str(pid_result.get("stdout") or "").strip():
                 pid_observed = _utc_now()
                 pid_text = str(pid_result.get("stdout") or "").strip().split()[0]
                 pid = int(pid_text) if pid_text.isdigit() else 0
@@ -645,9 +604,9 @@ def _make_launch_target_for_attach(
                     "launch_requested_at": launch_requested.isoformat(
                         timespec="milliseconds"
                     ).replace("+00:00", "Z"),
-                    "pid_observed_at": pid_observed.isoformat(
-                        timespec="milliseconds"
-                    ).replace("+00:00", "Z"),
+                    "pid_observed_at": pid_observed.isoformat(timespec="milliseconds").replace(
+                        "+00:00", "Z"
+                    ),
                     "_launch_requested_datetime": launch_requested,
                     "pid": pid,
                 }
@@ -673,10 +632,7 @@ def _build_real_frida_session(
 ) -> tuple[Any, dict[str, Any] | None, Any]:
     """Build the real Frida session (policy or single-mode) and its diagnostics."""
     factory = frida_session_factory or container.frida_session_factory
-    is_real_frida = (
-        factory is container.default_frida_session_factory
-        or factory is FridaSession
-    )
+    is_real_frida = factory is container.default_frida_session_factory or factory is FridaSession
     frida_session: Any = None
     frida_diagnostic_payload: dict[str, Any] | None = None
     if is_real_frida:
@@ -696,9 +652,7 @@ def _build_real_frida_session(
                 package_name=package_name,
                 script_path=script_path,
                 event_log_path=context.events_raw_path,
-                protocol_error_path=(
-                    context.run_dir / "frida.protocol-errors.jsonl"
-                ),
+                protocol_error_path=(context.run_dir / "frida.protocol-errors.jsonl"),
                 stop_timeout_seconds=FRIDA_STOP_TIMEOUT_SECONDS,
                 execution_mode=(
                     ExecutionMode.ATTACH_EXISTING.value
@@ -724,9 +678,7 @@ def _build_real_frida_session(
             package_name=package_name,
             script_path=script_path,
             event_log_path=context.events_raw_path,
-            protocol_error_path=(
-                context.run_dir / "frida.protocol-errors.jsonl"
-            ),
+            protocol_error_path=(context.run_dir / "frida.protocol-errors.jsonl"),
             stop_timeout_seconds=FRIDA_STOP_TIMEOUT_SECONDS,
         )
     return frida_session, frida_diagnostic_payload, register_runtime_target
@@ -758,25 +710,27 @@ def _make_collection_callbacks(
         register_runtime_target(
             pid,
             ownership_source=(
-                "frida_spawn" if mode == ExecutionMode.SPAWN_SUSPENDED.value
+                "frida_spawn"
+                if mode == ExecutionMode.SPAWN_SUSPENDED.value
                 else "frida_attach_existing"
             ),
             created_by_run=mode == ExecutionMode.SPAWN_SUSPENDED.value,
         )
         helper_pid = getattr(session, "helper_pid", None)
-        if (
-            ownership_registry is not None
-            and isinstance(helper_pid, int)
-            and helper_pid > 0
-        ):
+        if ownership_registry is not None and isinstance(helper_pid, int) and helper_pid > 0:
             ownership_registry.mark_owned(
-                "frida_helper", str(helper_pid), pid=helper_pid,
+                "frida_helper",
+                str(helper_pid),
+                pid=helper_pid,
                 device_id=device_context.serial,
                 expected_command_token="re.frida.helper",
-                preexisting=False, created_by_run=True,
-                cleanup_required=True, verification_required=True,
+                preexisting=False,
+                created_by_run=True,
+                cleanup_required=True,
+                verification_required=True,
                 ownership_source="frida_session_helper_start",
-                registered_at_stage="helper_pid_available", run_id=context.run_id,
+                registered_at_stage="helper_pid_available",
+                run_id=context.run_id,
             )
 
     return stimulate_ui, register_frida_started
@@ -840,18 +794,16 @@ def _build_dynamic_sessions(
         return None, None, None, None, None
 
     script_path = resolve_frida_hook_script()
-    frida_session, frida_diagnostic_payload, register_runtime_target = (
-        _build_real_frida_session(
-            req,
-            context,
-            steps,
-            device_context,
-            package_name,
-            script_path,
-            ownership_registry,
-            _noop_register_runtime_target,
-            frida_session_factory=frida_session_factory,
-        )
+    frida_session, frida_diagnostic_payload, register_runtime_target = _build_real_frida_session(
+        req,
+        context,
+        steps,
+        device_context,
+        package_name,
+        script_path,
+        ownership_registry,
+        _noop_register_runtime_target,
+        frida_session_factory=frida_session_factory,
     )
     mitm_session: Any = None
     if req.enable_traffic:
@@ -1003,9 +955,7 @@ def _collect_events_stage(
                 StepStatus.SKIPPED,
                 event_started,
                 required=False,
-                warnings=[
-                    "Frida hook evidence unavailable; network-only collection retained"
-                ],
+                warnings=["Frida hook evidence unavailable; network-only collection retained"],
                 details={"event_count": 0, "protocol_error_count": 0},
             )
         )
@@ -1034,9 +984,7 @@ def _collect_events_stage(
                 outputs=[str(context.events_path)],
                 details={
                     "event_count": len(dynamic_events),
-                    "protocol_error_count": len(
-                        getattr(frida_session, "protocol_errors", [])
-                    ),
+                    "protocol_error_count": len(getattr(frida_session, "protocol_errors", [])),
                 },
             )
         )
@@ -1051,9 +999,7 @@ def _collect_events_stage(
                 event_started,
                 required=True,
                 error_code="hook_evidence_unavailable",
-                error_message=(
-                    f"hook evidence unavailable: {type(exc).__name__}"
-                ),
+                error_message=(f"hook evidence unavailable: {type(exc).__name__}"),
             )
         )
     finally:
@@ -1112,14 +1058,10 @@ def _collect_session_traffic(
     try:
         traffic_result = mitm_session.validate_traffic()
         traffic_summary = _traffic_summary_from_result(traffic_result)
-        correlation_requests = [
-            record.model_dump(mode="json")
-            for record in traffic_result.records
-        ]
+        correlation_requests = [record.model_dump(mode="json") for record in traffic_result.records]
         traffic_status = (
             StepStatus.FAILED
-            if traffic_result.outcome
-            is TrafficCollectionOutcome.COLLECTOR_FAILED
+            if traffic_result.outcome is TrafficCollectionOutcome.COLLECTOR_FAILED
             else StepStatus.SUCCESS
         )
         steps.append(
@@ -1129,9 +1071,7 @@ def _collect_session_traffic(
                 traffic_started,
                 required=False,
                 error_code=(
-                    "traffic_collector_failed"
-                    if traffic_status is StepStatus.FAILED
-                    else None
+                    "traffic_collector_failed" if traffic_status is StepStatus.FAILED else None
                 ),
                 error_message=(
                     "traffic collector evidence is unavailable"
@@ -1166,15 +1106,13 @@ def _record_traffic_diagnostics(
     mitm_public_status: dict[str, Any] | None,
 ) -> Any:
     try:
-        mitm_stderr_text = context.mitm_stderr_path.read_text(
-            encoding="utf-8", errors="replace"
-        )[-64 * 1024 :]
+        mitm_stderr_text = context.mitm_stderr_path.read_text(encoding="utf-8", errors="replace")[
+            -64 * 1024 :
+        ]
     except OSError:
         mitm_stderr_text = ""
     traffic_diagnostics = diagnose_traffic(
-        collector_outcome=str(
-            traffic_summary.get("collector_outcome") or "collector_failed"
-        ),
+        collector_outcome=str(traffic_summary.get("collector_outcome") or "collector_failed"),
         request_count=int(traffic_summary.get("total_requests") or 0),
         session_status=mitm_public_status,
         stderr_text=mitm_stderr_text,
@@ -1188,11 +1126,7 @@ def _record_traffic_diagnostics(
     steps.append(
         _step_result(
             "network_diagnostics",
-            (
-                StepStatus.PARTIAL
-                if traffic_diagnostics.reason_codes
-                else StepStatus.SUCCESS
-            ),
+            (StepStatus.PARTIAL if traffic_diagnostics.reason_codes else StepStatus.SUCCESS),
             _utc_now(),
             required=False,
             warnings=list(traffic_diagnostics.limitations),
@@ -1217,9 +1151,7 @@ def _collect_traffic_stage(
     correlation_requests: list[dict[str, Any]] = []
     traffic_started = _utc_now()
     if not req.enable_traffic:
-        traffic_summary = _collect_disabled_traffic(
-            steps, context, traffic_started
-        )
+        traffic_summary = _collect_disabled_traffic(steps, context, traffic_started)
     else:
         traffic_summary, correlation_requests = _collect_session_traffic(
             steps, mitm_session, traffic_started
@@ -1277,13 +1209,9 @@ def _process_diagnostics_stage(
             or container.frida_session_factory is FridaSession
         )
     ):
-        runtime_failure_sessions = list(
-            getattr(frida_session, "runtime_failure_sessions", [])
-        )
+        runtime_failure_sessions = list(getattr(frida_session, "runtime_failure_sessions", []))
         diagnostic_session = (
-            runtime_failure_sessions[-1]
-            if runtime_failure_sessions
-            else frida_session
+            runtime_failure_sessions[-1] if runtime_failure_sessions else frida_session
         )
         logcat = LogcatCollector(
             device=device_context,
@@ -1406,12 +1334,8 @@ def _derive_execution_state(
             if getattr(attempt, "process_result", None) == "process_crashed":
                 attempt.crash = dict(process_diagnostics_payload)
                 break
-    environment_capabilities = dict(
-        getattr(frida_session, "environment_capabilities", {})
-    )
-    diagnostic_capabilities = (
-        (environment.frida_diagnostic_payload or {}).get("capabilities") or {}
-    )
+    environment_capabilities = dict(getattr(frida_session, "environment_capabilities", {}))
+    diagnostic_capabilities = (environment.frida_diagnostic_payload or {}).get("capabilities") or {}
     for key, value in diagnostic_capabilities.items():
         if environment_capabilities.get(key) is None:
             environment_capabilities[key] = value
@@ -1419,9 +1343,7 @@ def _derive_execution_state(
         "policy": req.dynamic_mode_policy,
         "selected_mode": selected_mode.value,
         "attempts": [
-            item.model_dump(mode="json")
-            if hasattr(item, "model_dump")
-            else dict(item)
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item)
             for item in execution_attempts
         ],
         "fallback_path": list(getattr(frida_session, "fallback_path", [])),
@@ -1536,9 +1458,7 @@ def _append_attempt_steps(
                     and attempt.mode is ExecutionMode.SPAWN_SUSPENDED
                 ),
                 error_code=attempt.reason_code,
-                error_message=(
-                    attempt.message if attempt.status == "failed" else None
-                ),
+                error_message=(attempt.message if attempt.status == "failed" else None),
                 details={"mode": attempt.mode.value},
             )
         )
@@ -1569,19 +1489,13 @@ def _append_execution_summary_steps(
                     else None
                 ),
                 error_message=(
-                    "没有可用的动态执行模式"
-                    if selected_mode is ExecutionMode.NONE
-                    else None
+                    "没有可用的动态执行模式" if selected_mode is ExecutionMode.NONE else None
                 ),
                 details=execution_decision,
             ),
             _step_result(
                 "resource_cleanup",
-                (
-                    StepStatus.PARTIAL
-                    if collection_result.cleanup_errors
-                    else StepStatus.SUCCESS
-                ),
+                (StepStatus.PARTIAL if collection_result.cleanup_errors else StepStatus.SUCCESS),
                 _utc_now(),
                 required=True,
                 warnings=list(collection_result.cleanup_errors),
@@ -1627,9 +1541,7 @@ def _build_sessions_payload(
             if frida_session is not None and environment.device_context is not None
             else None
         ),
-        "mitm": (
-            traffic.mitm_public_status
-        ),
+        "mitm": (traffic.mitm_public_status),
         "timeline": timeline_payload,
         "collection_status": collection_result.status,
         "cleanup_errors": list(collection_result.cleanup_errors),
@@ -1662,9 +1574,7 @@ def _build_execution_outcome(
         environment_capabilities,
         execution_decision,
         executor_strategy_receipt,
-    ) = _derive_execution_state(
-        req, environment, collection_result, process_diagnostics_payload
-    )
+    ) = _derive_execution_state(req, environment, collection_result, process_diagnostics_payload)
     evidence_quality = build_evidence_quality(
         selected_mode,
         transport_trusted=hook_evidence_available,
@@ -1679,10 +1589,7 @@ def _build_execution_outcome(
             code
             for code in (
                 collection_result.primary_error_code,
-                *[
-                    getattr(item, "reason_code", None)
-                    for item in execution_attempts
-                ],
+                *[getattr(item, "reason_code", None) for item in execution_attempts],
             )
             if code
         ],
@@ -1822,8 +1729,8 @@ def _dynamic_analyze_v2(
         steps,
         package_name_input=req.package_name,
     )
-    context, device_context, device_failure, install_ok, package_name = (
-        _install_and_select_device(req, context, steps, static_stage)
+    context, device_context, device_failure, install_ok, package_name = _install_and_select_device(
+        req, context, steps, static_stage
     )
     (
         frida_session,
@@ -1906,9 +1813,7 @@ def _dynamic_analyze_v2(
         network_requests=traffic.correlation_requests,
         consent_timestamp_utc=consent_timestamp_utc,
     )
-    consent_boundary_available = _has_trusted_consent_boundary(
-        execution.timeline_payload
-    )
+    consent_boundary_available = _has_trusted_consent_boundary(execution.timeline_payload)
     report["privacy_findings"] = _build_and_write_privacy_findings(
         context=context,
         dynamic_events=dynamic_events,

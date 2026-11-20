@@ -156,9 +156,7 @@ def _summarize_rejected_plan(plan: Mapping[str, Any] | None) -> str:
     return " | ".join(parts) if parts else "<empty>"
 
 
-def _plan_references_dynamic(
-    plan: Mapping[str, Any] | None, registry: AIToolRegistry
-) -> bool:
+def _plan_references_dynamic(plan: Mapping[str, Any] | None, registry: AIToolRegistry) -> bool:
     """Whether the rejected plan already named a device-touching tool."""
 
     if not isinstance(plan, Mapping):
@@ -190,10 +188,7 @@ def _scope_note(
             )
         return ""
     if not confirmed_tools:
-        return (
-            "Note: no device-state tool has user confirmation, so none may be "
-            "planned.\n"
-        )
+        return "Note: no device-state tool has user confirmation, so none may be planned.\n"
     return ""
 
 

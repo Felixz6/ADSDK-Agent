@@ -4,13 +4,9 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-_NAMED_STRING_REFERENCE = re.compile(
-    r"^@(?:\*?[A-Za-z0-9_.]+:)?string/(?P<name>[A-Za-z0-9_.-]+)$"
-)
+_NAMED_STRING_REFERENCE = re.compile(r"^@(?:\*?[A-Za-z0-9_.]+:)?string/(?P<name>[A-Za-z0-9_.-]+)$")
 _NUMERIC_REFERENCE = re.compile(r"^@(?:0x)?(?P<id>[0-9A-Fa-f]{8})$")
-_LOCALE_QUALIFIER = re.compile(
-    r"^(?:[a-z]{2,3}|b\+[A-Za-z0-9+]+)(?:-r[A-Z]{2})?(?:-.+)?$"
-)
+_LOCALE_QUALIFIER = re.compile(r"^(?:[a-z]{2,3}|b\+[A-Za-z0-9+]+)(?:-r[A-Z]{2})?(?:-.+)?$")
 
 
 def is_android_resource_reference(value: str | None) -> bool:
@@ -77,10 +73,7 @@ def _resource_name(unpack_dir: Path, label: str) -> str | None:
     except (ET.ParseError, OSError):
         return None
     for element in root:
-        if (
-            _local_name(element.tag) == "public"
-            and element.attrib.get("type") == "string"
-        ):
+        if _local_name(element.tag) == "public" and element.attrib.get("type") == "string":
             try:
                 resource_id = int(element.attrib.get("id", ""), 16)
             except ValueError:
@@ -140,7 +133,7 @@ def _decode_android_escapes(value: str) -> str:
     return (
         value.replace(r"\n", " ")
         .replace(r"\'", "'")
-        .replace(r'\"', '"')
+        .replace(r"\"", '"')
         .replace(r"\\", "\\")
         .strip()
     )

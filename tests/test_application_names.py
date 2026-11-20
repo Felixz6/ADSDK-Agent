@@ -62,7 +62,7 @@ def test_manifest_resolves_numeric_resource_id_from_public_xml(tmp_path: Path):
     (values / "public.xml").write_text(
         '<?xml version="1.0" encoding="utf-8"?><resources>'
         '<public type="string" name="display_name" id="0x7f120001" />'
-        '</resources>',
+        "</resources>",
         encoding="utf-8",
     )
 

@@ -7,13 +7,30 @@ from app import main as main_module
 def test_env_check(monkeypatch):
     client = TestClient(main_module.app)
 
-    monkeypatch.setattr(env_module, "check_adb_available", lambda: {"ok": True, "stdout": "adb", "stderr": "", "cmd": ["adb", "version"]})
+    monkeypatch.setattr(
+        env_module,
+        "check_adb_available",
+        lambda: {"ok": True, "stdout": "adb", "stderr": "", "cmd": ["adb", "version"]},
+    )
     monkeypatch.setattr(
         env_module,
         "check_device_online",
-        lambda device_id=None: {"ok": True, "device_id": device_id, "target": {"device_id": "emulator-5554", "status": "device"}},
+        lambda device_id=None: {
+            "ok": True,
+            "device_id": device_id,
+            "target": {"device_id": "emulator-5554", "status": "device"},
+        },
     )
-    monkeypatch.setattr(env_module, "check_frida_connection", lambda device_id=None: {"ok": True, "stdout": "frida", "stderr": "", "cmd": ["frida-ps", "-U"]})
+    monkeypatch.setattr(
+        env_module,
+        "check_frida_connection",
+        lambda device_id=None: {
+            "ok": True,
+            "stdout": "frida",
+            "stderr": "",
+            "cmd": ["frida-ps", "-U"],
+        },
+    )
     monkeypatch.setattr(
         env_module,
         "check_frida_device_runtime",
@@ -25,13 +42,50 @@ def test_env_check(monkeypatch):
         },
     )
     monkeypatch.setattr(env_module, "check_port_listening", lambda port=8080: True)
-    monkeypatch.setattr(env_module, "_check_output_writable", lambda: {"ok": True, "path": "D:/adsdk-agent/output", "error": None})
+    monkeypatch.setattr(
+        env_module,
+        "_check_output_writable",
+        lambda: {"ok": True, "path": "D:/adsdk-agent/output", "error": None},
+    )
     # New env-check probes — patch so the test does not depend on the real
     # host environment (real apktool / frida / .env key presence).
-    monkeypatch.setattr(env_module, "check_apktool", lambda: {"apktool_available": True, "apktool_version": "2.11.1", "apktool_path": "apktool", "apktool_error": None})
-    monkeypatch.setattr(env_module, "check_frida_python_package", lambda: {"frida_python_available": True, "frida_python_version": "16.7.19", "frida_python_error": None, "frida_python_error_detail": None})
-    monkeypatch.setattr(env_module, "check_redaction_hmac_key", lambda: {"redaction_hmac_key_configured": True, "redaction_hmac_key_uses_placeholder": False, "redaction_hmac_key_security_status": "secure"})
-    monkeypatch.setattr(env_module, "check_apk_allowed_roots", lambda: {"apk_allowed_roots_configured": True, "apk_allowed_roots": ["D:/adsdk-agent/samples"]})
+    monkeypatch.setattr(
+        env_module,
+        "check_apktool",
+        lambda: {
+            "apktool_available": True,
+            "apktool_version": "2.11.1",
+            "apktool_path": "apktool",
+            "apktool_error": None,
+        },
+    )
+    monkeypatch.setattr(
+        env_module,
+        "check_frida_python_package",
+        lambda: {
+            "frida_python_available": True,
+            "frida_python_version": "16.7.19",
+            "frida_python_error": None,
+            "frida_python_error_detail": None,
+        },
+    )
+    monkeypatch.setattr(
+        env_module,
+        "check_redaction_hmac_key",
+        lambda: {
+            "redaction_hmac_key_configured": True,
+            "redaction_hmac_key_uses_placeholder": False,
+            "redaction_hmac_key_security_status": "secure",
+        },
+    )
+    monkeypatch.setattr(
+        env_module,
+        "check_apk_allowed_roots",
+        lambda: {
+            "apk_allowed_roots_configured": True,
+            "apk_allowed_roots": ["D:/adsdk-agent/samples"],
+        },
+    )
 
     resp = client.get("/env/check", params={"device_id": "emulator-5554"})
     assert resp.status_code == 200

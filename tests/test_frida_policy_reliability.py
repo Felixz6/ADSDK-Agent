@@ -205,9 +205,7 @@ def test_binding_import_failure_is_not_reported_as_transport_success():
     )
     result = service.diagnose(FridaDiagnosticsRequest(device_id="SERIAL"))
     assert result.host.checks["python_binding"].error_code == "host_frida_import_failed"
-    assert result.transport.checks["handshake"].error_code == (
-        "frida_server_transport_unreachable"
-    )
+    assert result.transport.checks["handshake"].error_code == ("frida_server_transport_unreachable")
 
 
 def test_strict_mode_never_falls_back():
@@ -217,9 +215,7 @@ def test_strict_mode_never_falls_back():
         existing_process=True,
     )
     assert decision.selected_mode is ExecutionMode.NONE
-    assert [item.mode for item in decision.attempts] == [
-        ExecutionMode.SPAWN_SUSPENDED
-    ]
+    assert [item.mode for item in decision.attempts] == [ExecutionMode.SPAWN_SUSPENDED]
 
 
 def test_balanced_mode_records_attach_fallback():
@@ -431,15 +427,21 @@ def test_launch_then_attach_is_c_unless_early_lifecycle_is_verified():
         consent_boundary_trusted=False,
         network_evidence=False,
     )
-    assert build_evidence_quality(
-        ExecutionMode.LAUNCH_THEN_ATTACH,
-        **base,
-    ).level == "C"
-    assert build_evidence_quality(
-        ExecutionMode.LAUNCH_THEN_ATTACH,
-        early_lifecycle_verified=True,
-        **base,
-    ).level == "B"
+    assert (
+        build_evidence_quality(
+            ExecutionMode.LAUNCH_THEN_ATTACH,
+            **base,
+        ).level
+        == "C"
+    )
+    assert (
+        build_evidence_quality(
+            ExecutionMode.LAUNCH_THEN_ATTACH,
+            early_lifecycle_verified=True,
+            **base,
+        ).level
+        == "B"
+    )
 
 
 def test_crash_requires_crash_signal():

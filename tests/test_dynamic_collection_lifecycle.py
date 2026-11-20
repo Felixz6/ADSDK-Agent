@@ -232,9 +232,7 @@ def test_post_resume_crash_preserves_resume_success_and_fails_stability_gate() -
             enable_traffic=False,
             frida_spawn_stability_seconds=3,
         ),
-        emit_control_event=lambda event: calls.append(
-            f"control.{event['event']}"
-        ),
+        emit_control_event=lambda event: calls.append(f"control.{event['event']}"),
         clock=FakeClock(),
     )
 
@@ -368,9 +366,7 @@ def test_primary_failure_and_cleanup_failures_are_preserved_together() -> None:
             pre_consent_seconds=0,
             post_consent_seconds=0,
         ),
-        emit_control_event=lambda event: calls.append(
-            f"control.{event['event']}"
-        ),
+        emit_control_event=lambda event: calls.append(f"control.{event['event']}"),
         clock=FakeClock(),
     )
 

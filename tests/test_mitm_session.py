@@ -111,7 +111,8 @@ def _session(
         run_id=run_id,
         device=DeviceContext("emulator-5554"),
         traffic_dir=tmp_path / run_id / "traffic",
-        port_pool=port_pool or PortPool(
+        port_pool=port_pool
+        or PortPool(
             [18080, 18081],
             availability_probe=lambda _host, _port: True,
         ),

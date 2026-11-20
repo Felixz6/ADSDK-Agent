@@ -77,9 +77,7 @@ def create_mitm_session(
     if (run_dir is None) == (traffic_dir is None):
         raise ValueError("provide exactly one of run_dir or traffic_dir")
     selected_traffic_dir = (
-        Path(traffic_dir)
-        if traffic_dir is not None
-        else Path(run_dir) / "traffic"  # type: ignore[arg-type]
+        Path(traffic_dir) if traffic_dir is not None else Path(run_dir) / "traffic"  # type: ignore[arg-type]
     )
     values: dict[str, Any] = {
         "run_id": run_id,
@@ -157,25 +155,17 @@ def get_mitm_status(
         ),
         "traffic_dir": str(session.traffic_dir),
         "traffic_dir_exists": session.traffic_dir.is_dir(),
-        "traffic_dir_writable": _check_dir_writable(
-            session.traffic_dir
-        ),
+        "traffic_dir_writable": _check_dir_writable(session.traffic_dir),
         "flow_file": str(session.flow_path),
         "flow_file_exists": flow_exists,
-        "flow_file_size": (
-            session.flow_path.stat().st_size if flow_exists else 0
-        ),
+        "flow_file_size": (session.flow_path.stat().st_size if flow_exists else 0),
         "jsonl_path": str(session.jsonl_path),
         "jsonl_exists": jsonl_exists,
-        "jsonl_size": (
-            session.jsonl_path.stat().st_size if jsonl_exists else 0
-        ),
+        "jsonl_size": (session.jsonl_path.stat().st_size if jsonl_exists else 0),
         # Compatibility alias.  New collection does not parse this file.
         "stream_log": str(session.stderr_path),
         "stream_log_exists": stderr_exists,
-        "stream_log_size": (
-            session.stderr_path.stat().st_size if stderr_exists else 0
-        ),
+        "stream_log_size": (session.stderr_path.stat().st_size if stderr_exists else 0),
         "last_error": status["error"],
         "error_code": session.error_code,
         "started_at": status["started_at"],

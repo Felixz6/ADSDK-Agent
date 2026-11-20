@@ -69,15 +69,11 @@ def env_check(device_id: str | None = None):
             "server_running",
             False,
         ),
-        "frida_python_available": frida_python_info.get(
-            "frida_python_available", False
-        ),
+        "frida_python_available": frida_python_info.get("frida_python_available", False),
         "apktool_available": apktool_info.get("apktool_available", False),
         "mitm_8080_listening": mitm_8080_listening,
         "output_writable": output_info.get("ok", False),
-        "redaction_hmac_key_secure": redaction_info.get(
-            "redaction_hmac_key_security_status"
-        )
+        "redaction_hmac_key_secure": redaction_info.get("redaction_hmac_key_security_status")
         == "secure",
         "apk_allowed_roots_configured": allowed_roots_info.get(
             "apk_allowed_roots_configured", False
@@ -130,15 +126,11 @@ def traffic_check(device_id: str):
             "traffic directory is missing; capture may not have started or path is inaccessible."
         )
     if not mitm_status.get("traffic_dir_writable"):
-        reasons.append(
-            "traffic directory is not writable; cannot persist capture files."
-        )
+        reasons.append("traffic directory is not writable; cannot persist capture files.")
     if not mitm_status.get("port_listening"):
         reasons.append("mitmproxy is not listening on port 8080.")
     if mitm_status.get("stream_log_exists") and mitm_status.get("stream_log_size", 0) == 0:
-        reasons.append(
-            "mitm stream log is empty; proxy may not be hit or HTTPS decryption failed."
-        )
+        reasons.append("mitm stream log is empty; proxy may not be hit or HTTPS decryption failed.")
     if not captured_ok:
         reasons.append(
             "No requests detected in latest capture; verify proxy/IP/certificate/SSL pinning."
@@ -161,9 +153,7 @@ def traffic_check(device_id: str):
 @router.post("/frida/diagnostics")
 def frida_diagnostics(
     request: FridaDiagnosticsRequest,
-    frida_diagnostics_service: FridaDiagnosticsService = Depends(
-        get_frida_diagnostics_service
-    ),
+    frida_diagnostics_service: FridaDiagnosticsService = Depends(get_frida_diagnostics_service),
 ):
     """Run a read-only, exact-device diagnostic pass."""
     device = select_device_context(request.device_id)

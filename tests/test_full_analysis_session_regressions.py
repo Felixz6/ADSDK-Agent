@@ -74,15 +74,30 @@ def test_run_scoped_execution_single_flights_across_service_instances(tmp_path: 
         return {"status": "success", "dynamic_events": []}
 
     execution = RunScopedExecution(runner)
-    first = AITaskService(orchestrator=_UnusedOrchestrator(), run_dir=tmp_path / "r", unified_runner_with_strategy=execution)  # type: ignore[arg-type]
-    second = AITaskService(orchestrator=_UnusedOrchestrator(), run_dir=tmp_path / "r", unified_runner_with_strategy=execution)  # type: ignore[arg-type]
+    first = AITaskService(
+        orchestrator=_UnusedOrchestrator(),
+        run_dir=tmp_path / "r",
+        unified_runner_with_strategy=execution,
+    )  # type: ignore[arg-type]
+    second = AITaskService(
+        orchestrator=_UnusedOrchestrator(),
+        run_dir=tmp_path / "r",
+        unified_runner_with_strategy=execution,
+    )  # type: ignore[arg-type]
     first._effective_dynamic_strategy = second._effective_dynamic_strategy = "balanced"
     results: list[object] = []
-    threads = [threading.Thread(target=lambda: results.append(first.execute_tool("static_analysis", {}))), threading.Thread(target=lambda: results.append(second.execute_tool("dynamic_analysis", {})))]
-    for thread in threads: thread.start()  # noqa: E701
+    threads = [
+        threading.Thread(target=lambda: results.append(first.execute_tool("static_analysis", {}))),
+        threading.Thread(
+            target=lambda: results.append(second.execute_tool("dynamic_analysis", {}))
+        ),
+    ]
+    for thread in threads:
+        thread.start()  # noqa: E701
     assert entered.wait(1)
     release.set()
-    for thread in threads: thread.join(2)  # noqa: E701
+    for thread in threads:
+        thread.join(2)  # noqa: E701
     assert len(results) == 2
     assert calls == ["balanced"]
 
@@ -117,8 +132,12 @@ def test_run_context_claim_provenance_persists_owner_reuser_and_failure(tmp_path
     execution = RunScopedExecution(
         runner, task_id="RUN", run_context_path=run_dir, diagnostics_path=claims
     )
-    owner = AITaskService(orchestrator=_UnusedOrchestrator(), run_dir=run_dir, unified_runner_with_strategy=execution)  # type: ignore[arg-type]
-    reuser = AITaskService(orchestrator=_UnusedOrchestrator(), run_dir=run_dir, unified_runner_with_strategy=execution)  # type: ignore[arg-type]
+    owner = AITaskService(
+        orchestrator=_UnusedOrchestrator(), run_dir=run_dir, unified_runner_with_strategy=execution
+    )  # type: ignore[arg-type]
+    reuser = AITaskService(
+        orchestrator=_UnusedOrchestrator(), run_dir=run_dir, unified_runner_with_strategy=execution
+    )  # type: ignore[arg-type]
     owner._effective_dynamic_strategy = reuser._effective_dynamic_strategy = "balanced"
     owner.execute_tool("static_analysis", {})
     reuser.execute_tool("dynamic_analysis", {})
@@ -129,7 +148,10 @@ def test_run_context_claim_provenance_persists_owner_reuser_and_failure(tmp_path
     assert events[0]["caller_role"] == "static_consumer"
     assert any(event["operation"] == "reuse_same_failure" for event in events)
     assert any(event.get("exception_type") == "FileExistsError" for event in events)
-    assert {event["service_instance_token"] for event in events} >= {owner._service_instance_token, reuser._service_instance_token}
+    assert {event["service_instance_token"] for event in events} >= {
+        owner._service_instance_token,
+        reuser._service_instance_token,
+    }
 
 
 def test_launch_then_attach_failure_never_leaks_private_datetime() -> None:
@@ -161,10 +183,7 @@ def test_launch_then_attach_failure_never_leaks_private_datetime() -> None:
 
     assert execution.fallback_path == [ExecutionMode.LAUNCH_THEN_ATTACH.value]
     assert "_launch_requested_datetime" not in execution.launch_timing
-    assert all(
-        not isinstance(value, datetime)
-        for value in execution.launch_timing.values()
-    )
+    assert all(not isinstance(value, datetime) for value in execution.launch_timing.values())
     payload = {
         "execution": {
             "launch_timing": execution.launch_timing,
@@ -182,6 +201,7 @@ def test_frida_failure_result_retains_receipt_and_single_flight_result(
 
     def runner(strategy: str) -> dict[str, object]:
         calls.append(strategy)
+
         class _UnavailableSession:
             error_code = "frida_server_unavailable"
 
@@ -197,9 +217,7 @@ def test_frida_failure_result_retains_receipt_and_single_flight_result(
             launch_target=lambda: {
                 "launch_requested_at": "2026-08-08T08:00:00.000Z",
                 "target_pid": 31163,
-                "_launch_requested_datetime": datetime(
-                    2026, 8, 8, 8, 0, tzinfo=UTC
-                ),
+                "_launch_requested_datetime": datetime(2026, 8, 8, 8, 0, tzinfo=UTC),
             },
         )
         with pytest.raises(RuntimeError, match="frida_server_unavailable"):
@@ -217,9 +235,7 @@ def test_frida_failure_result_retains_receipt_and_single_flight_result(
             },
             "execution": {
                 "launch_timing": frida.launch_timing,
-                "attempts": [
-                    item.model_dump(mode="json") for item in frida.attempts
-                ],
+                "attempts": [item.model_dump(mode="json") for item in frida.attempts],
                 "failure_code": "frida_server_unavailable",
             },
             "collector_sessions": [],

@@ -89,10 +89,7 @@ class DynamicTimeline:
     def consent_delay_seconds(self) -> float | None:
         if self.collection_started_at is None or self.consent_at is None:
             return None
-        return (
-            self.consent_at.monotonic_ms
-            - self.collection_started_at.monotonic_ms
-        ) / 1000.0
+        return (self.consent_at.monotonic_ms - self.collection_started_at.monotonic_ms) / 1000.0
 
     def consent_deadline_monotonic_ms(self, delay_seconds: float) -> float:
         if self.collection_started_at is None:
@@ -123,9 +120,7 @@ def classify_consent_state(
 ) -> str:
     """Classify the exact consent boundary using only monotonic evidence."""
 
-    if isinstance(event_monotonic_ms, bool) or isinstance(
-        consent_monotonic_ms, bool
-    ):
+    if isinstance(event_monotonic_ms, bool) or isinstance(consent_monotonic_ms, bool):
         return "unknown"
     if not isinstance(event_monotonic_ms, (int, float)) or not isinstance(
         consent_monotonic_ms, (int, float)
@@ -149,11 +144,7 @@ def _load_events(events_json_path: str) -> list[dict[str, Any]]:
     if isinstance(data, list):
         return [item for item in data if isinstance(item, dict)]
     if isinstance(data, dict) and isinstance(data.get("events"), list):
-        return [
-            item
-            for item in data["events"]
-            if isinstance(item, dict)
-        ]
+        return [item for item in data["events"] if isinstance(item, dict)]
     raise ValueError("events evidence must be a JSON array or events envelope")
 
 
@@ -161,10 +152,7 @@ def _find_consent_event(
     events: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     for event in events:
-        if (
-            event.get("type") == "control"
-            and event.get("event") == "consent_granted"
-        ):
+        if event.get("type") == "control" and event.get("event") == "consent_granted":
             return event
     return None
 
@@ -186,12 +174,8 @@ def _is_sensitive_event(event: dict[str, Any]) -> bool:
 
 
 def _is_android_id_event(event: dict[str, Any]) -> bool:
-    return (
-        event.get("api") == "Settings.Secure.getString"
-        and (
-            event.get("identifier_type") == "android_id"
-            or event.get("arg") == "android_id"
-        )
+    return event.get("api") == "Settings.Secure.getString" and (
+        event.get("identifier_type") == "android_id" or event.get("arg") == "android_id"
     )
 
 
@@ -216,9 +200,7 @@ def evaluate_timeline_rules(
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         events = []
         evidence_available = False
-        warnings.append(
-            f"events evidence could not be evaluated: {type(exc).__name__}"
-        )
+        warnings.append(f"events evidence could not be evaluated: {type(exc).__name__}")
 
     consent_event = _find_consent_event(events)
     consent_monotonic_ms: float | None = None
@@ -239,15 +221,13 @@ def evaluate_timeline_rules(
     legacy_consent_dt = _parse_iso(consent_time)
 
     pre_window_start = (
-        legacy_consent_dt
-        - timedelta(seconds=max(0, pre_consent_seconds))
+        legacy_consent_dt - timedelta(seconds=max(0, pre_consent_seconds))
         if legacy_consent_dt
         else None
     )
     pre_window_end = legacy_consent_dt
     post_window_end = (
-        legacy_consent_dt
-        + timedelta(seconds=max(0, post_consent_seconds))
+        legacy_consent_dt + timedelta(seconds=max(0, post_consent_seconds))
         if legacy_consent_dt
         else None
     )
@@ -276,8 +256,7 @@ def evaluate_timeline_rules(
                 continue
             event_monotonic = float(event["monotonic_ms"])
             pre_start_monotonic = (
-                consent_monotonic_ms
-                - max(0, pre_consent_seconds) * 1000.0
+                consent_monotonic_ms - max(0, pre_consent_seconds) * 1000.0
                 if consent_monotonic_ms is not None
                 else None
             )
@@ -297,8 +276,7 @@ def evaluate_timeline_rules(
                 unknown_timing_count += 1
                 continue
             in_pre_window = (
-                pre_window_start is not None
-                and pre_window_start <= event_dt < legacy_consent_dt
+                pre_window_start is not None and pre_window_start <= event_dt < legacy_consent_dt
             )
 
         if not in_pre_window:
@@ -310,35 +288,23 @@ def evaluate_timeline_rules(
             pre_clipboard_count += 1
 
     if legacy_unreliable:
-        warnings.append(
-            "legacy hook timing is unreliable; consent-window rules were not evaluated"
-        )
+        warnings.append("legacy hook timing is unreliable; consent-window rules were not evaluated")
     if unknown_timing_count:
-        warnings.append(
-            f"{unknown_timing_count} sensitive event(s) have unknown consent timing"
-        )
+        warnings.append(f"{unknown_timing_count} sensitive event(s) have unknown consent timing")
 
     boundary_available = (
         consent_monotonic_ms is not None
         if structured_boundary
         else legacy_consent_dt is not None and not legacy_unreliable
     )
-    can_evaluate = (
-        evidence_available
-        and boundary_available
-        and unknown_timing_count == 0
-    )
+    can_evaluate = evidence_available and boundary_available and unknown_timing_count == 0
     if not can_evaluate:
         pre_sensitive_evaluation = "not_evaluated"
         pre_high_freq_evaluation = "not_evaluated"
     else:
-        pre_sensitive_evaluation = (
-            "matched" if pre_sensitive_count > 0 else "not_matched"
-        )
+        pre_sensitive_evaluation = "matched" if pre_sensitive_count > 0 else "not_matched"
         pre_high_freq_evaluation = (
-            "matched"
-            if pre_android_id_count > 3 or pre_clipboard_count > 1
-            else "not_matched"
+            "matched" if pre_android_id_count > 3 or pre_clipboard_count > 1 else "not_matched"
         )
 
     def legacy_status(value: str) -> str:
@@ -351,39 +317,29 @@ def evaluate_timeline_rules(
     return {
         "window": {
             "consent_time": (
-                consent_dt.isoformat().replace("+00:00", "Z")
-                if consent_dt
-                else consent_time
+                consent_dt.isoformat().replace("+00:00", "Z") if consent_dt else consent_time
             ),
             "consent_monotonic_ms": consent_monotonic_ms,
             "pre_window_start_monotonic_ms": (
-                consent_monotonic_ms
-                - max(0, pre_consent_seconds) * 1000.0
+                consent_monotonic_ms - max(0, pre_consent_seconds) * 1000.0
                 if consent_monotonic_ms is not None
                 else None
             ),
             "post_window_end_monotonic_ms": (
-                consent_monotonic_ms
-                + max(0, post_consent_seconds) * 1000.0
+                consent_monotonic_ms + max(0, post_consent_seconds) * 1000.0
                 if consent_monotonic_ms is not None
                 else None
             ),
             "pre_consent_seconds": pre_consent_seconds,
             "post_consent_seconds": post_consent_seconds,
             "pre_window_start": (
-                pre_window_start.isoformat().replace("+00:00", "Z")
-                if pre_window_start
-                else None
+                pre_window_start.isoformat().replace("+00:00", "Z") if pre_window_start else None
             ),
             "pre_window_end": (
-                pre_window_end.isoformat().replace("+00:00", "Z")
-                if pre_window_end
-                else None
+                pre_window_end.isoformat().replace("+00:00", "Z") if pre_window_end else None
             ),
             "post_window_end": (
-                post_window_end.isoformat().replace("+00:00", "Z")
-                if post_window_end
-                else None
+                post_window_end.isoformat().replace("+00:00", "Z") if post_window_end else None
             ),
         },
         "rules": [
@@ -405,12 +361,8 @@ def evaluate_timeline_rules(
             },
         ],
         "summary": {
-            "pre_consent_sensitive_access_strict": legacy_status(
-                pre_sensitive_evaluation
-            ),
-            "pre_consent_high_frequency_sensitive_access": legacy_status(
-                pre_high_freq_evaluation
-            ),
+            "pre_consent_sensitive_access_strict": legacy_status(pre_sensitive_evaluation),
+            "pre_consent_high_frequency_sensitive_access": legacy_status(pre_high_freq_evaluation),
         },
         "evaluation_summary": {
             "pre_consent_sensitive_access_strict": pre_sensitive_evaluation,

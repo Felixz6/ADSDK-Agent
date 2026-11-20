@@ -257,9 +257,7 @@ class AIOrchestrator:
         unavailable = prepared.unavailable_reason
 
         if unavailable is not None:
-            results, trace = self._execute_plan(
-                plan, request, execute_tool, trace, usage
-            )
+            results, trace = self._execute_plan(plan, request, execute_tool, trace, usage)
             digest = build_digest(results)
             if unavailable == "disabled":
                 report = self._composer.disabled_report("AI 功能未启用")
@@ -309,9 +307,7 @@ class AIOrchestrator:
         )
 
         # Track whether we ever attempted a model call vs degrading immediately.
-        model_attempted = bool(self._diagnostic_rounds) or bool(
-            self._diagnostic_errors
-        )
+        model_attempted = bool(self._diagnostic_rounds) or bool(self._diagnostic_errors)
         # A deterministic_fallback run is one whose final report came from the
         # composer template rather than a validated model report. Tracked at the
         # point of use, so budget_exhausted (a template) and a validated model
@@ -332,7 +328,9 @@ class AIOrchestrator:
 
             strategy_decision = normalize_dynamic_strategy(
                 requested_strategy=request.dynamic_mode_policy,
-                requested_scope=_normalize_strategy(request.analysis_mode or request.analysis_scope),
+                requested_scope=_normalize_strategy(
+                    request.analysis_mode or request.analysis_scope
+                ),
                 allow_dynamic=request.allow_dynamic,
                 allow_network=request.allow_network,
                 confirmed_tools=request.confirmed_tools,
@@ -343,9 +341,7 @@ class AIOrchestrator:
         usage = usage.model_copy(
             update={
                 "latency_ms": int((time.perf_counter() - started) * 1000),
-                "tool_call_count": len(
-                    [item for item in results if item.status != "not_run"]
-                ),
+                "tool_call_count": len([item for item in results if item.status != "not_run"]),
             }
         )
         usage = self._finalize_usage(usage)
@@ -506,7 +502,10 @@ class AIOrchestrator:
         usage: AITokenUsage,
         reason: str | None = None,
     ) -> AIReport:
-        return self._narrator.deterministic_report(digest, status=status, usage=usage, reason=reason)
+        return self._narrator.deterministic_report(
+            digest, status=status, usage=usage, reason=reason
+        )
+
     def _stage_cap(
         self,
         stage: AIRoundType,
@@ -623,9 +622,7 @@ class AIOrchestrator:
             usage.estimated_total_tokens += _estimate_tokens(prompt)
         return response
 
-    def _provider_retry_count_for(
-        self, stage: AIRoundType, response: ProviderResponse
-    ) -> int:
+    def _provider_retry_count_for(self, stage: AIRoundType, response: ProviderResponse) -> int:
         """Best-effort per-round retry count from a provider response.
 
         The OpenAICompatibleProvider retries internally and does not surface the
@@ -679,9 +676,7 @@ class AIOrchestrator:
             update={
                 "rounds": rounds,
                 "usage_source": usage.usage_source,
-                "reasoning_content_present": any(
-                    r.reasoning_content_present for r in rounds
-                ),
+                "reasoning_content_present": any(r.reasoning_content_present for r in rounds),
                 "real_tokens": usage.real_tokens,
                 "estimated_total_tokens": usage.estimated_total_tokens,
             }
@@ -710,11 +705,7 @@ class AIOrchestrator:
             normalization_reason = strategy_decision.reason_code
             target_running = strategy_decision.target_running
         validation_issue = next(
-            (
-                issue
-                for round_ in self._plan_validation_rounds
-                for issue in round_.issues
-            ),
+            (issue for round_ in self._plan_validation_rounds for issue in round_.issues),
             None,
         )
         return AIRuntimeDiagnostic(
@@ -750,13 +741,21 @@ class AIOrchestrator:
             target_running=target_running,
             preflight_changed=False,
             root_type=str(self._normalization_shape.get("root_type", "unknown")),
-            schema_version_present=bool(self._normalization_shape.get("schema_version_present", False)),
+            schema_version_present=bool(
+                self._normalization_shape.get("schema_version_present", False)
+            ),
             steps_present=bool(self._normalization_shape.get("steps_present", False)),
             steps_type=str(self._normalization_shape.get("steps_type", "missing")),
-            normalization_eligible=bool(self._normalization_shape.get("normalization_eligible", False)),
-            normalization_applied=bool(self._normalization_shape.get("normalization_applied", False)),
+            normalization_eligible=bool(
+                self._normalization_shape.get("normalization_eligible", False)
+            ),
+            normalization_applied=bool(
+                self._normalization_shape.get("normalization_applied", False)
+            ),
             normalization_reason_code=self._normalization_shape.get("normalization_reason_code"),
-            safe_wrapper_detected=bool(self._normalization_shape.get("safe_wrapper_detected", False)),
+            safe_wrapper_detected=bool(
+                self._normalization_shape.get("safe_wrapper_detected", False)
+            ),
             top_level_field_count=int(self._normalization_shape.get("top_level_field_count", 0)),
             analysis_mode=request.analysis_mode or request.analysis_scope,
             orchestration_entrypoint=request.orchestration_entrypoint,
@@ -860,9 +859,7 @@ class AIOrchestrator:
         request: AIOrchestrationRequest,
         digest: EvidenceDigest,
     ) -> str:
-        payload = json.dumps(
-            digest.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
-        )
+        payload = json.dumps(digest.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
         return (
             "__ai_phase__:report\n"
             "Produce a JSON object conforming to schema ai-report-v1.\n"

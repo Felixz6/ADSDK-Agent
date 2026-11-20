@@ -135,9 +135,11 @@ def normalize_dynamic_strategy(
     keeps the dynamic leg unless other rules downgrade it.
     """
 
-    confirmed = frozenset(confirmed_tools.keys()) if isinstance(
-        confirmed_tools, Mapping
-    ) else frozenset(confirmed_tools)
+    confirmed = (
+        frozenset(confirmed_tools.keys())
+        if isinstance(confirmed_tools, Mapping)
+        else frozenset(confirmed_tools)
+    )
     dynamic_confirmed = _DEVICE_STATE_TOOL in confirmed
 
     # Production full-analysis calls use the dynamic execution strategy as
@@ -361,8 +363,7 @@ def plan_has_dynamic_tool(steps: list[Mapping[str, object]]) -> bool:
     if not isinstance(steps, list):
         return False
     return any(
-        isinstance(step, Mapping) and step.get("tool_name") == _DEVICE_STATE_TOOL
-        for step in steps
+        isinstance(step, Mapping) and step.get("tool_name") == _DEVICE_STATE_TOOL for step in steps
     )
 
 
@@ -372,8 +373,7 @@ def plan_has_traffic_tool(steps: list[Mapping[str, object]]) -> bool:
     if not isinstance(steps, list):
         return False
     return any(
-        isinstance(step, Mapping) and step.get("tool_name") == _TRAFFIC_TOOL
-        for step in steps
+        isinstance(step, Mapping) and step.get("tool_name") == _TRAFFIC_TOOL for step in steps
     )
 
 

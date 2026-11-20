@@ -110,9 +110,7 @@ def _has_control_chars(value: str) -> bool:
 def _validate_base_url(value: str) -> str:
     v = value.strip()
     if _has_control_chars(v):
-        raise AISettingsValidationError(
-            "invalid_base_url", "Base URL 含控制字符", field="base_url"
-        )
+        raise AISettingsValidationError("invalid_base_url", "Base URL 含控制字符", field="base_url")
     lowered = v.lower()
     if lowered.startswith("file://") or lowered.startswith("javascript:"):
         raise AISettingsValidationError(
@@ -132,21 +130,15 @@ def _validate_model(value: str) -> str:
     if "\n" in v or "\r" in v:
         raise AISettingsValidationError("invalid_model", "Model 不得换行", field="model")
     if not (1 <= len(v) <= 200):
-        raise AISettingsValidationError(
-            "invalid_model", "Model 长度应在 1–200 之间", field="model"
-        )
+        raise AISettingsValidationError("invalid_model", "Model 长度应在 1–200 之间", field="model")
     return v
 
 
 def _validate_api_key(value: str) -> str:
     if _has_control_chars(value):
-        raise AISettingsValidationError(
-            "invalid_api_key", "API Key 含控制字符", field="api_key"
-        )
+        raise AISettingsValidationError("invalid_api_key", "API Key 含控制字符", field="api_key")
     if "\n" in value or "\r" in value:
-        raise AISettingsValidationError(
-            "invalid_api_key", "API Key 不得换行", field="api_key"
-        )
+        raise AISettingsValidationError("invalid_api_key", "API Key 不得换行", field="api_key")
     if not (1 <= len(value) <= _API_KEY_MAX_LENGTH):
         raise AISettingsValidationError(
             "invalid_api_key", "API Key 长度应在 1–4096 之间", field="api_key"
@@ -191,7 +183,6 @@ def _coerce_env(name: str, raw: str):
             return None
     value = raw.strip()
     return value or None
-
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +287,7 @@ class AIProviderFactory:
             provider_profile="deepseek" if provider_name == "deepseek" else None,
         )
 
+
 # Fields whose env value is authoritative when present.
 _ENV_VALUE_PROVIDER_SET = {
     "enabled",
@@ -368,8 +360,7 @@ def resolve_effective_ai_settings(store: AISettingsStore) -> dict[str, Any]:
         ),
         locked_fields=sorted(store.environment_overrides()),
         field_sources={
-            name: store.field_source(name)
-            for name in AISettingsService._EDITABLE_FIELDS
+            name: store.field_source(name) for name in AISettingsService._EDITABLE_FIELDS
         },
     )
     return values
@@ -499,7 +490,11 @@ class AISettingsService:
         base_url = request.get("base_url") or effective["base_url"]
         model = request.get("model") or effective["model"]
         provider_name = request.get("provider") or effective["provider"] or DEFAULT_PROVIDER
-        timeout = request.get("timeout_seconds") or effective["timeout_seconds"] or DEFAULT_TIMEOUT_SECONDS
+        timeout = (
+            request.get("timeout_seconds")
+            or effective["timeout_seconds"]
+            or DEFAULT_TIMEOUT_SECONDS
+        )
         try:
             timeout_f = float(timeout)
         except (TypeError, ValueError):
@@ -579,9 +574,7 @@ class AISettingsService:
         if "model" in request and request["model"] not in (None, ""):
             request["model"] = _validate_model(str(request["model"]))
         elif "model" in request and request["model"] == "":
-            raise AISettingsValidationError(
-                "invalid_model", "model 不得为空", field="model"
-            )
+            raise AISettingsValidationError("invalid_model", "model 不得为空", field="model")
 
         for name, (low, high) in _RANGES.items():
             if name in request and request[name] is not None:

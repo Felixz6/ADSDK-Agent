@@ -99,14 +99,10 @@ class AIPlanner:
         # path at a single billed call (M6C low-token acceptance) without
         # changing which tools run.
         if strategy == "report_only":
-            self._record_plan_round(
-                stage="plan", parse_code=None, issues=[], succeeded=False
-            )
+            self._record_plan_round(stage="plan", parse_code=None, issues=[], succeeded=False)
             self._mark_deterministic_plan(reason="report_only")
             return self._default_plan(request, reason="report_only"), None
-        catalogue = self._registry.prompt_catalogue(
-            strategy, allow_dynamic=allow_dynamic
-        )
+        catalogue = self._registry.prompt_catalogue(strategy, allow_dynamic=allow_dynamic)
         prompt = self._planning_prompt(request, strategy, catalogue)
 
         # ----- Pre-round budget gate -----
@@ -156,15 +152,11 @@ class AIPlanner:
                     rejected_plan=None,
                     validation=PlanValidationResult(
                         plan=None,
-                        issues=[
-                            PlanValidationIssue(code=exc.code, stage="parse")
-                        ],
+                        issues=[PlanValidationIssue(code=exc.code, stage="parse")],
                         parse_code=exc.code,
                     ),
                     max_steps=self._max_tool_calls,
-                    budget_rounds_remaining=(
-                        self._max_rounds - usage.model_round_count
-                    ),
+                    budget_rounds_remaining=(self._max_rounds - usage.model_round_count),
                 )
                 if parse_failure_repair is not None:
                     self.repair_attempted = True
@@ -197,9 +189,7 @@ class AIPlanner:
                         self.plan_source = "repaired"
                         self.planning_failed = False
                         self.deterministic_plan_fallback = False
-                        return plan.model_copy(
-                            update={"generated_by": "ai"}
-                        ), None
+                        return plan.model_copy(update={"generated_by": "ai"}), None
                     self._mark_deterministic_plan(reason="planning_failed")
                     return (
                         self._default_plan(request, reason="planning_failed"),
@@ -208,9 +198,7 @@ class AIPlanner:
             retryable = bool(exc.retryable)
             # Is there a model round left to retry the *same* plan prompt?
             can_retry = (
-                retryable
-                and usage.model_round_count < self._max_rounds
-                and not self._cancelled()
+                retryable and usage.model_round_count < self._max_rounds and not self._cancelled()
             )
             if not can_retry:
                 self._mark_deterministic_plan(reason=exc.code)
@@ -219,8 +207,13 @@ class AIPlanner:
             # the retry's outcome (another provider error, parse failure, or a
             # validated plan) decides provenance.
             round1 = self._retry_plan_round(
-                prompt, catalogue, request, usage, strategy,
-                allow_dynamic, confirmed_tools,
+                prompt,
+                catalogue,
+                request,
+                usage,
+                strategy,
+                allow_dynamic,
+                confirmed_tools,
             )
             if round1 is not None and round1.ok:
                 plan = self._apply_call_budget(round1.plan)  # type: ignore[arg-type]
@@ -282,9 +275,7 @@ class AIPlanner:
                 repair_prompt, catalogue, usage, stage="repair", request=request
             )
         except ProviderError as exc:
-            self._record_provider_error(
-                exc, stage="repair", attempt=2, finalized=True
-            )
+            self._record_provider_error(exc, stage="repair", attempt=2, finalized=True)
             self._record_plan_round(
                 stage="repair",
                 parse_code=exc.code,
@@ -338,8 +329,10 @@ class AIPlanner:
             raw_root = response.content_json
             self.normalization_shape = {
                 "root_type": (
-                    "object" if isinstance(raw_root, dict)
-                    else "array" if isinstance(raw_root, list)
+                    "object"
+                    if isinstance(raw_root, dict)
+                    else "array"
+                    if isinstance(raw_root, list)
                     else type(raw_root).__name__
                 ),
                 "schema_version_present": False,
@@ -380,21 +373,25 @@ class AIPlanner:
             "schema_version_present": "schema_version" in payload,
             "steps_present": "steps" in payload,
             "steps_type": (
-                "list" if isinstance(payload.get("steps"), list)
-                else type(payload.get("steps")).__name__ if "steps" in payload
+                "list"
+                if isinstance(payload.get("steps"), list)
+                else type(payload.get("steps")).__name__
+                if "steps" in payload
                 else "missing"
             ),
             "normalization_eligible": (
-                "schema_version" not in payload
-                and isinstance(payload.get("steps"), list)
+                "schema_version" not in payload and isinstance(payload.get("steps"), list)
             ),
             "normalization_applied": normalization.applied,
             "normalization_reason_code": (
                 normalization.reason_codes[0]
-                if normalization.reason_codes else (
-                    "steps_missing" if "steps" not in payload else
-                    "steps_type_invalid" if not isinstance(payload.get("steps"), list) else
-                    None
+                if normalization.reason_codes
+                else (
+                    "steps_missing"
+                    if "steps" not in payload
+                    else "steps_type_invalid"
+                    if not isinstance(payload.get("steps"), list)
+                    else None
                 )
             ),
             "safe_wrapper_detected": False,
@@ -488,12 +485,12 @@ class AIPlanner:
         """
 
         try:
-            response = self._call_model(
-                prompt, catalogue, usage, stage=stage, request=request
-            )
+            response = self._call_model(prompt, catalogue, usage, stage=stage, request=request)
         except ProviderError as exc:
             self._record_provider_error(
-                exc, stage=stage, attempt=max(1, attempt),
+                exc,
+                stage=stage,
+                attempt=max(1, attempt),
                 finalized=not bool(exc.retryable),
             )
             return None, exc
@@ -544,9 +541,7 @@ class AIPlanner:
         names = list(DEFAULT_PLAN_STEPS.get(strategy, DEFAULT_PLAN_STEPS["static_only"]))
         if not request.allow_dynamic:
             names = [
-                name
-                for name in names
-                if self._registry.risk_level(name) != "device_state_change"
+                name for name in names if self._registry.risk_level(name) != "device_state_change"
             ]
         names = prioritize_steps(names, self._max_tool_calls)
         steps = [
@@ -573,9 +568,7 @@ class AIPlanner:
     def _apply_call_budget(self, plan: AIPlan) -> AIPlan:
         if len(plan.steps) <= self._max_tool_calls:
             return plan
-        keep_names = prioritize_steps(
-            [step.tool_name for step in plan.steps], self._max_tool_calls
-        )
+        keep_names = prioritize_steps([step.tool_name for step in plan.steps], self._max_tool_calls)
         kept: list[PlanStep] = []
         remaining = list(keep_names)
         for step in plan.steps:
@@ -585,11 +578,7 @@ class AIPlanner:
         kept_ids = {step.step_id for step in kept}
         kept = [
             step.model_copy(
-                update={
-                    "depends_on": [
-                        dep for dep in step.depends_on if dep in kept_ids
-                    ]
-                }
+                update={"depends_on": [dep for dep in step.depends_on if dep in kept_ids]}
             )
             for step in kept
         ]
@@ -602,7 +591,6 @@ class AIPlanner:
                 ],
             }
         )
-
 
     def _planning_prompt(
         self,
@@ -697,13 +685,8 @@ def _validate_plan(
         # Arguments must pass the tool's own Pydantic schema.
         registry.validate_arguments(step.tool_name, step.arguments)
         # A device-touching tool is not plannable when dynamic is not allowed.
-        if (
-            registry.risk_level(step.tool_name) == "device_state_change"
-            and not allow_dynamic
-        ):
-            raise ValueError(
-                f"tool {step.tool_name} is not permitted for this task"
-            )
+        if registry.risk_level(step.tool_name) == "device_state_change" and not allow_dynamic:
+            raise ValueError(f"tool {step.tool_name} is not permitted for this task")
         signature = (
             step.tool_name,
             json.dumps(step.arguments, sort_keys=True, ensure_ascii=False),
@@ -738,7 +721,6 @@ def _assert_acyclic(steps: Sequence[PlanStep]) -> None:
         visit(step_id)
 
 
-
 @dataclass(frozen=True, slots=True)
 class _EnvelopeNormalization:
     payload: dict[str, Any]
@@ -752,9 +734,10 @@ def _normalize_plan_envelope(payload: Mapping[str, Any]) -> _EnvelopeNormalizati
     normalized = dict(payload)
     if "schema_version" not in normalized and isinstance(normalized.get("steps"), list):
         normalized["schema_version"] = "ai-plan-v1"
-        return _EnvelopeNormalization(normalized, True, ("schema_version",), ("missing_schema_version",))
+        return _EnvelopeNormalization(
+            normalized, True, ("schema_version",), ("missing_schema_version",)
+        )
     return _EnvelopeNormalization(normalized, False, (), ())
-
 
 
 __all__ = [

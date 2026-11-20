@@ -61,9 +61,7 @@ class ProductionSessionEffects:
     consent_monotonic: Callable[[], float] = time.monotonic
     plan_observer: Callable[[AIPlan, str], None] | None = None
     last_result: AIOrchestrationResult | None = field(default=None, init=False)
-    last_executor_strategy_receipt: dict[str, str] | None = field(
-        default=None, init=False
-    )
+    last_executor_strategy_receipt: dict[str, str] | None = field(default=None, init=False)
 
     def capture_snapshot(
         self, device_id: str | None, package_name: str | None
@@ -75,9 +73,7 @@ class ProductionSessionEffects:
     ) -> DeviceSessionSnapshot:
         return self.snapshot_factory(device_id, package_name, "pre_state_change")
 
-    def run_orchestration(
-        self, request: AIOrchestrationRequest
-    ) -> AIOrchestrationResult:
+    def run_orchestration(self, request: AIOrchestrationRequest) -> AIOrchestrationResult:
         self.last_result = self.ai_service.run(request)
         return self.last_result
 
@@ -98,15 +94,11 @@ class ProductionSessionEffects:
             self.last_result.diagnostic.analysis_mode = (
                 request.analysis_mode or request.analysis_scope
             )
-            self.last_result.diagnostic.orchestration_entrypoint = (
-                "tasks_ai_orchestrated"
-            )
+            self.last_result.diagnostic.orchestration_entrypoint = "tasks_ai_orchestrated"
             self.last_result.diagnostic.session_engine = "FullAnalysisSession"
             self.last_result.diagnostic.execution_pipeline_version = "m7b"
         receipt = getattr(self.ai_service, "executor_strategy_receipt", None)
-        self.last_executor_strategy_receipt = (
-            dict(receipt) if isinstance(receipt, dict) else None
-        )
+        self.last_executor_strategy_receipt = dict(receipt) if isinstance(receipt, dict) else None
         return self.last_result
 
     def enter_consent(self, task_id: str, run_id: str) -> ConsentCheckpointState:
@@ -150,15 +142,11 @@ class ProductionSessionEffects:
         """Read the effective proxy for post-cleanup semantic verification."""
         return self.read_proxy_action(device)
 
-    def resource_present(
-        self, kind: str, detail: dict[str, Any]
-    ) -> bool | None:
+    def resource_present(self, kind: str, detail: dict[str, Any]) -> bool | None:
         """Probe the exact PID/port recorded in the task ownership ledger."""
         return self.resource_present_action(kind, detail)
 
-    def resource_identity_matches(
-        self, kind: str, detail: dict[str, Any]
-    ) -> bool:
+    def resource_identity_matches(self, kind: str, detail: dict[str, Any]) -> bool:
         """Guard cleanup against PID reuse or an ownership identity change."""
         return bool(self.resource_identity_matches_action(kind, detail))
 

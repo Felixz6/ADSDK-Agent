@@ -56,8 +56,6 @@ def test_risk_scoring_uses_only_declared_permissions():
 
 
 def test_legacy_permissions_field_remains_score_compatible():
-    summary = calculate_risk_summary(
-        {"app_info": {"permissions": ["android.permission.CAMERA"]}}
-    )
+    summary = calculate_risk_summary({"app_info": {"permissions": ["android.permission.CAMERA"]}})
     assert summary.score == 12
     assert summary.top_risks[0].id == "manifest_sensitive_permissions"

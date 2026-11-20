@@ -8,14 +8,16 @@ from pathlib import Path
 from re import Pattern
 from typing import Any
 
-KNOWLEDGE_BASE_PATH = (
-    Path(__file__).resolve().parents[1] / "data" / "sdk_knowledge_base.json"
-)
-TEXT_FILE_EXTS = {
-    ".smali", ".xml", ".txt", ".json", ".properties", ".html", ".js"
-}
+KNOWLEDGE_BASE_PATH = Path(__file__).resolve().parents[1] / "data" / "sdk_knowledge_base.json"
+TEXT_FILE_EXTS = {".smali", ".xml", ".txt", ".json", ".properties", ".html", ".js"}
 SMALI_CONTENT_HINTS = (
-    "config", "constant", "buildconfig", "application", "manifest", "url", "host"
+    "config",
+    "constant",
+    "buildconfig",
+    "application",
+    "manifest",
+    "url",
+    "host",
 )
 SMALI_ROOT_PATTERN = re.compile(r"^smali(?:_classes\d+)?$", re.IGNORECASE)
 
@@ -46,9 +48,7 @@ def load_sdk_knowledge_base(
 
 SDK_KNOWLEDGE_BASE = load_sdk_knowledge_base()
 SDK_BY_PACKAGE = {
-    package: entry
-    for entry in SDK_KNOWLEDGE_BASE
-    for package in entry["package_patterns"]
+    package: entry for entry in SDK_KNOWLEDGE_BASE for package in entry["package_patterns"]
 }
 # Compatibility export retained for existing callers and tests.
 KNOWN_SDKS = {
@@ -70,31 +70,26 @@ def _compile_content_patterns(package: str) -> tuple[Pattern[str], Pattern[str]]
     return dotted, slash
 
 
-_CONTENT_PATTERNS = {
-    package: _compile_content_patterns(package) for package in KNOWN_SDKS
-}
+_CONTENT_PATTERNS = {package: _compile_content_patterns(package) for package in KNOWN_SDKS}
 
 _LITERAL_LOOKUP: dict[bytes, tuple[str, str, str]] = {}
 for _package, _knowledge in SDK_BY_PACKAGE.items():
-    _LITERAL_LOOKUP[_package.casefold().encode()] = (
-        _package, "file_content", "package_literal"
-    )
+    _LITERAL_LOOKUP[_package.casefold().encode()] = (_package, "file_content", "package_literal")
     _LITERAL_LOOKUP[_package.replace(".", "/").casefold().encode()] = (
-        _package, "file_content", "package_literal"
+        _package,
+        "file_content",
+        "package_literal",
     )
     _LITERAL_LOOKUP[("L" + _package.replace(".", "/")).casefold().encode()] = (
-        _package, "file_content", "package_literal"
+        _package,
+        "file_content",
+        "package_literal",
     )
     for _domain in _knowledge.get("domain_patterns", []):
-        _LITERAL_LOOKUP[_domain.casefold().encode()] = (
-            _package, "domain", "domain_literal"
-        )
+        _LITERAL_LOOKUP[_domain.casefold().encode()] = (_package, "domain", "domain_literal")
 _COMBINED_LITERAL_PATTERN = re.compile(
     rb"(?<![A-Za-z0-9_$])(?:"
-    + b"|".join(
-        re.escape(token)
-        for token in sorted(_LITERAL_LOOKUP, key=len, reverse=True)
-    )
+    + b"|".join(re.escape(token) for token in sorted(_LITERAL_LOOKUP, key=len, reverse=True))
     + rb")(?![A-Za-z0-9_$])",
     re.IGNORECASE,
 )
@@ -189,11 +184,8 @@ def _scan_file_contents(unpack_dir: str) -> list[dict[str, Any]]:
                 if Path(file_name).suffix.lower() not in TEXT_FILE_EXTS:
                     continue
                 suffix = Path(file_name).suffix.lower()
-                if (
-                    suffix == ".smali"
-                    and not any(
-                        hint in file_name.casefold() for hint in SMALI_CONTENT_HINTS
-                    )
+                if suffix == ".smali" and not any(
+                    hint in file_name.casefold() for hint in SMALI_CONTENT_HINTS
                 ):
                     # Package directories cover bundled classes.  Content
                     # scanning focuses on configuration-like smali files to

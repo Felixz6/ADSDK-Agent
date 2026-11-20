@@ -210,9 +210,7 @@ def prepare_static_unpack(
                 )
                 raise StaticUnpackCacheError(
                     code,
-                    result.get("stderr")
-                    or result.get("stdout")
-                    or "apktool failed",
+                    result.get("stderr") or result.get("stdout") or "apktool failed",
                     result,
                 )
 
@@ -229,9 +227,7 @@ def prepare_static_unpack(
                     "cache_format_version": CACHE_FORMAT_VERSION,
                     "apk_sha256": normalized_sha256,
                     "apktool_version": apktool_version,
-                    "created_at": datetime.now(UTC)
-                    .isoformat()
-                    .replace("+00:00", "Z"),
+                    "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
                 },
             )
 

@@ -30,9 +30,7 @@ _REQUIRED_MARKERS = ("globalThis.Java", "libart", "java_runtime_pending")
 
 
 def _resolve_frida_compile() -> str:
-    venv_candidate = (
-        PROJECT_ROOT / ".venv" / "Scripts" / "frida-compile.exe"
-    )
+    venv_candidate = PROJECT_ROOT / ".venv" / "Scripts" / "frida-compile.exe"
     if venv_candidate.is_file():
         return str(venv_candidate)
     return "frida-compile"
@@ -70,16 +68,13 @@ def build() -> Path:
     )
     if completed.returncode != 0:
         raise SystemExit(
-            "frida-compile failed:\n"
-            f"{completed.stdout or ''}\n{completed.stderr or ''}"
+            f"frida-compile failed:\n{completed.stdout or ''}\n{completed.stderr or ''}"
         )
 
     artifact = OUTPUT.read_bytes()
     text = artifact.decode("utf-8", errors="replace")
     missing = [m for m in _REQUIRED_MARKERS if m not in text]
-    raw_script = (
-        PROJECT_ROOT / "app" / "frida_hooks" / "sensitive_apis.js"
-    ).stat().st_size
+    raw_script = (PROJECT_ROOT / "app" / "frida_hooks" / "sensitive_apis.js").stat().st_size
     if missing or len(artifact) < 8 * raw_script:
         raise SystemExit(
             "built artifact failed verification; missing markers: "

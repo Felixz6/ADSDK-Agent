@@ -113,7 +113,9 @@ class TestDeepSeekRequestCompat:
             model="deepseek-v4-flash",
             transport=httpx.MockTransport(handler),
         )
-        p.call(system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10)
+        p.call(
+            system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10
+        )
 
         posted = json.loads(captured["req"].content.decode("utf-8"))
         assert posted["thinking"] == {"type": "disabled"}
@@ -136,8 +138,11 @@ class TestDeepSeekRequestCompat:
                 thinking_mode=thinking_mode,
             )
             p.call(
-                system_prompt="s", user_prompt="u", tools=[],
-                max_input_tokens=10, max_output_tokens=10,
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
             )
             return json.loads(captured["req"].content.decode("utf-8"))
 
@@ -154,11 +159,19 @@ class TestDeepSeekRequestCompat:
             return _ok(_simple_body())
 
         p = OpenAICompatibleProvider(
-            base_url=_DEEPSEEK_BASE, api_key=_KEY, model="deepseek-v4-flash",
-            transport=httpx.MockTransport(handler), thinking_mode="off",
+            base_url=_DEEPSEEK_BASE,
+            api_key=_KEY,
+            model="deepseek-v4-flash",
+            transport=httpx.MockTransport(handler),
+            thinking_mode="off",
         )
-        p.call(system_prompt="SYS", user_prompt="USR", tools=[],
-               max_input_tokens=10, max_output_tokens=42)
+        p.call(
+            system_prompt="SYS",
+            user_prompt="USR",
+            tools=[],
+            max_input_tokens=10,
+            max_output_tokens=42,
+        )
 
         posted = json.loads(captured["req"].content.decode("utf-8"))
         assert posted["model"] == "deepseek-v4-flash"
@@ -180,17 +193,23 @@ class TestDeepSeekRequestCompat:
             return _ok(_simple_body())
 
         p = OpenAICompatibleProvider(
-            base_url=_DEEPSEEK_BASE, api_key=_KEY, model="m",
-            transport=httpx.MockTransport(handler), thinking_mode="off",
+            base_url=_DEEPSEEK_BASE,
+            api_key=_KEY,
+            model="m",
+            transport=httpx.MockTransport(handler),
+            thinking_mode="off",
         )
-        p.call(system_prompt="s", user_prompt="USR",
-               tools=[{"name": "static_analysis"}],
-               max_input_tokens=10, max_output_tokens=10)
+        p.call(
+            system_prompt="s",
+            user_prompt="USR",
+            tools=[{"name": "static_analysis"}],
+            max_input_tokens=10,
+            max_output_tokens=10,
+        )
 
         posted = json.loads(captured["req"].content.decode("utf-8"))
         assert posted["messages"][1]["content"] == (
-            "USR" + "\n\nAvailable tools:\n"
-            + json.dumps([{"name": "static_analysis"}])
+            "USR" + "\n\nAvailable tools:\n" + json.dumps([{"name": "static_analysis"}])
         )
 
     def test_chat_url_targets_chat_completions(self):
@@ -204,11 +223,14 @@ class TestDeepSeekRequestCompat:
 
         p = OpenAICompatibleProvider(
             base_url="https://api.deepseek.com/v1/",  # trailing slash
-            api_key=_KEY, model="m",
-            transport=httpx.MockTransport(handler), thinking_mode="off",
+            api_key=_KEY,
+            model="m",
+            transport=httpx.MockTransport(handler),
+            thinking_mode="off",
         )
-        p.call(system_prompt="s", user_prompt="u", tools=[],
-               max_input_tokens=10, max_output_tokens=10)
+        p.call(
+            system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10
+        )
 
         assert captured["req"].url.path.rstrip("/") == "/v1/chat/completions"
 
@@ -241,17 +263,20 @@ class TestDetectProfile:
         assert _detect_profile(base_url, explicit) == expected
 
     def test_provider_profile_property_uses_base_url_and_choice(self):
-        p_ds = OpenAICompatibleProvider(
-            base_url=_DEEPSEEK_BASE, api_key=_KEY, model="m")
+        p_ds = OpenAICompatibleProvider(base_url=_DEEPSEEK_BASE, api_key=_KEY, model="m")
         assert p_ds.profile == PROFILE_DEEPSEEK
         p_gen = OpenAICompatibleProvider(
-            base_url=_GENERIC_BASE, api_key=_KEY, model="m",
+            base_url=_GENERIC_BASE,
+            api_key=_KEY,
+            model="m",
             provider_profile="auto",
         )
         assert p_gen.profile == PROFILE_GENERIC_OPENAI
         # Explicit override wins over host.
         p_override = OpenAICompatibleProvider(
-            base_url=_GENERIC_BASE, api_key=_KEY, model="m",
+            base_url=_GENERIC_BASE,
+            api_key=_KEY,
+            model="m",
             provider_profile="deepseek",
         )
         assert p_override.profile == PROFILE_DEEPSEEK
@@ -265,13 +290,21 @@ class TestDetectProfile:
             return _ok(_simple_body())
 
         p = OpenAICompatibleProvider(
-            base_url=_GENERIC_BASE, api_key=_KEY, model="m",
+            base_url=_GENERIC_BASE,
+            api_key=_KEY,
+            model="m",
             transport=httpx.MockTransport(handler),
             thinking_mode="auto",  # inject only when profile==deepseek
         )
         # Override to deepseek at call time -> the thinking field must appear.
-        p.call(system_prompt="s", user_prompt="u", tools=[],
-               max_input_tokens=10, max_output_tokens=10, profile="deepseek")
+        p.call(
+            system_prompt="s",
+            user_prompt="u",
+            tools=[],
+            max_input_tokens=10,
+            max_output_tokens=10,
+            profile="deepseek",
+        )
         posted = json.loads(captured["req"].content.decode("utf-8"))
         assert posted["thinking"] == {"type": "disabled"}
 
@@ -286,14 +319,14 @@ class TestThinkingDisabledFor:
             (PROFILE_DEEPSEEK, "disabled", True),
             (PROFILE_DEEPSEEK, "auto", True),
             (PROFILE_DEEPSEEK, "off", False),
-            (PROFILE_DEEPSEEK, "", True),          # empty -> default disabled
-            (PROFILE_DEEPSEEK, None, True),       # None -> default disabled
+            (PROFILE_DEEPSEEK, "", True),  # empty -> default disabled
+            (PROFILE_DEEPSEEK, None, True),  # None -> default disabled
             (PROFILE_DEEPSEEK, "unknown", True),  # unknown -> deterministic
-            (PROFILE_DEEPSEEK, "DISABLED", True), # case-insensitive
+            (PROFILE_DEEPSEEK, "DISABLED", True),  # case-insensitive
             (PROFILE_DEEPSEEK, "AUTO", True),
             (PROFILE_DEEPSEEK, "OFF", False),
             (PROFILE_GENERIC_OPENAI, "disabled", True),  # injected (harmless)
-            (PROFILE_GENERIC_OPENAI, "auto", False),      # only for deepseek
+            (PROFILE_GENERIC_OPENAI, "auto", False),  # only for deepseek
             (PROFILE_GENERIC_OPENAI, "off", False),
             (PROFILE_GENERIC_OPENAI, "unknown", True),
         ],
@@ -328,8 +361,10 @@ class TestClassifyHttp:
         assert err.retryable is False
         assert err.status_code == status
 
-    @pytest.mark.parametrize("status, code", [(401, "ai_provider_authentication_failed"),
-                                              (403, "ai_provider_authentication_failed")])
+    @pytest.mark.parametrize(
+        "status, code",
+        [(401, "ai_provider_authentication_failed"), (403, "ai_provider_authentication_failed")],
+    )
     def test_auth_fail_non_retryable(self, status, code):
         p = _provider()
         err = p._classify_http(_resp(status))
@@ -377,12 +412,15 @@ class TestClassifyHttp:
             err = p._classify_http(_resp(status))
             assert err.retry_after_ms is None
 
-    @pytest.mark.parametrize("status, expected_code", [
-        (408, "ai_provider_timeout"),
-        (429, "ai_provider_rate_limited"),
-        (500, "ai_provider_unreachable"),
-        (404, "ai_provider_model_not_found"),
-    ])
+    @pytest.mark.parametrize(
+        "status, expected_code",
+        [
+            (408, "ai_provider_timeout"),
+            (429, "ai_provider_rate_limited"),
+            (500, "ai_provider_unreachable"),
+            (404, "ai_provider_model_not_found"),
+        ],
+    )
     def test_status_to_code_complete(self, status, expected_code):
         p = _provider()
         err = p._classify_http(_resp(status))
@@ -393,20 +431,23 @@ class TestClassifyHttp:
 # 5. _parse_retry_after.
 # ---------------------------------------------------------------------------
 class TestParseRetryAfter:
-    @pytest.mark.parametrize("value, expected", [
-        (None, None),
-        ("", None),
-        ("   ", None),
-        ("0", 0),
-        ("30", 30000),
-        ("2.5", 2500),
-        ("0.001", 1),                 # rounds down to int ms via truncation
-        ("  10 ", 10000),             # surrounding whitespace stripped
-        ("Wed, 21 Oct 2025 07:28:00 GMT", None),  # HTTP-date ignored -> None
-        ("tomorrow", None),           # non-numeric -> None
-        ("nan", None),
-        ("1e3", 1000000),              # float-form/scientific parsed
-    ])
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (None, None),
+            ("", None),
+            ("   ", None),
+            ("0", 0),
+            ("30", 30000),
+            ("2.5", 2500),
+            ("0.001", 1),  # rounds down to int ms via truncation
+            ("  10 ", 10000),  # surrounding whitespace stripped
+            ("Wed, 21 Oct 2025 07:28:00 GMT", None),  # HTTP-date ignored -> None
+            ("tomorrow", None),  # non-numeric -> None
+            ("nan", None),
+            ("1e3", 1000000),  # float-form/scientific parsed
+        ],
+    )
     def test_matrix(self, value, expected):
         assert OpenAICompatibleProvider._parse_retry_after(value) == expected
 
@@ -416,9 +457,13 @@ class TestParseRetryAfter:
 # ---------------------------------------------------------------------------
 class TestRetryDelaySeconds:
     def _err(self, retry_after_ms: int | None = None, retryable: bool = True):
-        return ProviderError("ai_provider_rate_limited", "x",
-                             retryable=retryable, stage="provider_call",
-                             retry_after_ms=retry_after_ms)
+        return ProviderError(
+            "ai_provider_rate_limited",
+            "x",
+            retryable=retryable,
+            stage="provider_call",
+            retry_after_ms=retry_after_ms,
+        )
 
     def test_honours_retry_after_when_present(self):
         p = _provider(retry_base_delay_ms=100, max_retry_after_seconds=10)
@@ -445,8 +490,9 @@ class TestRetryDelaySeconds:
 
     @pytest.mark.parametrize("ceiling", [None, 0, None])
     def test_no_ceiling_means_uncapped(self, ceiling):
-        p = _provider(retry_base_delay_ms=1000,
-                      max_retry_after_seconds=ceiling if ceiling is not None else 0)
+        p = _provider(
+            retry_base_delay_ms=1000, max_retry_after_seconds=ceiling if ceiling is not None else 0
+        )
         # ceiling 0 -> disabled (never min'd), so exponential grows freely.
         assert p._retry_delay_seconds(self._err(retry_after_ms=None), 5) == 32.0
 
@@ -526,11 +572,11 @@ class TestExtractJsonObject:
         assert _extract_json_object(text) == {"a": 1}
 
     def test_array_rejected_returns_none(self):
-        assert _extract_json_object('[1, 2, 3]') is None
+        assert _extract_json_object("[1, 2, 3]") is None
 
     def test_scalar_rejected_returns_none(self):
-        assert _extract_json_object('42') is None
-        assert _extract_json_object('true') is None
+        assert _extract_json_object("42") is None
+        assert _extract_json_object("true") is None
         assert _extract_json_object('"just a string"') is None
 
     def test_nested_object_returns_full(self):
@@ -549,7 +595,7 @@ class TestExtractJsonObject:
         assert _extract_json_object('{"k": 1') is None
 
     def test_brute_force_finds_buried_object(self):
-        text = 'noise "}{ junk "extra ' + '{"found": true}' + ' more noise'
+        text = 'noise "}{ junk "extra ' + '{"found": true}' + " more noise"
         result = _extract_json_object(text)
         assert result == {"found": True}
 
@@ -558,8 +604,15 @@ class TestExtractJsonObject:
 # 9. _parse_chat_completion — usage provenance + reasoning isolation + errors.
 # ---------------------------------------------------------------------------
 class TestParseChatCompletion:
-    def _body(self, *, content=None, reasoning=None, usage=None,
-              finish_reason="stop", model="deepseek-v4-flash"):
+    def _body(
+        self,
+        *,
+        content=None,
+        reasoning=None,
+        usage=None,
+        finish_reason="stop",
+        model="deepseek-v4-flash",
+    ):
         message = {}
         if content is not None:
             message["content"] = content
@@ -572,8 +625,7 @@ class TestParseChatCompletion:
         }
 
     def test_usage_source_provider_when_real_tokens_present(self):
-        body = self._body(content='{"k":1}',
-                         usage={"prompt_tokens": 10, "completion_tokens": 20})
+        body = self._body(content='{"k":1}', usage={"prompt_tokens": 10, "completion_tokens": 20})
         r = _parse_chat_completion(body, 50)
         assert r.usage_source == "provider"
         assert r.usage.usage_source == "provider"
@@ -590,8 +642,7 @@ class TestParseChatCompletion:
         assert r.usage.output_tokens is None
 
     def test_cached_only_still_counts_as_real(self):
-        body = self._body(content='{"k":1}',
-                         usage={"cached_tokens": 5})
+        body = self._body(content='{"k":1}', usage={"cached_tokens": 5})
         r = _parse_chat_completion(body, 50)
         assert r.usage_source == "provider"
         assert r.usage.cached_tokens == 5
@@ -664,8 +715,7 @@ class TestParseChatCompletion:
     def test_truncated_json_content_is_rejected(self):
         # A finish_reason=length response often cuts the object mid-string;
         # it must not be accepted as a complete structured answer.
-        body = self._body(content='{"a":1,"b":"unterminated',
-                          finish_reason="length")
+        body = self._body(content='{"a":1,"b":"unterminated', finish_reason="length")
         with pytest.raises(ProviderError) as exc:
             _parse_chat_completion(body, 50)
         assert exc.value.code == "ai_provider_invalid_json"
@@ -682,12 +732,12 @@ class TestParseChatCompletion:
     def test_reasoning_content_present_only_bool_never_content(self):
         """reasoning_content presence recorded as bool; text never in response."""
 
-        body = self._body(content='{"k":1}',
-                         reasoning="secret chain-of-thought thoughts")
+        body = self._body(content='{"k":1}', reasoning="secret chain-of-thought thoughts")
         r = _parse_chat_completion(body, 50)
         assert r.reasoning_content_present is True
         # No attribute ever leaks the reasoning text.
         import dataclasses
+
         values = {f.name: getattr(r, f.name) for f in dataclasses.fields(r)}
         assert "secret" not in json.dumps(values, default=str).lower()
         assert r.content_json == {"k": 1}
@@ -760,7 +810,7 @@ class TestParseChatCompletion:
         assert ei.value.code == "ai_provider_invalid_json"
 
     def test_content_is_array_parsed_to_non_object_raises_invalid_json(self):
-        body = self._body(content='[1,2]')
+        body = self._body(content="[1,2]")
         with pytest.raises(ProviderError) as ei:
             _parse_chat_completion(body, 50)
         assert ei.value.code == "ai_provider_invalid_json"
@@ -778,12 +828,19 @@ class TestParseChatCompletion:
         """A provider without base_url/key/model short-circuits before any HTTP."""
 
         p = OpenAICompatibleProvider(
-            base_url="", api_key="", model="",
+            base_url="",
+            api_key="",
+            model="",
             transport=httpx.MockTransport(lambda r: _ok(_simple_body())),
         )
         with pytest.raises(ProviderError) as ei:
-            p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+            p.call(
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
+            )
         assert ei.value.code == "ai_not_configured"
         assert ei.value.retryable is False
 
@@ -813,8 +870,9 @@ class TestCallRetryBehaviour:
             return _ok(_simple_body())
 
         p, sleeps = self._provider_with_handler(handler, retries=1)
-        r = p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+        r = p.call(
+            system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10
+        )
         assert r.content_json == {"ok": 1}
         assert r.usage_source == "provider"
         assert r.finish_reason == "stop"
@@ -830,8 +888,13 @@ class TestCallRetryBehaviour:
 
         p, sleeps = self._provider_with_handler(handler, retries=3)
         with pytest.raises(ProviderError) as ei:
-            p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+            p.call(
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
+            )
         assert ei.value.code == "ai_provider_authentication_failed"
         assert ei.value.retryable is False
         assert sleeps == []  # SHOULD-NOT-HAPPEN: no backoff before raising
@@ -842,8 +905,13 @@ class TestCallRetryBehaviour:
 
         p, sleeps = self._provider_with_handler(handler, retries=3)
         with pytest.raises(ProviderError) as ei:
-            p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+            p.call(
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
+            )
         assert ei.value.code == "ai_provider_model_not_found"
         assert sleeps == []
 
@@ -853,8 +921,13 @@ class TestCallRetryBehaviour:
 
         p, sleeps = self._provider_with_handler(handler, retries=3)
         with pytest.raises(ProviderError) as ei:
-            p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+            p.call(
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
+            )
         assert ei.value.code == "ai_provider_error"
         assert ei.value.retryable is False
         assert sleeps == []
@@ -869,8 +942,9 @@ class TestCallRetryBehaviour:
             return httpx.Response(408) if calls["n"] == 1 else _ok(_simple_body())
 
         p, sleeps = self._provider_with_handler(handler, retries=1)
-        r = p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+        r = p.call(
+            system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10
+        )
         assert r.content_json == {"ok": 1}
         assert calls["n"] == 2
         assert len(sleeps) == 1
@@ -880,11 +954,16 @@ class TestCallRetryBehaviour:
 
         def handler(req: httpx.Request) -> httpx.Response:
             calls["n"] += 1
-            return httpx.Response(503, headers={"Retry-After": "0.5"}) if calls["n"] == 1 else _ok(_simple_body())
+            return (
+                httpx.Response(503, headers={"Retry-After": "0.5"})
+                if calls["n"] == 1
+                else _ok(_simple_body())
+            )
 
         p, sleeps = self._provider_with_handler(handler, retries=1)
-        r = p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+        r = p.call(
+            system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10
+        )
         assert r.content_json == {"ok": 1}
         assert calls["n"] == 2
         assert len(sleeps) == 1
@@ -898,13 +977,22 @@ class TestCallRetryBehaviour:
             return httpx.Response(503, headers={"Retry-After": "999"})
 
         p = OpenAICompatibleProvider(
-            base_url=_DEEPSEEK_BASE, api_key=_KEY, model="m",
-            transport=httpx.MockTransport(handler), request_retries=1,
-            sleep=lambda s: sleeps.append(s), max_retry_after_seconds=2,
+            base_url=_DEEPSEEK_BASE,
+            api_key=_KEY,
+            model="m",
+            transport=httpx.MockTransport(handler),
+            request_retries=1,
+            sleep=lambda s: sleeps.append(s),
+            max_retry_after_seconds=2,
         )
         with pytest.raises(ProviderError) as ei:
-            p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+            p.call(
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
+            )
         assert ei.value.code == "ai_provider_unreachable"
         assert sleeps[0] <= 2.0  # backoff clipped to the 2s ceiling
 
@@ -919,8 +1007,13 @@ class TestCallRetryBehaviour:
 
         p, sleeps = self._provider_with_handler(handler, retries=2)
         with pytest.raises(ProviderError) as ei:
-            p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+            p.call(
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
+            )
         assert ei.value.code == "ai_provider_unreachable"
         assert calls["n"] == 3  # original + 2 retries
         assert len(sleeps) == 2
@@ -934,8 +1027,13 @@ class TestCallRetryBehaviour:
 
         p, sleeps = self._provider_with_handler(handler, retries=0)
         with pytest.raises(ProviderError) as ei:
-            p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+            p.call(
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
+            )
         assert ei.value.code == "ai_provider_rate_limited"
         assert calls["n"] == 1
         assert sleeps == []
@@ -944,28 +1042,38 @@ class TestCallRetryBehaviour:
         """A 200 body that is not valid JSON -> ai_provider_invalid_json."""
 
         def handler(req: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, content=b"not json", headers={"content-type": "application/json"})
+            return httpx.Response(
+                200, content=b"not json", headers={"content-type": "application/json"}
+            )
 
         p, sleeps = self._provider_with_handler(handler, retries=2)
         with pytest.raises(ProviderError) as ei:
-            p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+            p.call(
+                system_prompt="s",
+                user_prompt="u",
+                tools=[],
+                max_input_tokens=10,
+                max_output_tokens=10,
+            )
         assert ei.value.code == "ai_provider_invalid_json"
         assert ei.value.retryable is False
         assert sleeps == []
 
     def test_response_with_reasoning_content_returns_present_bool(self):
         body = {
-            "choices": [{
-                "message": {"content": '{"x": 1}', "reasoning_content": "secret thoughts"},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {"content": '{"x": 1}', "reasoning_content": "secret thoughts"},
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 3, "completion_tokens": 4},
         }
 
         p, sleeps = self._provider_with_handler(lambda r: _ok(body), retries=0)
-        r = p.call(system_prompt="s", user_prompt="u", tools=[],
-                   max_input_tokens=10, max_output_tokens=10)
+        r = p.call(
+            system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10
+        )
         assert r.reasoning_content_present is True
         assert r.content_json == {"x": 1}
 
@@ -979,11 +1087,15 @@ class TestCallRetryBehaviour:
             return _ok(_simple_body())
 
         p = OpenAICompatibleProvider(
-            base_url=_GENERIC_BASE, api_key=_KEY, model="m",
-            transport=httpx.MockTransport(handler), thinking_mode="auto",
+            base_url=_GENERIC_BASE,
+            api_key=_KEY,
+            model="m",
+            transport=httpx.MockTransport(handler),
+            thinking_mode="auto",
         )
-        p.call(system_prompt="s", user_prompt="u", tools=[],
-               max_input_tokens=10, max_output_tokens=10)
+        p.call(
+            system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10
+        )
         posted = json.loads(captured["req"].content.decode("utf-8"))
         assert "thinking" not in posted
 
@@ -997,10 +1109,14 @@ class TestCallRetryBehaviour:
             return _ok(_simple_body())
 
         p = OpenAICompatibleProvider(
-            base_url=_DEEPSEEK_BASE, api_key=_KEY, model="m",
-            transport=httpx.MockTransport(handler), thinking_mode="off",
+            base_url=_DEEPSEEK_BASE,
+            api_key=_KEY,
+            model="m",
+            transport=httpx.MockTransport(handler),
+            thinking_mode="off",
         )
-        p.call(system_prompt="s", user_prompt="u", tools=[],
-               max_input_tokens=10, max_output_tokens=10)
+        p.call(
+            system_prompt="s", user_prompt="u", tools=[], max_input_tokens=10, max_output_tokens=10
+        )
         assert captured["req"].headers["Authorization"].startswith("Bearer ")
         assert captured["req"].headers["Content-Type"] == "application/json"

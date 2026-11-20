@@ -90,7 +90,9 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
     class DemoFridaSession(FakeTestFridaSession):
         def start(self):
             super().start()
-            append_log(str(self.event_log_path), "[HOOK] Settings.Secure.getString name=android_id ret=abc")
+            append_log(
+                str(self.event_log_path), "[HOOK] Settings.Secure.getString name=android_id ret=abc"
+            )
             return True
 
         def resume(self):
@@ -155,7 +157,10 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
         },
     )
 
-    resp = client.post("/dynamic/analyze", json={"apk_path": str(apk_path), "pre_consent_seconds": 0, "post_consent_seconds": 0})
+    resp = client.post(
+        "/dynamic/analyze",
+        json={"apk_path": str(apk_path), "pre_consent_seconds": 0, "post_consent_seconds": 0},
+    )
     assert resp.status_code == 200
 
     body = resp.json()
@@ -181,9 +186,14 @@ def test_high_frequency_sensitive_access_rule(tmp_path, monkeypatch):
         def start(self):
             super().start()
             for _ in range(4):
-                append_log(str(self.event_log_path), "[HOOK] Settings.Secure.getString name=android_id ret=abc")
+                append_log(
+                    str(self.event_log_path),
+                    "[HOOK] Settings.Secure.getString name=android_id ret=abc",
+                )
             for _ in range(2):
-                append_log(str(self.event_log_path), "[HOOK] ClipboardManager.getPrimaryClip called")
+                append_log(
+                    str(self.event_log_path), "[HOOK] ClipboardManager.getPrimaryClip called"
+                )
             return True
 
     monkeypatch.setattr(container, "frida_session_factory", HighFreqFridaSession)
@@ -241,7 +251,10 @@ def test_high_frequency_sensitive_access_rule(tmp_path, monkeypatch):
         },
     )
 
-    resp = client.post("/dynamic/analyze", json={"apk_path": str(apk_path), "pre_consent_seconds": 0, "post_consent_seconds": 0})
+    resp = client.post(
+        "/dynamic/analyze",
+        json={"apk_path": str(apk_path), "pre_consent_seconds": 0, "post_consent_seconds": 0},
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["dynamic_findings"]["summary"]["high_frequency_sensitive_access"] == "suspicious"

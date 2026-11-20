@@ -18,7 +18,11 @@ def write_markdown_report(report: dict, report_path: str):
     dynamic_findings = report.get("dynamic_findings", {}) or {}
     dynamic_rules = dynamic_findings.get("rules", []) if isinstance(dynamic_findings, dict) else []
     strict_dynamic_findings = report.get("strict_dynamic_findings", {}) or {}
-    strict_rules = strict_dynamic_findings.get("rules", []) if isinstance(strict_dynamic_findings, dict) else []
+    strict_rules = (
+        strict_dynamic_findings.get("rules", [])
+        if isinstance(strict_dynamic_findings, dict)
+        else []
+    )
     dynamic_events = report.get("dynamic_events", []) or []
     traffic_summary = report.get("traffic_summary", {}) or {}
     consent_time = report.get("consent_time")
@@ -48,10 +52,7 @@ def write_markdown_report(report: dict, report_path: str):
     lines.append(f"- apk_sha256: `{_md_cell(report.get('apk_sha256'))}`")
     snapshot = report.get("apk_snapshot") or {}
     if snapshot:
-        lines.append(
-            "- apk_snapshot: "
-            f"`{_md_cell(snapshot.get('snapshot_relative_path'))}`"
-        )
+        lines.append(f"- apk_snapshot: `{_md_cell(snapshot.get('snapshot_relative_path'))}`")
     lines.append(f"- normalized_apk_name: `{_md_cell(report.get('normalized_apk_name'))}`")
     device = report.get("device") or {}
     if device:
@@ -112,16 +113,18 @@ def write_markdown_report(report: dict, report_path: str):
             "spawn_creation_available",
             "spawn_resume_stable",
         ):
-            lines.append(
-                f"- {key}: `{_md_cell(environment_capabilities.get(key))}`"
-            )
+            lines.append(f"- {key}: `{_md_cell(environment_capabilities.get(key))}`")
         lines.append("")
         lines.append("### 本次采集结果")
         lines.append("")
-        lines.append(f"- 最终执行模式: `{_md_cell(execution.get('selected_mode') or evidence_quality.get('mode') or '旧版报告未记录')}`")
+        lines.append(
+            f"- 最终执行模式: `{_md_cell(execution.get('selected_mode') or evidence_quality.get('mode') or '旧版报告未记录')}`"
+        )
         lines.append(f"- 执行策略: `{_md_cell(execution.get('policy') or '旧版报告未记录')}`")
         lines.append(f"- 证据等级: `{_md_cell(evidence_quality.get('level') or '无法判断')}`")
-        lines.append(f"- 进程结果: `{_md_cell(task_result.get('process_result') or process_diagnostics.get('status'))}`")
+        lines.append(
+            f"- 进程结果: `{_md_cell(task_result.get('process_result') or process_diagnostics.get('status'))}`"
+        )
         for item in evidence_quality.get("coverage") or []:
             lines.append(f"- 覆盖: {_md_cell(item)}")
         for item in evidence_quality.get("limitations") or []:
@@ -148,9 +151,7 @@ def write_markdown_report(report: dict, report_path: str):
                 "- suspected_components: "
                 + _md_cell(", ".join(process_diagnostics.get("suspected_components") or []))
             )
-            lines.append(
-                f"- reason_code: `{_md_cell(process_diagnostics.get('reason_code'))}`"
-            )
+            lines.append(f"- reason_code: `{_md_cell(process_diagnostics.get('reason_code'))}`")
             if process_diagnostics.get("native_frames"):
                 lines.append(
                     "- 完整 backtrace: `dynamic/process-diagnostics.json`（报告正文仅展示摘要）"
@@ -209,7 +210,9 @@ def write_markdown_report(report: dict, report_path: str):
                     detail_items.append(f"{key}={value}")
                 details = "; ".join(detail_items) if detail_items else "-"
                 rule_status = rule.get("evaluation_status") or rule.get("status")
-                lines.append(f"| {_md_cell(rule.get('rule_id'))} | {_md_cell(rule_status)} | {_md_cell(details)} |")
+                lines.append(
+                    f"| {_md_cell(rule.get('rule_id'))} | {_md_cell(rule_status)} | {_md_cell(details)} |"
+                )
         else:
             lines.append("| - | - | - |")
 
@@ -235,7 +238,9 @@ def write_markdown_report(report: dict, report_path: str):
                     detail_items.append(f"{key}={value}")
                 details = "; ".join(detail_items) if detail_items else "-"
                 rule_status = rule.get("evaluation_status") or rule.get("status")
-                lines.append(f"| {_md_cell(rule.get('rule_id'))} | {_md_cell(rule_status)} | {_md_cell(details)} |")
+                lines.append(
+                    f"| {_md_cell(rule.get('rule_id'))} | {_md_cell(rule_status)} | {_md_cell(details)} |"
+                )
         else:
             lines.append("| - | - | - |")
 
@@ -277,7 +282,9 @@ def write_markdown_report(report: dict, report_path: str):
         lines.append("")
         lines.append(f"- 状态: `{_md_cell(correlation.get('status'))}`")
         lines.append(f"- 动态事件数: `{_md_cell(correlation_summary.get('dynamic_event_count'))}`")
-        lines.append(f"- 网络请求数: `{_md_cell(correlation_summary.get('network_request_count'))}`")
+        lines.append(
+            f"- 网络请求数: `{_md_cell(correlation_summary.get('network_request_count'))}`"
+        )
         lines.append(f"- 关联数: `{_md_cell(correlation_summary.get('correlated_pair_count'))}`")
         lines.append(f"- 时间窗口: `{_md_cell(correlation.get('window_ms'))} ms`")
         lines.append(
@@ -317,9 +324,7 @@ def write_markdown_report(report: dict, report_path: str):
         )
         lines.append("")
         lines.append(f"- 状态: `{_md_cell(privacy_findings.get('status'))}`")
-        lines.append(
-            f"- 发现数量: `{_md_cell(findings_summary.get('finding_count'))}`"
-        )
+        lines.append(f"- 发现数量: `{_md_cell(findings_summary.get('finding_count'))}`")
         lines.append(
             "- 已观察事实 / 疑似风险提示 / 证据缺口: "
             f"`{_md_cell(findings_summary.get('confirmed_observation_count'))}` / "
@@ -388,9 +393,7 @@ def write_markdown_report(report: dict, report_path: str):
     lines.append("")
     lines.append("## 合规解读与整改建议")
     lines.append("")
-    lines.append(
-        f"- 总体评价: {_md_cell(compliance_insight.get('overall_assessment'))}"
-    )
+    lines.append(f"- 总体评价: {_md_cell(compliance_insight.get('overall_assessment'))}")
     for finding in compliance_insight.get("key_findings") or []:
         lines.append(
             f"- [{_md_cell(finding.get('severity'))}] "

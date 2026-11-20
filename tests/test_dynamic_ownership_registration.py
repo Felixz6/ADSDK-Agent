@@ -47,9 +47,7 @@ def test_frida_started_spawn_registers_owned_target_and_helper(tmp_path: Path) -
     context = _context(tmp_path)
     device = DeviceContext(serial="emulator-5554")
     registry = ResourceOwnershipRegistry()
-    register = dynamic_module._register_owned_target(
-        context, device, "com.example.app", registry
-    )
+    register = dynamic_module._register_owned_target(context, device, "com.example.app", registry)
     _, register_frida_started = dynamic_module._make_collection_callbacks(
         context, device, "com.example.app", registry, register
     )
@@ -71,9 +69,7 @@ def test_frida_started_attach_registers_external_target(tmp_path: Path) -> None:
     context = _context(tmp_path)
     device = DeviceContext(serial="emulator-5554")
     registry = ResourceOwnershipRegistry()
-    register = dynamic_module._register_owned_target(
-        context, device, "com.example.app", registry
-    )
+    register = dynamic_module._register_owned_target(context, device, "com.example.app", registry)
     _, register_frida_started = dynamic_module._make_collection_callbacks(
         context, device, "com.example.app", registry, register
     )
@@ -112,9 +108,7 @@ def test_launch_target_registers_pid_after_successful_launch(
     context = _context(tmp_path)
     device = DeviceContext(serial="emulator-5554")
     registry = ResourceOwnershipRegistry()
-    register = dynamic_module._register_owned_target(
-        context, device, "com.example.app", registry
-    )
+    register = dynamic_module._register_owned_target(context, device, "com.example.app", registry)
 
     monkeypatch.setattr(
         dynamic_module,

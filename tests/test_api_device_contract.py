@@ -45,11 +45,7 @@ def test_device_selection_requires_id_when_multiple_devices_are_online(
         "adb_devices",
         lambda: {
             "returncode": 0,
-            "stdout": (
-                "List of devices attached\n"
-                "emulator-5554\tdevice\n"
-                "R58M123456A\tdevice\n"
-            ),
+            "stdout": ("List of devices attached\nemulator-5554\tdevice\nR58M123456A\tdevice\n"),
             "stderr": "",
             "cmd": ["adb", "devices"],
         },
@@ -90,13 +86,15 @@ def test_selected_device_is_used_by_adb_install_and_launch(
     monkeypatch.setattr(
         adb_runner,
         "run_cmd",
-        lambda command: captured.append(command)
-        or {
-            "returncode": 0,
-            "stdout": "",
-            "stderr": "",
-            "cmd": command,
-        },
+        lambda command: (
+            captured.append(command)
+            or {
+                "returncode": 0,
+                "stdout": "",
+                "stderr": "",
+                "cmd": command,
+            }
+        ),
     )
     context = DeviceContext(serial="emulator-5554")
 

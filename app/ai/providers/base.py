@@ -135,9 +135,7 @@ def _detect_profile(base_url: str, explicit: str | None = None) -> ProviderCompa
     return PROFILE_GENERIC_OPENAI
 
 
-def _thinking_disabled_for(
-    profile: ProviderCompatibilityProfile, thinking_mode: str
-) -> bool:
+def _thinking_disabled_for(profile: ProviderCompatibilityProfile, thinking_mode: str) -> bool:
     """Whether to inject ``extra_body={"thinking": {"type": "disabled"}}``.
 
     ``thinking_mode`` (``auto``/``disabled``/``off``):
@@ -242,6 +240,7 @@ def _safe_truncate(text: str, limit: int) -> str:
 # ---------------------------------------------------------------------------
 # OpenAI-compatible provider.
 # ---------------------------------------------------------------------------
+
 
 def _extract_json_object(content: str) -> dict[str, Any] | None:
     """Robustly pull the first JSON *object* out of model text.
@@ -372,7 +371,6 @@ def _cached_tokens_from_usage(usage_raw: Any) -> int | None:
     if isinstance(hit, int):
         return hit
     return None
-
 
 
 __all__ = [

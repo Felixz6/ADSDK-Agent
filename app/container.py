@@ -31,11 +31,14 @@ from app.traffic.mitm_session import MitmSession
 
 project_root = Path(__file__).resolve().parent.parent
 
+
 def default_frida_session_factory(*args: Any, **kwargs: Any) -> Any:
     return FridaSession(*args, **kwargs)
 
+
 def default_mitm_session_factory(*args: Any, **kwargs: Any) -> Any:
     return MitmSession(*args, **kwargs)
+
 
 frida_session_factory = default_frida_session_factory
 mitm_session_factory = default_mitm_session_factory

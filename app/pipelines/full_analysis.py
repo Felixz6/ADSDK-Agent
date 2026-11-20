@@ -62,15 +62,21 @@ def _capture_m7b_device_snapshot(
 ) -> DeviceSessionSnapshot:
     state = DeviceState()
     if device_id:
+
         def adb(*args: str) -> dict[str, Any]:
             return run_cmd(["adb", "-s", device_id, *args])
+
         state.online = adb("get-state").get("stdout", "").strip() == "device"
-        state.boot_id = adb("shell", "cat", "/proc/sys/kernel/random/boot_id").get("stdout", "").strip() or None
+        state.boot_id = (
+            adb("shell", "cat", "/proc/sys/kernel/random/boot_id").get("stdout", "").strip() or None
+        )
         state.abi = adb("shell", "getprop", "ro.product.cpu.abi").get("stdout", "").strip() or None
         proxy = adb("shell", "settings", "get", "global", "http_proxy").get("stdout", "").strip()
         state.http_proxy = "" if proxy in {"", ":0", ":null", "null"} else proxy
         if package_name:
-            state.package_installed = bool(adb("shell", "pm", "path", package_name).get("stdout", "").strip())
+            state.package_installed = bool(
+                adb("shell", "pm", "path", package_name).get("stdout", "").strip()
+            )
             target = adb("shell", "pidof", package_name).get("stdout", "").strip()
             state.foreground_package = package_name if target else None
         frida = adb("shell", "pidof", "frida-server").get("stdout", "").strip()
@@ -207,9 +213,7 @@ def _run_m7b_full_analysis_session(
     provider = ai_settings_service.factory.current() if ai_enabled else None
     orchestrator = AIOrchestrator(
         provider=provider,
-        registry=AIToolRegistry(
-            allow_dynamic_tools=bool(effective["allow_dynamic_tools"])
-        ),
+        registry=AIToolRegistry(allow_dynamic_tools=bool(effective["allow_dynamic_tools"])),
         enabled=ai_enabled,
         cancelled=_ai_cancelled,
     )
@@ -231,13 +235,18 @@ def _run_m7b_full_analysis_session(
         if capture_kind == "read_only":
             for pid in snapshot.initial_state.frida_helper_pids:
                 registry.mark_external(
-                    "frida_helper", str(pid), pid=pid,
+                    "frida_helper",
+                    str(pid),
+                    pid=pid,
                     device_id=str(device_id or ""),
                     expected_command_token="re.frida.helper",
-                    preexisting=True, created_by_run=False,
-                    cleanup_required=False, verification_required=False,
+                    preexisting=True,
+                    created_by_run=False,
+                    cleanup_required=False,
+                    verification_required=False,
                     ownership_source="preflight_pidof",
-                    registered_at_stage="read_only_preflight", run_id=task.id,
+                    registered_at_stage="read_only_preflight",
+                    run_id=task.id,
                 )
         return snapshot
 
@@ -268,7 +277,10 @@ def _run_m7b_full_analysis_session(
         unified_runner,
         task_id=task.id,
         run_context_path=run_dir,
-        diagnostics_path=Path(output_dir) / "state" / "task-diagnostics" / f"{task.id}.run-context-claims.json",
+        diagnostics_path=Path(output_dir)
+        / "state"
+        / "task-diagnostics"
+        / f"{task.id}.run-context-claims.json",
     )
 
     def stop_registered_frida_session(ref: str) -> bool:
@@ -292,9 +304,7 @@ def _run_m7b_full_analysis_session(
         snapshot_factory=snapshot_factory,
         clock=task_utc_now,
         is_cancelled=_ai_cancelled,
-        report_step=lambda key, status, message=None: report_step(
-            key, status, message
-        ),
+        report_step=lambda key, status, message=None: report_step(key, status, message),
         set_proxy_action=lambda device, value: _adb_cleanup_action(
             device, ["shell", "settings", "put", "global", "http_proxy", value]
         ),
@@ -335,9 +345,7 @@ def _run_m7b_full_analysis_session(
         run_dir=run_dir,
     )
     transition = session.run()
-    before_snapshot = initial_snapshot.get("value") or getattr(
-        transition, "snapshot", None
-    )
+    before_snapshot = initial_snapshot.get("value") or getattr(transition, "snapshot", None)
     postflight_snapshot = (
         _capture_m7b_device_snapshot(
             run_id=task.id,
@@ -345,7 +353,8 @@ def _run_m7b_full_analysis_session(
             package_name=payload.get("package_name"),
             capture_kind="postflight",
         )
-        if before_snapshot is not None else None
+        if before_snapshot is not None
+        else None
     )
     postflight_target_pid = _m7b_target_pid(
         str(payload.get("device_id") or ""), str(payload.get("package_name") or "")
@@ -363,28 +372,41 @@ def _run_m7b_full_analysis_session(
         transition.cleanup.status = "partial"
         transition.cleanup.failures.append("unclassified_new_target")
         transition.cleanup.verification_attempted = True
-        transition.cleanup.steps.append(CleanupStep(
-            rule="ownership_accounting_completeness", target_kind="app_process",
-            target_identity=str(postflight_target_pid), ownership="external",
-            status="failed", safe_message="unclassified_new_target",
-        ))
-        transition.cleanup.diagnostics.append(CleanupDiagnostic(
-            resource_type="app_process", identifier_hash=str(postflight_target_pid),
-            preexisting=False, owned_by_run=False, created_by_run=False,
-            cleanup_attempted=False, verification_attempted=True,
-            verification_result="present", final_status="partial",
-            reason_code="unclassified_new_target",
-        ))
-    report = report_holder.get("value", {
-        "schema_version": SCHEMA_VERSION,
-        "run_id": task.id,
-        "status": (
-            "success" if transition.final_state == "completed" else "failed"
-        ),
-        "error_code": transition.runtime_validation_error_code or "m7b_session_failed",
-        "error": "; ".join(transition.failures)[:500] or "M7B session failed",
-        "output_dir": str(run_dir),
-    })
+        transition.cleanup.steps.append(
+            CleanupStep(
+                rule="ownership_accounting_completeness",
+                target_kind="app_process",
+                target_identity=str(postflight_target_pid),
+                ownership="external",
+                status="failed",
+                safe_message="unclassified_new_target",
+            )
+        )
+        transition.cleanup.diagnostics.append(
+            CleanupDiagnostic(
+                resource_type="app_process",
+                identifier_hash=str(postflight_target_pid),
+                preexisting=False,
+                owned_by_run=False,
+                created_by_run=False,
+                cleanup_attempted=False,
+                verification_attempted=True,
+                verification_result="present",
+                final_status="partial",
+                reason_code="unclassified_new_target",
+            )
+        )
+    report = report_holder.get(
+        "value",
+        {
+            "schema_version": SCHEMA_VERSION,
+            "run_id": task.id,
+            "status": ("success" if transition.final_state == "completed" else "failed"),
+            "error_code": transition.runtime_validation_error_code or "m7b_session_failed",
+            "error": "; ".join(transition.failures)[:500] or "M7B session failed",
+            "output_dir": str(run_dir),
+        },
+    )
     if effects.last_result is not None:
         report["ai_orchestration"] = _public_ai_section(effects.last_result)
     report["analysis_mode"] = "full_analysis"
@@ -402,23 +424,26 @@ def _run_m7b_full_analysis_session(
     ]
     report["unclassified_new_target"] = (
         {"pid": postflight_target_pid, "reason_code": "unclassified_new_target"}
-        if unclassified_new_target else None
+        if unclassified_new_target
+        else None
     )
     report["cleanup_final_verification"] = (
-        transition.cleanup.model_dump(mode="json")
-        if transition.cleanup is not None else None
+        transition.cleanup.model_dump(mode="json") if transition.cleanup is not None else None
     )
     report["consent_checkpoint"] = (
-        transition.consent.model_dump(mode="json")
-        if transition.consent is not None else None
+        transition.consent.model_dump(mode="json") if transition.consent is not None else None
     )
-    before_helpers = set(before_snapshot.initial_state.frida_helper_pids) if before_snapshot else set()
+    before_helpers = (
+        set(before_snapshot.initial_state.frida_helper_pids) if before_snapshot else set()
+    )
     after_helpers = (
         set(postflight_snapshot.initial_state.frida_helper_pids)
-        if postflight_snapshot is not None else set()
+        if postflight_snapshot is not None
+        else set()
     )
     owned_helpers = {
-        int(item.detail.get("pid")) for item in registry.owned()
+        int(item.detail.get("pid"))
+        for item in registry.owned()
         if item.kind == "frida_helper" and isinstance(item.detail.get("pid"), int)
     }
     newly_unknown = sorted(after_helpers - before_helpers - owned_helpers)
@@ -430,8 +455,7 @@ def _run_m7b_full_analysis_session(
         "preexisting_external_pids": sorted(before_helpers - owned_helpers),
         "unknown_newly_appeared_pids": newly_unknown,
         "postflight_capture": (
-            postflight_snapshot.safe_dump()
-            if postflight_snapshot is not None else None
+            postflight_snapshot.safe_dump() if postflight_snapshot is not None else None
         ),
     }
     if newly_unknown:

@@ -67,15 +67,12 @@ def generate_compliance_insight(
         )
     else:
         assessment = (
-            "当前可验证证据未命中已配置风险规则；这不等于证明不存在风险，"
-            "仍需结合证据覆盖情况判断。"
+            "当前可验证证据未命中已配置风险规则；这不等于证明不存在风险，仍需结合证据覆盖情况判断。"
         )
 
     insight_limitations = list(dict.fromkeys(limitations or []))
     insight_limitations.extend(
-        item
-        for item in risk_summary.confidence_reasons
-        if item not in insight_limitations
+        item for item in risk_summary.confidence_reasons if item not in insight_limitations
     )
     return ComplianceInsight(
         overall_assessment=assessment,

@@ -67,8 +67,7 @@ def _classify_frida_exception(exc: BaseException, fallback: str) -> str:
     ):
         return "frida_server_unavailable"
     if "version" in text and any(
-        marker in text
-        for marker in ("mismatch", "incompatible", "different", "protocol")
+        marker in text for marker in ("mismatch", "incompatible", "different", "protocol")
     ):
         return "frida_version_mismatch"
     if any(
@@ -168,9 +167,7 @@ class FridaSession:
         self.event_log_path.parent.mkdir(parents=True, exist_ok=True)
         self.event_log_path.touch(exist_ok=True)
         if self.protocol_error_path is None:
-            self.protocol_error_path = self.event_log_path.with_name(
-                "frida.protocol-errors.jsonl"
-            )
+            self.protocol_error_path = self.event_log_path.with_name("frida.protocol-errors.jsonl")
         else:
             self.protocol_error_path = Path(self.protocol_error_path)
 
@@ -285,10 +282,7 @@ class FridaSession:
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        return (
-            f"globalThis.__ADSDK_CONTEXT__ = Object.freeze({context});\n"
-            + source
-        )
+        return f"globalThis.__ADSDK_CONTEXT__ = Object.freeze({context});\n" + source
 
     def spawn(self) -> int:
         """Select the exact DeviceContext serial and spawn the app suspended."""
@@ -354,20 +348,14 @@ class FridaSession:
                 )
                 if process is None:
                     pid_result = self.command_runner(
-                        self.device.adb_command(
-                            "shell", "pidof", self.package_name
-                        ),
+                        self.device.adb_command("shell", "pidof", self.package_name),
                         timeout=max(1, int(self.device_timeout_seconds)),
                     )
                     pid_text = str(pid_result.get("stdout") or "").strip()
                     first_pid = pid_text.split()[0] if pid_text else ""
                     adb_pid = int(first_pid) if first_pid.isdigit() else None
                     process = next(
-                        (
-                            item
-                            for item in processes
-                            if getattr(item, "pid", None) == adb_pid
-                        ),
+                        (item for item in processes if getattr(item, "pid", None) == adb_pid),
                         None,
                     )
                 if process is None:
@@ -415,9 +403,9 @@ class FridaSession:
                 return
             if self.state is not FridaSessionState.STARTING or self.pid is None:
                 raise FridaSessionError(
-                "hook_load_failed",
-                "Frida spawn must complete before script load",
-            )
+                    "hook_load_failed",
+                    "Frida spawn must complete before script load",
+                )
 
         source = self._script_source()
         self.attach_started_at = self.clock.utc_now()
@@ -510,10 +498,7 @@ class FridaSession:
             if self._resume_monotonic is not None:
                 self.post_resume_survival_ms = max(
                     0,
-                    int(
-                        (float(self.clock.monotonic()) - self._resume_monotonic)
-                        * 1000
-                    ),
+                    int((float(self.clock.monotonic()) - self._resume_monotonic) * 1000),
                 )
             self._detached_signal.set()
             if self.state in {
@@ -548,11 +533,7 @@ class FridaSession:
             self._ready_signal.set()
 
     def _on_message(self, message: Any, _data: Any) -> None:
-        message_type = (
-            safe_message_type(message.get("type"))
-            if isinstance(message, dict)
-            else None
-        )
+        message_type = safe_message_type(message.get("type")) if isinstance(message, dict) else None
         try:
             model = unwrap_frida_message(
                 message,
@@ -756,20 +737,13 @@ class FridaSession:
         )
 
     def _estimated_device_monotonic_ms(self) -> float:
-        if (
-            self._device_ready_monotonic_ms is None
-            or self._host_ready_monotonic_ms is None
-        ):
+        if self._device_ready_monotonic_ms is None or self._host_ready_monotonic_ms is None:
             raise FridaSessionError(
                 "frida_protocol_error",
                 "Device monotonic baseline is unavailable",
             )
         host_now_ms = float(self.clock.monotonic()) * 1000.0
-        return (
-            self._device_ready_monotonic_ms
-            + host_now_ms
-            - self._host_ready_monotonic_ms
-        )
+        return self._device_ready_monotonic_ms + host_now_ms - self._host_ready_monotonic_ms
 
     def _existing_control(self, event: str) -> FridaControlEvent | None:
         for item in reversed(self._writer.control_events):
@@ -796,10 +770,7 @@ class FridaSession:
                 "Collection-start control requires hook_ready",
             )
 
-        mark = (
-            self.timeline.collection_started_at
-            or self.timeline.mark_collection_started()
-        )
+        mark = self.timeline.collection_started_at or self.timeline.mark_collection_started()
 
         exports = getattr(self._script, "exports_sync", None)
         if exports is not None:

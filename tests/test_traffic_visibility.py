@@ -90,7 +90,12 @@ class FakeDeviceRunner:
         text = " ".join(str(part) for part in command)
         if "settings" in text and " http_proxy" in text:
             if " get " in text or text.endswith("get global http_proxy"):
-                return {"returncode": 0, "stdout": self.original_proxy, "stderr": "", "cmd": command}
+                return {
+                    "returncode": 0,
+                    "stdout": self.original_proxy,
+                    "stderr": "",
+                    "cmd": command,
+                }
             if " put " in text:
                 self.put_calls += 1
                 return {"returncode": 0, "stdout": "", "stderr": "", "cmd": command}
@@ -186,9 +191,7 @@ def _ready(session: MitmSession) -> None:
 def _diagnose(session: MitmSession, *, requests: int = 0) -> dict[str, Any]:
     return diagnose_traffic(
         collector_outcome=(
-            "collector_success_requests_observed"
-            if requests
-            else "collector_success_zero_requests"
+            "collector_success_requests_observed" if requests else "collector_success_zero_requests"
         ),
         request_count=requests,
         session_status=session.to_status(),
@@ -304,9 +307,7 @@ def test_f_tcp_activity_without_http_requests_is_a_distinct_state(tmp_path: Path
     assert diagnostics.tcp_activity_observed is True
     assert diagnostics.request_count == 0
     assert "traffic_socket_activity_without_http_requests" in diagnostics.reason_codes
-    assert "观察到 socket 活动，但未被 HTTP 代理采集到" in " ".join(
-        diagnostics.limitations
-    )
+    assert "观察到 socket 活动，但未被 HTTP 代理采集到" in " ".join(diagnostics.limitations)
 
 
 def test_g_udp_443_recorded_without_transport_attribution(tmp_path: Path):

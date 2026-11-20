@@ -193,9 +193,7 @@ def _read_task_ai_artifact(
     payload: dict[str, Any] | None = None
     if task.report_json_path:
         candidate = Path(task.report_json_path).resolve(strict=False).parent / filename
-        allowed = (
-            Path(app_config.OUTPUT_DIR).resolve(strict=False) / "runs"
-        ).resolve(strict=False)
+        allowed = (Path(app_config.OUTPUT_DIR).resolve(strict=False) / "runs").resolve(strict=False)
         if candidate.is_relative_to(allowed) and candidate.is_file():
             try:
                 loaded = json.loads(candidate.read_text(encoding="utf-8"))

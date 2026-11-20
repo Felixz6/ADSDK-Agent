@@ -18,19 +18,15 @@ from app.core.clock import Clock as CollectionClock, SystemClock as SystemCollec
 
 
 class CollectionSession(Protocol):
-    def start(self) -> None:
-        ...
+    def start(self) -> None: ...
 
-    def wait_ready(self, timeout: float | None = None) -> None:
-        ...
+    def wait_ready(self, timeout: float | None = None) -> None: ...
 
-    def stop(self, timeout: float | None = None) -> None:
-        ...
+    def stop(self, timeout: float | None = None) -> None: ...
 
 
 class FridaCollectionSession(CollectionSession, Protocol):
-    def resume(self) -> None:
-        ...
+    def resume(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,9 +85,13 @@ class DynamicTimeline:
     def _utc_text(value: datetime | None) -> str | None:
         if value is None:
             return None
-        return value.astimezone(UTC).isoformat(timespec="milliseconds").replace(
-            "+00:00",
-            "Z",
+        return (
+            value.astimezone(UTC)
+            .isoformat(timespec="milliseconds")
+            .replace(
+                "+00:00",
+                "Z",
+            )
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -101,17 +101,13 @@ class DynamicTimeline:
             "hook_ready_at": self._utc_text(self.hook_ready_at),
             "hook_ready_monotonic_ms": self.hook_ready_monotonic_ms,
             "collection_started_at": self._utc_text(self.collection_started_at),
-            "collection_started_monotonic_ms": (
-                self.collection_started_monotonic_ms
-            ),
+            "collection_started_monotonic_ms": (self.collection_started_monotonic_ms),
             "app_resumed_at": self._utc_text(self.app_resumed_at),
             "app_resumed_monotonic_ms": self.app_resumed_monotonic_ms,
             "consent_at": self._utc_text(self.consent_at),
             "consent_monotonic_ms": self.consent_monotonic_ms,
             "collection_ended_at": self._utc_text(self.collection_ended_at),
-            "collection_ended_monotonic_ms": (
-                self.collection_ended_monotonic_ms
-            ),
+            "collection_ended_monotonic_ms": (self.collection_ended_monotonic_ms),
         }
 
 
@@ -131,9 +127,7 @@ class DynamicCollectionResult:
 
 
 def _timestamp_utc(clock: CollectionClock) -> str:
-    return clock.utc_now().astimezone(UTC).isoformat(
-        timespec="milliseconds"
-    ).replace("+00:00", "Z")
+    return clock.utc_now().astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _control_event(
@@ -164,9 +158,7 @@ def _session_error(
     fallback_code: str,
     fallback_message: str,
 ) -> RuntimeError:
-    error = RuntimeError(
-        str(getattr(session, "error_message", None) or fallback_message)
-    )
+    error = RuntimeError(str(getattr(session, "error_message", None) or fallback_message))
     error.code = str(  # type: ignore[attr-defined]
         getattr(session, "error_code", None) or fallback_code
     )
@@ -313,9 +305,7 @@ def run_dynamic_collection(
                 on_frida_started(frida_session)
                 frida_start_notified = True
             session_error_code = str(
-                getattr(frida_session, "error_code", None)
-                or getattr(exc, "code", None)
-                or ""
+                getattr(frida_session, "error_code", None) or getattr(exc, "code", None) or ""
             )
             result.outcomes["frida_spawn"] = (
                 "success"
@@ -335,13 +325,9 @@ def run_dynamic_collection(
                 fail(exc, "frida_spawn_failed")
                 return result
             degrade(exc, "frida_spawn_failed")
-            collection_deadline = (
-                active_clock.monotonic() + config.collection_timeout_seconds
-            )
+            collection_deadline = active_clock.monotonic() + config.collection_timeout_seconds
             timeline.collection_started_at = active_clock.utc_now()
-            timeline.collection_started_monotonic_ms = (
-                active_clock.monotonic() * 1000.0
-            )
+            timeline.collection_started_monotonic_ms = active_clock.monotonic() * 1000.0
             try:
                 mark_collecting = getattr(
                     mitm_session,
@@ -351,21 +337,16 @@ def run_dynamic_collection(
                 if callable(mark_collecting):
                     mark_collecting()
                 if resume_without_frida is None:
-                    raise RuntimeError(
-                        "network-only collection has no app launch callback"
-                    )
+                    raise RuntimeError("network-only collection has no app launch callback")
                 resume_without_frida()
                 result.outcomes["app_resume"] = "success"
                 timeline.app_resumed_at = active_clock.utc_now()
-                timeline.app_resumed_monotonic_ms = (
-                    active_clock.monotonic() * 1000.0
-                )
+                timeline.app_resumed_monotonic_ms = active_clock.monotonic() * 1000.0
                 # There is no trustworthy consent boundary without Hook-ready.
                 result.outcomes["consent_event"] = "skipped"
                 network_window = max(
                     config.pre_consent_seconds,
-                    (config.consent_after_seconds or 0)
-                    + config.post_consent_seconds,
+                    (config.consent_after_seconds or 0) + config.post_consent_seconds,
                 )
                 sleep_with_deadline(network_window)
                 result.outcomes["dynamic_collection"] = "partial"
@@ -403,16 +384,10 @@ def run_dynamic_collection(
         timeline.hook_ready_at = active_clock.utc_now()
         timeline.hook_ready_monotonic_ms = active_clock.monotonic() * 1000.0
         timeline.collection_started_at = active_clock.utc_now()
-        timeline.collection_started_monotonic_ms = (
-            active_clock.monotonic() * 1000.0
-        )
-        collection_deadline = (
-            active_clock.monotonic() + config.collection_timeout_seconds
-        )
+        timeline.collection_started_monotonic_ms = active_clock.monotonic() * 1000.0
+        collection_deadline = active_clock.monotonic() + config.collection_timeout_seconds
         try:
-            emit_control_event(
-                _control_event("collection_started", active_clock)
-            )
+            emit_control_event(_control_event("collection_started", active_clock))
             mark_collecting = getattr(mitm_session, "mark_collecting", None)
             if traffic_ready and callable(mark_collecting):
                 mark_collecting()
@@ -457,9 +432,7 @@ def run_dynamic_collection(
             try:
                 stimulate_ui()
             except BaseException as exc:
-                result.warnings.append(
-                    f"ui stimulation failed: {type(exc).__name__}"
-                )
+                result.warnings.append(f"ui stimulation failed: {type(exc).__name__}")
                 result.status = "partial"
 
         try:
@@ -473,9 +446,7 @@ def run_dynamic_collection(
                 emit_control_event(consent_event)
                 result.outcomes["consent_event"] = "success"
                 timeline.consent_at = active_clock.utc_now()
-                timeline.consent_monotonic_ms = (
-                    active_clock.monotonic() * 1000.0
-                )
+                timeline.consent_monotonic_ms = active_clock.monotonic() * 1000.0
                 sleep_with_deadline(config.post_consent_seconds)
             else:
                 result.outcomes["consent_event"] = "skipped"
@@ -492,9 +463,7 @@ def run_dynamic_collection(
         )
     finally:
         timeline.collection_ended_at = active_clock.utc_now()
-        timeline.collection_ended_monotonic_ms = (
-            active_clock.monotonic() * 1000.0
-        )
+        timeline.collection_ended_monotonic_ms = active_clock.monotonic() * 1000.0
 
         if frida_attempted:
             try:

@@ -205,9 +205,7 @@ def parse_plan_response(content: str | None) -> ParseOutcome:
         # happy path; an array/scalar here is a root-type reject.
         return ParseOutcome(
             None,
-            PARSE_JSON_ROOT_NOT_OBJECT
-            if isinstance(content, list | tuple)
-            else PARSE_INVALID_JSON,
+            PARSE_JSON_ROOT_NOT_OBJECT if isinstance(content, list | tuple) else PARSE_INVALID_JSON,
         )
     if isinstance(content, bytes):
         try:

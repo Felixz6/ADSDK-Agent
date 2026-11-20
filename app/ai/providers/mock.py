@@ -102,9 +102,7 @@ class MockAIProvider:
             reasoning_content_present=False,
         )
 
-    def _choose_body(
-        self, user_prompt: str
-    ) -> tuple[dict[str, Any], str | None]:
+    def _choose_body(self, user_prompt: str) -> tuple[dict[str, Any], str | None]:
         marker = "__ai_phase__:"  # tests inject this to pin the phase
         if marker in user_prompt:
             tag = user_prompt.split(marker, 1)[1].split()[0] if marker else ""
@@ -162,7 +160,6 @@ def _default_mock_report() -> dict[str, Any]:
         "disclaimer": "",
         "usage": {},
     }
-
 
 
 __all__ = [

@@ -50,13 +50,7 @@ def _local_name(tag: str) -> str:
 
 
 def _normalized_names(values) -> list[str]:
-    return sorted(
-        {
-            value.strip()
-            for value in values
-            if isinstance(value, str) and value.strip()
-        }
-    )
+    return sorted({value.strip() for value in values if isinstance(value, str) and value.strip()})
 
 
 def parse_manifest_info(
@@ -100,8 +94,7 @@ def parse_manifest_info(
         declared_permissions = _normalized_names(
             child.attrib.get(ANDROID_NAME)
             for child in root
-            if _local_name(child.tag)
-            in {"uses-permission", "uses-permission-sdk-23"}
+            if _local_name(child.tag) in {"uses-permission", "uses-permission-sdk-23"}
         )
         custom_permissions = _normalized_names(
             child.attrib.get(ANDROID_NAME)
@@ -122,9 +115,7 @@ def parse_manifest_info(
         result["declared_permissions"] = declared_permissions
         result["custom_permissions"] = custom_permissions
         result["component_permissions"] = component_permissions
-        result["sensitive_permissions"] = sorted(
-            set(declared_permissions) & SENSITIVE_PERMISSIONS
-        )
+        result["sensitive_permissions"] = sorted(set(declared_permissions) & SENSITIVE_PERMISSIONS)
         result["high_attention_permissions"] = sorted(
             set(declared_permissions) & HIGH_ATTENTION_PERMISSIONS
         )
@@ -147,8 +138,6 @@ def parse_manifest_info(
             package_name=result["package_name"],
         )
     except (ET.ParseError, OSError) as exc:
-        raise ValueError(
-            f"AndroidManifest.xml parse failed: {type(exc).__name__}"
-        ) from exc
+        raise ValueError(f"AndroidManifest.xml parse failed: {type(exc).__name__}") from exc
 
     return result

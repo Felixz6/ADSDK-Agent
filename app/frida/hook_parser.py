@@ -179,9 +179,7 @@ def parse_hook_log(
             else:
                 event = _parse_line(line)
             if event is not None:
-                events.append(
-                    _redact_event_text(event, sensitive_identifiers)
-                )
+                events.append(_redact_event_text(event, sensitive_identifiers))
     return events
 
 

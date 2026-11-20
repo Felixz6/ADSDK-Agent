@@ -162,10 +162,13 @@ def test_missing_dynamic_evidence_marks_only_dynamic_rules_not_evaluated():
 def test_grade_d_produces_no_deterministic_dynamic_conclusion():
     result = _full(dynamic_evidence_grade="D")
     assert _rule(result, "PF-PRECONSENT-SENSITIVE-EVENT").status == "not_evaluated"
-    assert "dynamic_evidence_grade_insufficient" in _rule(
-        result,
-        "PF-PRECONSENT-SENSITIVE-EVENT",
-    ).reason_codes
+    assert (
+        "dynamic_evidence_grade_insufficient"
+        in _rule(
+            result,
+            "PF-PRECONSENT-SENSITIVE-EVENT",
+        ).reason_codes
+    )
     assert _rule(result, "PF-DYNAMIC-EVIDENCE-GAP").status == "matched"
 
 
@@ -181,10 +184,13 @@ def test_missing_correlation_does_not_block_independent_rules():
     assert _rule(result, "PF-PRECONSENT-CORRELATED-ACTIVITY").status == "not_evaluated"
     assert _rule(result, "PF-PRECONSENT-SENSITIVE-EVENT").status == "matched"
     assert _rule(result, "PF-PRECONSENT-NETWORK").status == "matched"
-    assert "correlation_not_available" in _rule(
-        result,
-        "PF-PRECONSENT-CORRELATED-ACTIVITY",
-    ).reason_codes
+    assert (
+        "correlation_not_available"
+        in _rule(
+            result,
+            "PF-PRECONSENT-CORRELATED-ACTIVITY",
+        ).reason_codes
+    )
 
 
 def test_manifest_failure_does_not_block_dynamic_rules():
@@ -330,7 +336,9 @@ def test_same_input_produces_identical_output_and_ordering():
     )
     assert first == second
     severities = [item.severity for item in first.findings]
-    assert severities == sorted(severities, key=lambda value: ["high", "medium", "low", "info"].index(value))
+    assert severities == sorted(
+        severities, key=lambda value: ["high", "medium", "low", "info"].index(value)
+    )
 
 
 def test_sensitive_request_fields_never_enter_findings():
@@ -534,9 +542,7 @@ def test_privacy_findings_failure_isolated_and_error_artifact_written(
     )
 
     assert payload["status"] == "error"
-    written = json.loads(
-        (tmp_path / "privacy-findings.json").read_text(encoding="utf-8")
-    )
+    written = json.loads((tmp_path / "privacy-findings.json").read_text(encoding="utf-8"))
     assert written["status"] == "error"
     assert "synthetic privacy failure" not in json.dumps(written, ensure_ascii=False)
 
@@ -614,16 +620,10 @@ def test_network_consent_states_are_classified_from_utc_evidence():
 def test_consent_boundary_requires_finite_monotonic_mark():
     import app.pipelines.common as main
 
-    assert main._has_trusted_consent_boundary(
-        {"consent_at": {"monotonic_ms": 1500.0}}
-    )
+    assert main._has_trusted_consent_boundary({"consent_at": {"monotonic_ms": 1500.0}})
     assert not main._has_trusted_consent_boundary({"consent_at": None})
-    assert not main._has_trusted_consent_boundary(
-        {"consent_at": {"monotonic_ms": None}}
-    )
-    assert not main._has_trusted_consent_boundary(
-        {"consent_at": {"monotonic_ms": float("inf")}}
-    )
+    assert not main._has_trusted_consent_boundary({"consent_at": {"monotonic_ms": None}})
+    assert not main._has_trusted_consent_boundary({"consent_at": {"monotonic_ms": float("inf")}})
 
 
 @pytest.mark.parametrize("grade", ["A", "B", "C", "D", None, "unexpected"])

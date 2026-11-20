@@ -13,9 +13,7 @@ _COMPAT_SECRET_ENVS: Final = (
     "ADSDK_REDACTION_SECRET",
     "ADSDK_AGENT_REDACTION_SECRET",
 )
-_DEVELOPMENT_SECRET: Final = (
-    b"adsdk-agent-development-only-change-me"
-)
+_DEVELOPMENT_SECRET: Final = b"adsdk-agent-development-only-change-me"
 _TOKEN_DOMAIN: Final = b"adsdk-agent/stable-token/v1\x00"
 _IDENTIFIER_DOMAIN: Final = b"adsdk-agent/identifier/v1\x00"
 
@@ -42,16 +40,9 @@ class Redactor:
         *,
         token_length: int = 20,
     ) -> None:
-        configured = (
-            os.getenv(_PRIMARY_SECRET_ENV)
-            or next(
-                (
-                    value
-                    for name in _COMPAT_SECRET_ENVS
-                    if (value := os.getenv(name))
-                ),
-                None,
-            )
+        configured = os.getenv(_PRIMARY_SECRET_ENV) or next(
+            (value for name in _COMPAT_SECRET_ENVS if (value := os.getenv(name))),
+            None,
         )
         selected = secret if secret is not None else configured
         if selected is None:
@@ -92,12 +83,7 @@ class Redactor:
             return None
 
         kind_bytes = (kind or "identifier").strip().casefold().encode("utf-8")
-        token = self._token(
-            _IDENTIFIER_DOMAIN
-            + kind_bytes
-            + b"\x00"
-            + value_bytes
-        )
+        token = self._token(_IDENTIFIER_DOMAIN + kind_bytes + b"\x00" + value_bytes)
         return f"redacted:{token}"
 
     def redact_text(
@@ -120,11 +106,7 @@ class Redactor:
         for kind, raw_value in identifiers.items():
             if raw_value is None:
                 continue
-            raw_text = (
-                raw_value.decode("utf-8")
-                if isinstance(raw_value, bytes)
-                else raw_value
-            )
+            raw_text = raw_value.decode("utf-8") if isinstance(raw_value, bytes) else raw_value
             if not raw_text:
                 continue
             token = self.redact_identifier(raw_value, kind=kind)
@@ -184,15 +166,9 @@ def redact_known_device_serials(
     if isinstance(value, str):
         return redact_text(value)
     if isinstance(value, list):
-        return [
-            redact_known_device_serials(item, serials, secret=secret)
-            for item in value
-        ]
+        return [redact_known_device_serials(item, serials, secret=secret) for item in value]
     if isinstance(value, tuple):
-        return [
-            redact_known_device_serials(item, serials, secret=secret)
-            for item in value
-        ]
+        return [redact_known_device_serials(item, serials, secret=secret) for item in value]
     if isinstance(value, dict):
         return {
             key: redact_known_device_serials(item, serials, secret=secret)
@@ -211,4 +187,3 @@ __all__ = [
     "extract_device_serials",
     "redact_known_device_serials",
 ]
-

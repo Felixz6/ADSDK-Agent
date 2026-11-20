@@ -184,9 +184,7 @@ def test_task_service_records_real_progress_and_report_index(tmp_path: Path):
         return payload
 
     service.set_runner(runner)
-    task = service.create(
-        TaskCreateRequest(task_type="static", apk_path="D:/samples/app.apk")
-    )
+    task = service.create(TaskCreateRequest(task_type="static", apk_path="D:/samples/app.apk"))
     result = _wait_terminal(service, task.id)
     report = service.report(task.id)
 
@@ -214,9 +212,7 @@ def test_task_service_failure_retry_and_delete(tmp_path: Path):
         }
 
     service.set_runner(runner)
-    task = service.create(
-        TaskCreateRequest(task_type="static", apk_path="D:/samples/app.apk")
-    )
+    task = service.create(TaskCreateRequest(task_type="static", apk_path="D:/samples/app.apk"))
     failed = _wait_terminal(service, task.id)
     retried = service.retry(task.id).task
     retried_terminal = _wait_terminal(service, retried.id)
@@ -378,9 +374,7 @@ def test_comparison_is_deterministic_and_persistent(tmp_path: Path):
     )
     service = ComparisonService(repository)
 
-    result = service.create(
-        ComparisonCreateRequest(base_task_id=base.id, target_task_id=target.id)
-    )
+    result = service.create(ComparisonCreateRequest(base_task_id=base.id, target_task_id=target.id))
     loaded = service.get(result.id)
 
     assert result.schema_version == "comparison-v1"

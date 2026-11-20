@@ -77,12 +77,8 @@ class SafeTrafficAddon:
 
         options = _mitm_ctx.options
         run_id = str(getattr(options, "adsdk_run_id", "")).strip()
-        session_id = str(
-            getattr(options, "adsdk_session_id", "")
-        ).strip()
-        jsonl_path = str(
-            getattr(options, "adsdk_jsonl_path", "")
-        ).strip()
+        session_id = str(getattr(options, "adsdk_session_id", "")).strip()
+        jsonl_path = str(getattr(options, "adsdk_jsonl_path", "")).strip()
         if not run_id or not session_id or not jsonl_path:
             raise RuntimeError("mitm addon ownership options are incomplete")
         self.run_id = run_id
@@ -136,9 +132,7 @@ class SafeTrafficAddon:
         timestamp = getattr(request, "timestamp_start", None)
         if timestamp is None:
             timestamp = self.utc_now()
-        selected_response = (
-            response if response is not None else getattr(flow, "response", None)
-        )
+        selected_response = response if response is not None else getattr(flow, "response", None)
         status_code = (
             getattr(selected_response, "status_code", None)
             if selected_response is not None
@@ -222,9 +216,7 @@ class SafeTrafficAddon:
             for flow_id, record in pending:
                 if flow_id in self._emitted:
                     continue
-                safe_record = record.model_copy(
-                    update={"error": "incomplete"}
-                )
+                safe_record = record.model_copy(update={"error": "incomplete"})
                 self._get_writer().write_request(safe_record)
                 self._emitted.add(flow_id)
 

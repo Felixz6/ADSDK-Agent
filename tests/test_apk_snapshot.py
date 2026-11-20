@@ -24,11 +24,7 @@ def _sha256(content: bytes) -> str:
 def _temporary_files(input_dir: Path) -> list[Path]:
     if not input_dir.exists():
         return []
-    return [
-        item
-        for item in input_dir.iterdir()
-        if item.name != "app.apk"
-    ]
+    return [item for item in input_dir.iterdir() if item.name != "app.apk"]
 
 
 def test_snapshot_streams_to_fixed_run_path_and_returns_safe_report_metadata(
@@ -397,7 +393,9 @@ def test_resolve_spawn_argv_wraps_bat_and_cmd_via_cmd_exe(monkeypatch: pytest.Mo
     assert original_cmd == ["wrapper.cmd", "--flag", "x"]
 
 
-def test_resolve_spawn_argv_does_not_wrap_plain_exe_or_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_spawn_argv_does_not_wrap_plain_exe_or_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A real PE executable (``.exe``) or an unresolved head must pass through
     unchanged so we don't wrongly shim executables that ``CreateProcess`` can
     already launch, and we don't invent a wrapper for missing commands.
@@ -419,7 +417,9 @@ def test_resolve_spawn_argv_does_not_wrap_plain_exe_or_unresolved(monkeypatch: p
     assert tools_utils._resolve_spawn_argv(unresolved) == unresolved
 
 
-def test_resolve_spawn_argv_passes_through_empty_and_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_spawn_argv_passes_through_empty_and_non_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Empty argv and non-Windows platforms must return the input unchanged
     (the wrapper is a Windows-only remediation).
     """

@@ -11,31 +11,45 @@ CALCULATION_VERSION = "risk-v1"
 # 所有分值集中在此处，便于审阅、版本化和后续校准。
 RISK_WEIGHTS: dict[str, dict[str, Any]] = {
     "pre_consent_sensitive_access": {
-        "score": 25, "category": "privacy", "severity": "high",
+        "score": 25,
+        "category": "privacy",
+        "severity": "high",
         "title": "用户同意前访问敏感信息",
     },
     "pre_consent_network": {
-        "score": 20, "category": "network", "severity": "high",
+        "score": 20,
+        "category": "network",
+        "severity": "high",
         "title": "用户同意前发送网络请求",
     },
     "sensitive_permission": {
-        "score": 12, "category": "permission", "severity": "medium",
+        "score": 12,
+        "category": "permission",
+        "severity": "medium",
         "title": "声明高关注权限",
     },
     "cleartext_http": {
-        "score": 15, "category": "network", "severity": "high",
+        "score": 15,
+        "category": "network",
+        "severity": "high",
         "title": "观测到明文 HTTP 通信",
     },
     "high_risk_sdk": {
-        "score": 12, "category": "sdk", "severity": "high",
+        "score": 12,
+        "category": "sdk",
+        "severity": "high",
         "title": "识别到高关注 SDK",
     },
     "medium_risk_sdk": {
-        "score": 6, "category": "sdk", "severity": "medium",
+        "score": 6,
+        "category": "sdk",
+        "severity": "medium",
         "title": "识别到需关注 SDK",
     },
     "protocol_error": {
-        "score": 8, "category": "collection", "severity": "medium",
+        "score": 8,
+        "category": "collection",
+        "severity": "medium",
         "title": "动态采集协议出现错误",
     },
 }
@@ -139,8 +153,7 @@ def calculate_risk_summary(report: dict[str, Any]) -> RiskSummary:
                 severity=weight["severity"],
                 score=weight["score"],
                 evidence_refs=[
-                    f"AndroidManifest.xml#{permission}"
-                    for permission in high_attention
+                    f"AndroidManifest.xml#{permission}" for permission in high_attention
                 ],
             )
         )
@@ -148,14 +161,10 @@ def calculate_risk_summary(report: dict[str, Any]) -> RiskSummary:
 
     sdks = report.get("sdks") or []
     for sdk in sdks:
-        if not isinstance(sdk, dict) or sdk.get("risk_level") not in {
-            "medium", "high", "critical"
-        }:
+        if not isinstance(sdk, dict) or sdk.get("risk_level") not in {"medium", "high", "critical"}:
             continue
         weight = RISK_WEIGHTS[
-            "high_risk_sdk"
-            if sdk.get("risk_level") in {"high", "critical"}
-            else "medium_risk_sdk"
+            "high_risk_sdk" if sdk.get("risk_level") in {"high", "critical"} else "medium_risk_sdk"
         ]
         evidence_refs = [
             str(item.get("relative_path"))
@@ -193,10 +202,7 @@ def calculate_risk_summary(report: dict[str, Any]) -> RiskSummary:
         item
         for item in report.get("dynamic_events") or []
         if isinstance(item, dict)
-        and (
-            item.get("category") == "protocol_error"
-            or item.get("event") == "protocol_error"
-        )
+        and (item.get("category") == "protocol_error" or item.get("event") == "protocol_error")
     ]
     if protocol_events:
         weight = RISK_WEIGHTS["protocol_error"]

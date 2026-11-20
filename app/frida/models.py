@@ -81,9 +81,7 @@ class FridaDiagnosticsResponse(BaseModel):
     duration_ms: int = Field(ge=0)
     device_ref: str | None = None
     management_enabled: bool = False
-    capabilities: FridaEnvironmentCapabilities = Field(
-        default_factory=FridaEnvironmentCapabilities
-    )
+    capabilities: FridaEnvironmentCapabilities = Field(default_factory=FridaEnvironmentCapabilities)
 
 
 class FridaServerActionRequest(BaseModel):

@@ -43,9 +43,7 @@ class ExecutionModeDecision(BaseModel):
 
 
 class DynamicEvidenceQuality(BaseModel):
-    schema_version: Literal["dynamic-evidence-quality-v1"] = (
-        "dynamic-evidence-quality-v1"
-    )
+    schema_version: Literal["dynamic-evidence-quality-v1"] = "dynamic-evidence-quality-v1"
     level: Literal["A", "B", "C", "D"]
     mode: ExecutionMode
     coverage: list[str]
@@ -75,11 +73,7 @@ def select_execution_mode(
                 mode=mode,
                 status="success" if ready else "failed",
                 reason_code=None if ready else failures.get(mode, f"{mode.value}_failed"),
-                message=(
-                    f"{mode.value} 可用"
-                    if ready
-                    else f"{mode.value} 不可用，已保留失败证据"
-                ),
+                message=(f"{mode.value} 可用" if ready else f"{mode.value} 不可用，已保留失败证据"),
             )
         )
         return ready
@@ -155,11 +149,7 @@ def build_evidence_quality(
         and consent_boundary_trusted
     ):
         level: Literal["A", "B", "C", "D"] = "A"
-    elif (
-        mode is ExecutionMode.SPAWN
-        and hook_ready_trusted
-        and event_protocol_trusted
-    ):
+    elif mode is ExecutionMode.SPAWN and hook_ready_trusted and event_protocol_trusted:
         level = "B"
     elif (
         mode is ExecutionMode.LAUNCH_THEN_ATTACH

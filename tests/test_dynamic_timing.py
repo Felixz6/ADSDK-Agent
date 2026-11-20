@@ -22,9 +22,7 @@ class FakeClock:
 
     def advance(self, seconds: float, *, wall_seconds: float | None = None) -> None:
         self.monotonic_value += seconds
-        self.wall += timedelta(
-            seconds=seconds if wall_seconds is None else wall_seconds
-        )
+        self.wall += timedelta(seconds=seconds if wall_seconds is None else wall_seconds)
 
 
 def test_collection_and_consent_use_monotonic_baseline_despite_wall_clock_jump():
@@ -145,9 +143,5 @@ def test_legacy_hook_without_reliable_timestamp_is_not_evaluated(tmp_path):
         consent_time="2026-01-01T00:00:10Z",
     )
 
-    assert {
-        rule["status"]
-        for rule in findings["rules"]
-    } == {"not_evaluated"}
+    assert {rule["status"] for rule in findings["rules"]} == {"not_evaluated"}
     assert findings["warnings"]
-

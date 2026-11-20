@@ -37,10 +37,7 @@ def test_structured_record_drops_query_values_headers_and_bodies(
         session_id="session-a",
         timestamp_utc=datetime(2026, 7, 24, 23, 59, 59, tzinfo=UTC),
         method="POST",
-        url=(
-            "https://API.Example.COM./v1/collect"
-            f"?token={secret_query}&empty=&page=1"
-        ),
+        url=(f"https://API.Example.COM./v1/collect?token={secret_query}&empty=&page=1"),
         status_code=204,
         request_size=len(secret_body),
         response_size=0,
@@ -94,10 +91,7 @@ def test_encoded_path_identifier_and_tokenish_query_key_are_redacted() -> None:
         session_id="session-a",
         timestamp_utc="2026-07-24T00:00:00.000Z",
         method="GET",
-        url=(
-            f"https://example.com/users/{encoded_identifier}"
-            f"?{tokenish_key}=ignored&page=1"
-        ),
+        url=(f"https://example.com/users/{encoded_identifier}?{tokenish_key}=ignored&page=1"),
     )
     serialized = record.model_dump_json()
 
