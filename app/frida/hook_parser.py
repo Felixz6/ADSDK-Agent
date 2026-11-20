@@ -5,7 +5,7 @@ from typing import Any
 
 from app.config import REDACTION_HMAC_KEY, SCHEMA_VERSION
 from app.core.redaction import Redactor
-from app.tools.frida_events import (
+from app.frida.frida_events import (
     FridaEventValidationError,
     normalize_frida_payload,
     write_events_json,

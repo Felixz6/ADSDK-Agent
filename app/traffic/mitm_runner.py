@@ -13,7 +13,7 @@ from typing import Any
 
 from app.config import DEFAULT_MITM_PORT
 from app.core.device import DeviceContext
-from app.tools.mitm_session import MitmSession, MitmSessionState, PortPool
+from app.traffic.mitm_session import MitmSession, MitmSessionState, PortPool
 
 
 def check_port_listening(

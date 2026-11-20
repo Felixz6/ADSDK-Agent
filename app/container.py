@@ -20,14 +20,14 @@ from app.config import (
     TASK_DATABASE_PATH,
 )
 from app.frida import FridaDiagnosticsService, FridaServerManager
+from app.frida.frida_session import FridaSession
 from app.orchestration.consent_checkpoint import ConsentCheckpointService
 from app.orchestration.device_lease import LeaseRegistry
 from app.repositories import TaskRepository
 from app.repositories.task_repository import utc_now as task_utc_now
 from app.services import TaskService
 from app.services.application_name_service import repair_historical_application_names
-from app.tools.frida_session import FridaSession
-from app.tools.mitm_session import MitmSession
+from app.traffic.mitm_session import MitmSession
 
 project_root = Path(__file__).resolve().parent.parent
 

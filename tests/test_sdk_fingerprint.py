@@ -1,4 +1,4 @@
-from app.tools.sdk_fingerprint import scan_for_sdks
+from app.core.sdk_fingerprint import scan_for_sdks
 
 
 def test_scan_for_sdks(tmp_path):

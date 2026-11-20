@@ -13,8 +13,8 @@ import types
 
 import pytest
 
-from app.tools import env_checks
-from app.tools.env_checks import (
+from app.core import env_checks
+from app.core.env_checks import (
     check_apk_allowed_roots,
     check_apktool,
     check_frida_python_package,

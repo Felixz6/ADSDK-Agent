@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 
 from app.core.device import DeviceContext
-from app.tools import mitm_session as mitm_session_module
-from app.tools.mitm_session import (
+from app.traffic import mitm_session as mitm_session_module
+from app.traffic.mitm_session import (
     MitmSession,
     MitmSessionState,
     PortAllocationError,

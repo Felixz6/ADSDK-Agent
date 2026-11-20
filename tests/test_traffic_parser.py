@@ -1,4 +1,4 @@
-from app.tools.traffic_parser import parse_traffic_text
+from app.traffic.traffic_parser import parse_traffic_text
 
 
 def test_parse_traffic_text(tmp_path):

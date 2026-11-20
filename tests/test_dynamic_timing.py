@@ -1,8 +1,8 @@
 import json
 from datetime import UTC, datetime, timedelta
 
-from app.tools.hook_parser import parse_hook_to_events_json
-from app.tools.timeline_rules import (
+from app.frida.hook_parser import parse_hook_to_events_json
+from app.orchestration.timeline_rules import (
     DynamicTimeline,
     classify_consent_state,
     evaluate_timeline_rules,

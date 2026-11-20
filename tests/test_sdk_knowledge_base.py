@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.analyzers.sdk_intelligence import correlate_sdk_evidence
-from app.tools.sdk_fingerprint import (
+from app.core.sdk_fingerprint import (
     KNOWLEDGE_BASE_PATH,
     load_sdk_knowledge_base,
     scan_for_sdks,

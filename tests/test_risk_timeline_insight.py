@@ -2,7 +2,7 @@ from app.analyzers.compliance_insight import generate_compliance_insight
 from app.analyzers.risk_scoring import calculate_risk_summary, level_for_score
 from app.analyzers.timeline_builder import build_timeline, classify_timing
 from app.models import AnalyzeResponse
-from app.tools.report_writer import write_markdown_report
+from app.reporting.report_writer import write_markdown_report
 
 
 def test_risk_level_boundaries():

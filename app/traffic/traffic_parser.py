@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from app.config import SCHEMA_VERSION
 from app.core.artifacts import atomic_write_json
-from app.tools.traffic_events import (
+from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
     TrafficCollectionResult,
     validate_traffic_jsonl,

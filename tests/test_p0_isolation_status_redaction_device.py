@@ -243,7 +243,7 @@ def _install_common_fakes(
                 flow_file.write_bytes(b"")
 
         def validate_traffic(self) -> Any:
-            from app.tools.traffic_events import (
+            from app.traffic.traffic_events import (
                 TrafficCollectionOutcome,
                 TrafficCollectionResult,
             )

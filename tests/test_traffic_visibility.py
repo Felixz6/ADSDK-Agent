@@ -19,7 +19,7 @@ from app.frida.traffic_diagnostics import (
     diagnose_traffic,
     summarize_proc_net,
 )
-from app.tools.mitm_session import MitmSession, MitmSessionState, PortPool
+from app.traffic.mitm_session import MitmSession, MitmSessionState, PortPool
 
 
 # ---------------------------------------------------------------------------

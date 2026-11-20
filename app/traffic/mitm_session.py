@@ -27,12 +27,12 @@ from app.config import MITM_PORT_END, MITM_PORT_START
 from app.core.clock import utc_now
 from app.core.device import DeviceContext
 from app.frida.traffic_diagnostics import summarize_proc_net
-from app.tools.traffic_events import (
+from app.tools.utils import run_cmd
+from app.traffic.traffic_events import (
     TrafficCollectionResult,
     load_traffic_jsonl,
     validate_traffic_jsonl,
 )
-from app.tools.utils import run_cmd
 
 ProcessFactory = Callable[..., subprocess.Popen[str]]
 PortAvailabilityProbe = Callable[[str, int], bool]

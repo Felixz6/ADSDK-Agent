@@ -9,7 +9,7 @@ from app.analyzers.evidence_correlation import (
     build_evidence_correlations,
 )
 from app.reporting import render_html_report
-from app.tools.report_writer import write_markdown_report
+from app.reporting.report_writer import write_markdown_report
 
 
 def _event(**values):

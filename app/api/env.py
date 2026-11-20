@@ -11,11 +11,18 @@ from app.api.deps import (
     get_frida_diagnostics_service,
     get_frida_server_manager,
 )
+from app.core.env_checks import (
+    check_apk_allowed_roots,
+    check_apktool,
+    check_frida_python_package,
+    check_redaction_hmac_key,
+)
 from app.core.redaction import _device_serials, _redact_known_device_serials
 from app.frida import (
     FridaDiagnosticsRequest,
     FridaServerActionRequest,
 )
+from app.frida.frida_runner import check_frida_connection, check_frida_device_runtime
 from app.pipelines.common import _check_output_writable
 from app.tools.adb_runner import (
     DeviceSelectionError,
@@ -23,15 +30,8 @@ from app.tools.adb_runner import (
     check_device_online,
     select_device_context,
 )
-from app.tools.env_checks import (
-    check_apk_allowed_roots,
-    check_apktool,
-    check_frida_python_package,
-    check_redaction_hmac_key,
-)
-from app.tools.frida_runner import check_frida_connection, check_frida_device_runtime
-from app.tools.mitm_runner import check_port_listening, get_mitm_status
-from app.tools.traffic_parser import parse_traffic_text
+from app.traffic.mitm_runner import check_port_listening, get_mitm_status
+from app.traffic.traffic_parser import parse_traffic_text
 
 if TYPE_CHECKING:
     from app.frida import FridaDiagnosticsService, FridaServerManager

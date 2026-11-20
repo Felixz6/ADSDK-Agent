@@ -25,10 +25,10 @@ import app.main as main_module
 import app.pipelines.common as common_module
 import app.pipelines.dynamic as dynamic_module
 from app.core.device import DeviceContext
-from app.tools.dynamic_collection import (
+from app.orchestration.dynamic_collection import (
     run_dynamic_collection as real_run_dynamic_collection,
 )
-from app.tools.traffic_events import (
+from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
     TrafficCollectionResult,
 )

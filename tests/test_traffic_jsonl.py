@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.analyzers.traffic.mitm_addon import SafeTrafficAddon
-from app.tools.traffic_events import (
+from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
     TrafficJSONLWriter,
     build_http_request_record,

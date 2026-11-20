@@ -93,7 +93,7 @@ def test_session_context_prepend_wraps_bundle_intact(tmp_path: Path):
     """The per-run context prepend still lands above a loadable script."""
 
     from app.core.device import DeviceContext
-    from app.tools.frida_session import FridaSession
+    from app.frida.frida_session import FridaSession
 
     session = FridaSession(
         run_id="bundle-contract",

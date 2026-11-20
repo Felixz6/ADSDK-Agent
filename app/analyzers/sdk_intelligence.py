@@ -6,7 +6,7 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from app.tools.sdk_fingerprint import load_sdk_knowledge_base
+from app.core.sdk_fingerprint import load_sdk_knowledge_base
 
 
 def correlate_sdk_evidence(

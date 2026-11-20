@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.device import DeviceContext
-from app.tools.frida_session import (
+from app.frida.frida_session import (
     FridaSession,
     FridaSessionError,
     FridaSessionState,

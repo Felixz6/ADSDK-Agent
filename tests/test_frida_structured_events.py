@@ -2,12 +2,12 @@
 import pytest
 
 from app.core.redaction import Redactor
-from app.tools.frida_events import (
+from app.frida.frida_events import (
     FridaEventValidationError,
     StructuredEventWriter,
     normalize_frida_payload,
 )
-from app.tools.hook_parser import parse_hook_log, parse_hook_to_events_json
+from app.frida.hook_parser import parse_hook_log, parse_hook_to_events_json
 
 RAW_IDENTIFIER = "fixture-sensitive-id-2026-NEVER-PERSIST"
 

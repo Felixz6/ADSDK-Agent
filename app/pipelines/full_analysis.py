@@ -53,8 +53,8 @@ from app.services import AITaskService
 from app.services.ai_task_service import RunScopedExecution
 from app.tasks.models import TaskRecord
 from app.tasks.runtime import report_step
-from app.tools.mitm_runner import check_port_listening
 from app.tools.utils import run_cmd
+from app.traffic.mitm_runner import check_port_listening
 
 
 def _capture_m7b_device_snapshot(

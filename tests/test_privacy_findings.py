@@ -18,7 +18,7 @@ from app.analyzers.privacy_findings import (
     safe_path_summary,
 )
 from app.reporting import render_html_report
-from app.tools.report_writer import write_markdown_report
+from app.reporting.report_writer import write_markdown_report
 
 
 def _event(**values):

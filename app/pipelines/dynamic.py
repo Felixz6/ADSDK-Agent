@@ -34,10 +34,19 @@ from app.frida import (
     PolicyFridaSession,
     build_evidence_quality,
 )
+from app.frida.frida_session import FridaSession, FridaSessionError
+from app.frida.hook_parser import parse_hook_to_events_json
+from app.frida.logcat_collector import LogcatCollector
 from app.frida.process_monitor import classify_process_exit
 from app.frida.traffic_diagnostics import diagnose_traffic
 from app.models import DynamicAnalyzeRequest
 from app.orchestration.cleanup_manager import ResourceOwnershipRegistry
+from app.orchestration.dynamic_collection import (
+    DynamicCollectionConfig,
+    DynamicCollectionResult,
+    run_dynamic_collection,
+)
+from app.orchestration.timeline_rules import classify_consent_state, evaluate_timeline_rules
 from app.pipelines.common import (
     StaticStageResult,
     _base_report,
@@ -58,23 +67,14 @@ from app.tools.adb_runner import (
     launch_app,
     select_device_context,
 )
-from app.tools.dynamic_collection import (
-    DynamicCollectionConfig,
-    DynamicCollectionResult,
-    run_dynamic_collection,
-)
-from app.tools.frida_session import FridaSession, FridaSessionError
-from app.tools.hook_parser import parse_hook_to_events_json
-from app.tools.logcat_collector import LogcatCollector
-from app.tools.timeline_rules import classify_consent_state, evaluate_timeline_rules
-from app.tools.traffic_events import (
+from app.tools.utils import now_iso, run_cmd
+from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
     TrafficCollectionResult,
 )
-from app.tools.traffic_parser import (
+from app.traffic.traffic_parser import (
     write_traffic_summary,
 )
-from app.tools.utils import now_iso, run_cmd
 
 
 def _build_dynamic_findings(
@@ -933,7 +933,7 @@ def _run_collection_stage(
     collection_result = DynamicCollectionResult(
         status="failed",
         timeline=__import__(
-            "app.tools.dynamic_collection",
+            "app.orchestration.dynamic_collection",
             fromlist=["DynamicTimeline"],
         ).DynamicTimeline(
             session_created_at=_utc_now(),

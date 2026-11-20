@@ -9,7 +9,7 @@ from typing import Any
 
 from app.core.device import DeviceContext
 from app.frida import ExecutionMode
-from app.tools.traffic_events import (
+from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
     TrafficCollectionResult,
 )

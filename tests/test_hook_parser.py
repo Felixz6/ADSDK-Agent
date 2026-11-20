@@ -1,7 +1,7 @@
 import json
 
 from app.config import SCHEMA_VERSION
-from app.tools.hook_parser import parse_hook_log, parse_hook_to_events_json
+from app.frida.hook_parser import parse_hook_log, parse_hook_to_events_json
 
 
 def test_parse_hook_log_and_write_events_json(tmp_path):

@@ -411,7 +411,7 @@ def normalize_consent_states(
 ) -> list[dict[str, Any]]:
     """Return canonical event objects classified by one consent control."""
 
-    from .timeline_rules import classify_consent_state
+    from app.orchestration.timeline_rules import classify_consent_state
 
     consent_monotonic_ms: float | int | None = None
     for item in messages:

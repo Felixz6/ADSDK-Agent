@@ -1,6 +1,6 @@
 import json
 
-from app.tools.timeline_rules import evaluate_timeline_rules
+from app.orchestration.timeline_rules import evaluate_timeline_rules
 
 
 def test_timeline_rules_pre_consent_and_high_frequency(tmp_path):

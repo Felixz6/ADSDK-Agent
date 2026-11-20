@@ -19,7 +19,7 @@ except ImportError:  # Tests and static analysis do not require mitmproxy.
     _mitm_ctx = None
 
 from app.core.clock import utc_now as _utc_now
-from app.tools.traffic_events import (
+from app.traffic.traffic_events import (
     HttpRequestRecord,
     TrafficJSONLWriter,
     build_http_request_record,

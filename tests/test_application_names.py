@@ -5,9 +5,9 @@ from app.core.application_names import (
     resolve_application_label,
     stable_application_name,
 )
+from app.core.manifest_parser import parse_manifest_info
 from app.repositories.task_repository import TaskRepository
 from app.services.application_name_service import repair_historical_application_names
-from app.tools.manifest_parser import parse_manifest_info
 
 
 def _manifest(label: str, package: str = "com.example.labels") -> str:

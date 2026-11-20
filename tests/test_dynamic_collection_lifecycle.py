@@ -96,7 +96,7 @@ class FakeFridaSession:
 
 
 def _import_collection_api() -> tuple[Any, Any]:
-    from app.tools.dynamic_collection import (
+    from app.orchestration.dynamic_collection import (
         DynamicCollectionConfig,
         run_dynamic_collection,
     )

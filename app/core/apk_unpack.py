@@ -1,6 +1,5 @@
 from app.config import APKTOOL_TIMEOUT
-
-from .utils import ensure_dir, run_cmd
+from app.tools.utils import ensure_dir, run_cmd
 
 
 def unpack_apk(apk_path: str, out_dir: str):
