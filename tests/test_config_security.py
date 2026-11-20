@@ -8,9 +8,7 @@ from app import config
 
 
 def test_empty_allowed_roots_uses_project_samples_directory():
-    assert config._parse_allowed_roots("") == (
-        Path(config.SAMPLES_DIR).resolve(),
-    )
+    assert config._parse_allowed_roots("") == (Path(config.SAMPLES_DIR).resolve(),)
 
 
 def test_allowed_roots_are_semicolon_separated_and_resolved(tmp_path):

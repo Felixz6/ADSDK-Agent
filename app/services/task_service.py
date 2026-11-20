@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from fastapi.responses import JSONResponse
@@ -26,7 +26,6 @@ from app.tasks.runtime import (
     request_cancel,
     reset_task_context,
 )
-
 
 TaskRunner = Callable[[TaskRecord], dict[str, Any] | JSONResponse]
 
@@ -134,8 +133,7 @@ class TaskService:
         # An AI task that is permitted to run device-touching tools must take
         # the same device lease a plain dynamic task takes.
         needs_device = task.task_type == "dynamic" or (
-            task.task_type == "ai_orchestrated"
-            and bool(private_payload.get("allow_dynamic"))
+            task.task_type == "ai_orchestrated" and bool(private_payload.get("allow_dynamic"))
         )
         if needs_device:
             key = task.device_id or "__unselected_device__"
@@ -143,6 +141,7 @@ class TaskService:
                 device_lock = self._device_locks.setdefault(key, threading.Lock())
             device_lock.acquire()
         token = None
+
         def release_device() -> None:
             nonlocal device_lock
             if device_lock is not None:
@@ -190,9 +189,7 @@ class TaskService:
                 completed_at=utc_now(),
                 error_code=result.get("error_code"),
                 error_message=result.get("error"),
-                apk_snapshot_path=(result.get("apk_snapshot") or {}).get(
-                    "snapshot_relative_path"
-                ),
+                apk_snapshot_path=(result.get("apk_snapshot") or {}).get("snapshot_relative_path"),
                 apk_sha256=result.get("apk_sha256"),
                 package_name=app_info.get("package_name") or task.package_name,
                 app_name=app_info.get("application_label"),
@@ -265,13 +262,18 @@ class TaskService:
         if progress is None:
             current = self.repository.get_task(task_id, include_steps=False)
             progress = min(95, (current.progress_percent if current else 1) + 1)
-        normalized_status = status if status in {
-            "success",
-            "partial",
-            "failed",
-            "skipped",
-            "running",
-        } else "running"
+        normalized_status = (
+            status
+            if status
+            in {
+                "success",
+                "partial",
+                "failed",
+                "skipped",
+                "running",
+            }
+            else "running"
+        )
         self.repository.upsert_step(
             task_id,
             step_key=step_key,
@@ -323,9 +325,7 @@ class TaskService:
             raise KeyError(task_id)
         if source.status not in {"failed", "cancelled", "completed"}:
             raise ValueError("running or queued task cannot be retried")
-        request = TaskCreateRequest.model_validate(
-            self.repository.get_request_payload(task_id)
-        )
+        request = TaskCreateRequest.model_validate(self.repository.get_request_payload(task_id))
         task = self.create(request)
         return TaskActionResponse(task=task, message="已创建重试任务")
 
@@ -358,9 +358,6 @@ class TaskService:
 
     def recover(self) -> int:
         return self.repository.recover_interrupted_tasks()
-
-    def shutdown(self) -> None:
-        self._pool.shutdown(wait=False, cancel_futures=True)
 
     def occupied_devices(self) -> list[str]:
         with self._lock:

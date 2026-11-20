@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 from typing import Any
 
-from app.tools.sdk_fingerprint import load_sdk_knowledge_base
+from app.core.sdk_fingerprint import load_sdk_knowledge_base
 
 
 def correlate_sdk_evidence(
@@ -15,11 +15,15 @@ def correlate_sdk_evidence(
 ) -> list[dict[str, Any]]:
     """Return SDK hits enriched only by evidence present in this report."""
     hits = {str(item.get("id")): deepcopy(item) for item in sdk_hits}
-    event_blob = json.dumps(
-        report.get("dynamic_events") or [],
-        ensure_ascii=False,
-        sort_keys=True,
-    ).replace("/", ".").lower()
+    event_blob = (
+        json.dumps(
+            report.get("dynamic_events") or [],
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        .replace("/", ".")
+        .lower()
+    )
     hosts = _observed_hosts(report.get("traffic_summary"))
 
     for knowledge in load_sdk_knowledge_base():

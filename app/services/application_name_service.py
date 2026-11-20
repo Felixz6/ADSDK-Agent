@@ -10,8 +10,8 @@ from app.core.application_names import (
     stable_application_name,
 )
 from app.reporting import write_html_report
+from app.reporting.report_writer import write_json_report, write_markdown_report
 from app.repositories.task_repository import TaskRepository
-from app.tools.report_writer import write_json_report, write_markdown_report
 
 
 def repair_historical_application_names(

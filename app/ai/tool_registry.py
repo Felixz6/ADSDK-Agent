@@ -22,7 +22,8 @@ Risk levels:
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -373,10 +374,7 @@ class AIToolRegistry:
 
     def requires_confirmation(self, tool_name: str) -> bool:
         candidate = self.get(tool_name)
-        return (
-            candidate.requires_confirmation
-            or candidate.risk_level == "device_state_change"
-        )
+        return candidate.requires_confirmation or candidate.risk_level == "device_state_change"
 
     def risk_level(self, tool_name: str) -> ToolRiskLevel:
         return self.get(tool_name).risk_level
@@ -397,19 +395,14 @@ class AIToolRegistry:
         configured and permitted for this task.
         """
 
-        dynamic_allowed = (
-            self._allow_dynamic_tools if allow_dynamic is None else allow_dynamic
-        )
+        dynamic_allowed = self._allow_dynamic_tools if allow_dynamic is None else allow_dynamic
         ordered = _STRATEGY_TOOLS.get(strategy, _STRATEGY_TOOLS["static_only"])
         selected: list[ToolCandidate] = []
         for name in ordered:
             candidate = self._registry.get(name)
             if candidate is None:
                 continue
-            if (
-                candidate.risk_level == "device_state_change"
-                and not dynamic_allowed
-            ):
+            if candidate.risk_level == "device_state_change" and not dynamic_allowed:
                 continue
             selected.append(candidate)
             if len(selected) >= max_candidates:

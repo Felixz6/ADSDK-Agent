@@ -19,16 +19,19 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main as main_module
+import app.config as app_config
+import app.container as container
+import app.main as main_module
+import app.pipelines.common as common_module
+import app.pipelines.dynamic as dynamic_module
 from app.core.device import DeviceContext
-from app.tools.dynamic_collection import (
+from app.orchestration.dynamic_collection import (
     run_dynamic_collection as real_run_dynamic_collection,
 )
-from app.tools.traffic_events import (
+from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
     TrafficCollectionResult,
 )
-
 
 # Keep the fixture value out of assertion introspection.  A leak failure only
 # reports artifact names, never the sensitive value itself.
@@ -58,8 +61,8 @@ class _EventEnvelope(dict[str, Any]):
 class _Scenario:
     calls: list[str] = field(default_factory=list)
     tool_apk_paths: list[Path] = field(default_factory=list)
-    frida_instances: list["_FakeFridaSession"] = field(default_factory=list)
-    mitm_instances: list["_FakeMitmSession"] = field(default_factory=list)
+    frida_instances: list[_FakeFridaSession] = field(default_factory=list)
+    mitm_instances: list[_FakeMitmSession] = field(default_factory=list)
     collection_configs: list[Any] = field(default_factory=list)
     mitm_failure: str | None = None
     frida_failure: str | None = None
@@ -96,9 +99,7 @@ class _FakeFridaSession:
         **kwargs: Any,
     ) -> None:
         self._scenario = scenario
-        self.run_id = str(
-            _argument(args, kwargs, self._POSITIONAL, "run_id", "")
-        )
+        self.run_id = str(_argument(args, kwargs, self._POSITIONAL, "run_id", ""))
         self.device = _argument(
             args,
             kwargs,
@@ -136,14 +137,10 @@ class _FakeFridaSession:
         self.protocol_error_path = Path(
             kwargs.get(
                 "protocol_error_path",
-                self.event_log_path.with_name(
-                    "frida.protocol-errors.jsonl"
-                ),
+                self.event_log_path.with_name("frida.protocol-errors.jsonl"),
             )
         )
-        self.session_id = str(
-            kwargs.get("session_id") or uuid.uuid4()
-        )
+        self.session_id = str(kwargs.get("session_id") or uuid.uuid4())
         self.state = SimpleNamespace(value="created")
         self.error_code: str | None = None
         self.error_message: str | None = None
@@ -264,9 +261,7 @@ class _FakeFridaSession:
             if item.get("event") == "collection_started":
                 return _EventEnvelope(item)
         if not self.ready:
-            raise AssertionError(
-                "collection_started was emitted before Hook-ready"
-            )
+            raise AssertionError("collection_started was emitted before Hook-ready")
         self._scenario.calls.append("frida.emit_collection_started")
         return self._control("collection_started")
 
@@ -290,9 +285,7 @@ class _FakeFridaSession:
         if name == "collection_started":
             return self.emit_collection_started()
         if name == "consent_granted":
-            return self.emit_consent(
-                source=str(event.get("source") or "configured_delay")
-            )
+            return self.emit_consent(source=str(event.get("source") or "configured_delay"))
         return self._append(dict(event))
 
     record_control_event = emit_control_event
@@ -350,9 +343,7 @@ class _FakeMitmSession:
         **kwargs: Any,
     ) -> None:
         self._scenario = scenario
-        self.run_id = str(
-            _argument(args, kwargs, self._POSITIONAL, "run_id", "")
-        )
+        self.run_id = str(_argument(args, kwargs, self._POSITIONAL, "run_id", ""))
         self.device = _argument(
             args,
             kwargs,
@@ -369,9 +360,7 @@ class _FakeMitmSession:
                 Path.cwd() / "traffic",
             )
         )
-        self.session_id = str(
-            kwargs.get("session_id") or uuid.uuid4()
-        )
+        self.session_id = str(kwargs.get("session_id") or uuid.uuid4())
         self.listen_host = str(kwargs.get("listen_host") or "127.0.0.1")
         self.listen_port = int(kwargs.get("listen_port") or 8080)
         self.flow_path = self.traffic_dir / "flows.mitm"
@@ -476,29 +465,6 @@ class _FakeMitmSession:
         }
 
 
-class _LegacyProcess:
-    """Only prevents the pre-2C implementation from touching real processes."""
-
-    def __init__(self, scenario: _Scenario) -> None:
-        self._scenario = scenario
-        self._alive = True
-
-    def poll(self) -> int | None:
-        return None if self._alive else 0
-
-    def terminate(self) -> None:
-        self._alive = False
-        self._scenario.calls.append("legacy.frida.stop")
-
-    def wait(self, timeout: float | None = None) -> int:
-        del timeout
-        self._alive = False
-        return 0
-
-    def kill(self) -> None:
-        self._alive = False
-
-
 @dataclass
 class _ApiHarness:
     client: TestClient
@@ -528,7 +494,7 @@ class _ApiHarness:
             raise OSError("fixture report write failure")
 
         self.monkeypatch.setattr(
-            main_module,
+            common_module,
             "write_markdown_report",
             fail_markdown,
         )
@@ -550,18 +516,16 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
     output_root = tmp_path / "output"
     _write_fake_apk(source_apk)
 
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(output_root))
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_root))
     monkeypatch.setattr(
-        main_module,
+        app_config,
         "APK_ALLOWED_ROOTS",
         (tmp_path.resolve(),),
     )
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "select_device_context",
-        lambda device_id=None: DeviceContext(
-            serial=device_id or "fixture-device"
-        ),
+        lambda device_id=None: DeviceContext(serial=device_id or "fixture-device"),
     )
 
     def fake_unpack(apk: str, out_dir: str) -> dict[str, Any]:
@@ -604,11 +568,11 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
         scenario.calls.append("ui.stimulate")
         return {"returncode": 0, "stdout": "", "stderr": "", "cmd": []}
 
-    monkeypatch.setattr(main_module, "unpack_apk", fake_unpack)
-    monkeypatch.setattr(main_module, "install_apk", fake_install)
-    monkeypatch.setattr(main_module, "launch_app", fake_ui_stimulation)
+    monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
+    monkeypatch.setattr(dynamic_module, "install_apk", fake_install)
+    monkeypatch.setattr(dynamic_module, "launch_app", fake_ui_stimulation)
     monkeypatch.setattr(
-        main_module,
+        common_module,
         "parse_manifest_info",
         lambda _: {
             "package_name": "com.example.stage2c",
@@ -617,7 +581,7 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
             "application_label": "Stage2C",
         },
     )
-    monkeypatch.setattr(main_module, "scan_for_sdks", lambda _: [])
+    monkeypatch.setattr(common_module, "scan_for_sdks", lambda _: [])
 
     class BoundFakeFridaSession(_FakeFridaSession):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -628,128 +592,40 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
             super().__init__(scenario, *args, **kwargs)
 
     monkeypatch.setattr(
-        main_module,
-        "FridaSession",
+        container,
+        "frida_session_factory",
         BoundFakeFridaSession,
-        raising=False,
     )
     monkeypatch.setattr(
-        main_module,
-        "MitmSession",
+        container,
+        "mitm_session_factory",
         BoundFakeMitmSession,
-        raising=False,
     )
 
     def recording_collection(*args: Any, **kwargs: Any):
         if kwargs:
             scenario.collection_configs.append(kwargs["config"])
         else:
-            raise AssertionError(
-                "run_dynamic_collection must use its keyword-only contract"
-            )
+            raise AssertionError("run_dynamic_collection must use its keyword-only contract")
         return real_run_dynamic_collection(*args, **kwargs)
 
     monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "run_dynamic_collection",
         recording_collection,
         raising=False,
     )
 
-    # Legacy entry points are faked too.  This keeps the initial red-light run
-    # deterministic while making any continued use of those entry points
-    # visible in assertions.
-    def legacy_start_mitm(run_dir: str) -> dict[str, Any]:
-        scenario.calls.append("legacy.mitm.start")
-        traffic_dir = Path(run_dir) / "traffic"
-        traffic_dir.mkdir(parents=True, exist_ok=True)
-        stream_log = traffic_dir / "mitm_stream.log"
-        stream_log.touch()
-        ok = scenario.mitm_failure is None
-        return {
-            "ok": ok,
-            "error": None if ok else "fixture mitm failure",
-            "traffic_dir": str(traffic_dir),
-            "stream_log": str(stream_log),
-            "flow_file": str(traffic_dir / "flows.mitm"),
-        }
-
-    def legacy_stop_mitm() -> dict[str, Any]:
-        scenario.calls.append("legacy.mitm.stop")
-        return {"ok": True, "error": None}
-
-    def legacy_spawn(
-        package_name: str,
-        script_path: str,
-        log_path: str,
-        device_context: DeviceContext | None = None,
-    ) -> dict[str, Any]:
-        del package_name, script_path, device_context
-        scenario.calls.append("legacy.frida.spawn")
-        if scenario.frida_failure is not None:
-            return {
-                "ok": False,
-                "error": "fixture Frida failure",
-                "process": None,
-                "log_file": None,
-            }
-        with Path(log_path).open("a", encoding="utf-8") as stream:
-            stream.write(
-                "[HOOK] Settings.Secure.getString "
-                f"name=android_id ret={_RAW_ANDROID_ID}\n"
-            )
-        return {
-            "ok": True,
-            "error": None,
-            "process": _LegacyProcess(scenario),
-            "log_file": None,
-        }
-
-    monkeypatch.setattr(main_module, "start_mitm", legacy_start_mitm)
-    monkeypatch.setattr(main_module, "stop_mitm", legacy_stop_mitm)
-    monkeypatch.setattr(main_module, "spawn_and_inject", legacy_spawn)
-
-    def legacy_traffic_summary(
-        traffic_text_path: str,
-        output_path: str,
-    ) -> dict[str, Any]:
-        del traffic_text_path
-        summary = {
-            "schema_version": "1.0",
-            "status": "success",
-            "evaluation_status": "not_evaluated",
-            "coverage": "no_observations",
-            "collector_outcome": "collector_success_zero_requests",
-            "warnings": [],
-            "total_requests": 0,
-            "top_hosts": [],
-            "sample_requests": [],
-        }
-        Path(output_path).write_text(
-            json.dumps(summary),
-            encoding="utf-8",
-        )
-        return summary
-
     monkeypatch.setattr(
-        main_module,
-        "parse_traffic_to_summary_json",
-        legacy_traffic_summary,
-    )
-    monkeypatch.setattr(
-        main_module,
+        dynamic_module,
         "evaluate_timeline_rules",
         lambda **kwargs: {
             "summary": {},
             "rules": [],
             "window": {
                 "consent_time": kwargs.get("consent_time"),
-                "pre_consent_seconds": kwargs.get(
-                    "pre_consent_seconds"
-                ),
-                "post_consent_seconds": kwargs.get(
-                    "post_consent_seconds"
-                ),
+                "pre_consent_seconds": kwargs.get("pre_consent_seconds"),
+                "post_consent_seconds": kwargs.get("post_consent_seconds"),
             },
         },
     )
@@ -764,11 +640,7 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
 
 
 def _step(body: dict[str, Any], name: str) -> dict[str, Any]:
-    matches = [
-        item
-        for item in body.get("steps", [])
-        if item.get("name") == name
-    ]
+    matches = [item for item in body.get("steps", []) if item.get("name") == name]
     assert len(matches) == 1, f"missing or duplicate step: {name}"
     return matches[0]
 
@@ -787,10 +659,7 @@ def test_external_tools_only_receive_run_snapshot(
     expected_snapshot = run_dir / "input" / "app.apk"
 
     assert len(dynamic_api.scenario.tool_apk_paths) >= 2
-    assert all(
-        path == expected_snapshot
-        for path in dynamic_api.scenario.tool_apk_paths
-    )
+    assert all(path == expected_snapshot for path in dynamic_api.scenario.tool_apk_paths)
     assert expected_snapshot != dynamic_api.source_apk.resolve()
     assert expected_snapshot.read_bytes() == dynamic_api.source_apk.read_bytes()
 
@@ -872,9 +741,7 @@ def test_every_formal_artifact_and_session_belongs_to_current_run(
     run_dir = Path(body["output_dir"]).resolve()
 
     assert run_dir.name == body["run_id"]
-    assert run_dir.parent == (
-        dynamic_api.output_root.resolve() / "runs"
-    )
+    assert run_dir.parent == (dynamic_api.output_root.resolve() / "runs")
     assert len(dynamic_api.scenario.frida_instances) == 1
     assert len(dynamic_api.scenario.mitm_instances) == 1
     assert dynamic_api.scenario.frida_instances[0].run_id == body["run_id"]
@@ -888,10 +755,7 @@ def test_every_formal_artifact_and_session_belongs_to_current_run(
         run_dir,
     )
 
-    artifact_paths = {
-        item["name"]: Path(item["path"]).resolve()
-        for item in body["artifacts"]
-    }
+    artifact_paths = {item["name"]: Path(item["path"]).resolve() for item in body["artifacts"]}
     for path in artifact_paths.values():
         _assert_is_within(path, run_dir)
 
@@ -932,8 +796,7 @@ def test_raw_identifier_is_absent_from_response_and_formal_artifacts(
             leaked_locations.append(path.relative_to(run_dir).as_posix())
     if leaked_locations:
         pytest.fail(
-            "sensitive fixture leaked into formal outputs: "
-            + ", ".join(sorted(leaked_locations)),
+            "sensitive fixture leaked into formal outputs: " + ", ".join(sorted(leaked_locations)),
             pytrace=False,
         )
 
@@ -953,10 +816,7 @@ def test_new_request_controls_are_forwarded_to_collection_lifecycle(
     assert config.enable_traffic is False
     assert config.enable_ui_stimulation is True
     assert config.collection_timeout_seconds == 17
-    assert all(
-        not call.startswith("mitm.")
-        for call in dynamic_api.scenario.calls
-    )
+    assert all(not call.startswith("mitm.") for call in dynamic_api.scenario.calls)
     assert "legacy.mitm.start" not in dynamic_api.scenario.calls
     assert dynamic_api.scenario.calls.index("frida.resume") < (
         dynamic_api.scenario.calls.index("ui.stimulate")
@@ -972,9 +832,7 @@ def test_attach_only_skips_apk_reinstall_and_preserves_running_target(
     )
     assert response.status_code == 200
     assert "tool.adb_install" not in dynamic_api.scenario.calls
-    apk_install = next(
-        step for step in response.json()["steps"] if step["name"] == "apk_install"
-    )
+    apk_install = next(step for step in response.json()["steps"] if step["name"] == "apk_install")
     assert apk_install["status"] == "skipped"
 
 

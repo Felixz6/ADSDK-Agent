@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
+from app.core.clock import utc_now_iso
 from app.tasks.models import (
     TaskListResponse,
     TaskRecord,
@@ -16,10 +17,7 @@ from app.tasks.models import (
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
-        "+00:00",
-        "Z",
-    )
+    return utc_now_iso()
 
 
 class TaskRepository:
@@ -131,13 +129,10 @@ class TaskRepository:
                 """
             )
             task_columns = {
-                row["name"]
-                for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+                row["name"] for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
             }
             if "cancelled_at_stage" not in task_columns:
-                connection.execute(
-                    "ALTER TABLE tasks ADD COLUMN cancelled_at_stage TEXT"
-                )
+                connection.execute("ALTER TABLE tasks ADD COLUMN cancelled_at_stage TEXT")
             self._migrate_task_type_check(connection)
             connection.execute(
                 """
@@ -179,12 +174,11 @@ class TaskRepository:
             # Unexpected legacy shape: leave the database alone rather than
             # risk destroying rows on a schema we do not recognise.
             return
-        migrated = migrated.replace(
-            "CREATE TABLE tasks", "CREATE TABLE tasks_migrated", 1
-        ).replace('CREATE TABLE "tasks"', "CREATE TABLE tasks_migrated", 1)
+        migrated = migrated.replace("CREATE TABLE tasks", "CREATE TABLE tasks_migrated", 1).replace(
+            'CREATE TABLE "tasks"', "CREATE TABLE tasks_migrated", 1
+        )
         columns = [
-            str(item["name"])
-            for item in connection.execute("PRAGMA table_info(tasks)").fetchall()
+            str(item["name"]) for item in connection.execute("PRAGMA table_info(tasks)").fetchall()
         ]
         column_list = ", ".join(f'"{name}"' for name in columns)
         connection.execute("PRAGMA foreign_keys = OFF")
@@ -192,8 +186,7 @@ class TaskRepository:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(migrated)
             connection.execute(
-                f"INSERT INTO tasks_migrated ({column_list}) "
-                f"SELECT {column_list} FROM tasks"
+                f"INSERT INTO tasks_migrated ({column_list}) SELECT {column_list} FROM tasks"
             )
             connection.execute("DROP TABLE tasks")
             connection.execute("ALTER TABLE tasks_migrated RENAME TO tasks")
@@ -223,9 +216,7 @@ class TaskRepository:
             "app_name": payload.get("app_name"),
             "device_id": payload.get("device_id"),
             "enable_traffic": int(bool(payload.get("enable_traffic"))),
-            "enable_ui_stimulation": int(
-                bool(payload.get("enable_ui_stimulation"))
-            ),
+            "enable_ui_stimulation": int(bool(payload.get("enable_ui_stimulation"))),
             "request_json": json.dumps(
                 payload.get("request_payload") or {},
                 ensure_ascii=False,

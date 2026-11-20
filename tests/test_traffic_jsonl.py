@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 from app.analyzers.traffic.mitm_addon import SafeTrafficAddon
-from app.tools.traffic_events import (
+from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
     TrafficJSONLWriter,
     build_http_request_record,
@@ -20,7 +20,7 @@ def _writer_with_ready(path: Path) -> TrafficJSONLWriter:
         event="mitm_ready",
         run_id="run-a",
         session_id="session-a",
-        timestamp_utc=datetime(2026, 7, 24, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 7, 24, tzinfo=UTC),
     )
     return writer
 
@@ -35,12 +35,9 @@ def test_structured_record_drops_query_values_headers_and_bodies(
         flow_id="flow-1",
         run_id="run-a",
         session_id="session-a",
-        timestamp_utc=datetime(2026, 7, 24, 23, 59, 59, tzinfo=timezone.utc),
+        timestamp_utc=datetime(2026, 7, 24, 23, 59, 59, tzinfo=UTC),
         method="POST",
-        url=(
-            "https://API.Example.COM./v1/collect"
-            f"?token={secret_query}&empty=&page=1"
-        ),
+        url=(f"https://API.Example.COM./v1/collect?token={secret_query}&empty=&page=1"),
         status_code=204,
         request_size=len(secret_body),
         response_size=0,
@@ -94,10 +91,7 @@ def test_encoded_path_identifier_and_tokenish_query_key_are_redacted() -> None:
         session_id="session-a",
         timestamp_utc="2026-07-24T00:00:00.000Z",
         method="GET",
-        url=(
-            f"https://example.com/users/{encoded_identifier}"
-            f"?{tokenish_key}=ignored&page=1"
-        ),
+        url=(f"https://example.com/users/{encoded_identifier}?{tokenish_key}=ignored&page=1"),
     )
     serialized = record.model_dump_json()
 
@@ -243,7 +237,7 @@ def test_addon_emits_ready_and_safe_request_without_mitmproxy(
         run_id="run-a",
         session_id="session-a",
         jsonl_path=path,
-        utc_now=lambda: datetime(2026, 7, 24, tzinfo=timezone.utc),
+        utc_now=lambda: datetime(2026, 7, 24, tzinfo=UTC),
     )
     addon.running()
 
@@ -295,7 +289,7 @@ def test_addon_sanitizes_raw_flow_error(tmp_path: Path) -> None:
         run_id="run-a",
         session_id="session-a",
         jsonl_path=path,
-        utc_now=lambda: datetime(2026, 7, 24, tzinfo=timezone.utc),
+        utc_now=lambda: datetime(2026, 7, 24, tzinfo=UTC),
     )
     addon.running()
     raw_token = "ERROR_TOKEN_582b40"

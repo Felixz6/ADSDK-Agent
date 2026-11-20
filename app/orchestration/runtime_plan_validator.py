@@ -30,7 +30,6 @@ deterministic fallback", "block + cleanup (device left the run's world)", or
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
 
 from app.ai.models import AIPlan
 
@@ -152,9 +151,7 @@ def _capabilities_from_snapshot(
         foreground_package=state.foreground_package,
         frida_server_present=state.frida_server_present,
         frida_server_owned=bool(state.frida_server_owned),
-        native_bridge_detected=any(
-            "Native Bridge" in note for note in snapshot.environment_notes
-        ),
+        native_bridge_detected=any("Native Bridge" in note for note in snapshot.environment_notes),
         http_proxy=state.http_proxy,
     )
 
@@ -191,66 +188,75 @@ def validate_plan_against_runtime_state(
 
     # --- preflight presence (1) ---
     if preflight is None:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_MISSING_PREFLIGHT, json_path="/steps"
-        ))
+        issues.append(RuntimePlanValidationIssue(code=RT_MISSING_PREFLIGHT, json_path="/steps"))
         return RuntimePlanValidationResult(ok=False, issues=issues)
 
     caps = capabilities or _capabilities_from_snapshot(preflight, package_name)
 
     # --- device online (2) ---
     if not caps.device_online:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_DEVICE_OFFLINE, json_path="/steps", fatal=True
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(code=RT_DEVICE_OFFLINE, json_path="/steps", fatal=True)
+        )
 
     # --- device same boot (3) ---
     snap_boot = preflight.initial_state.boot_id
     if snap_boot and caps.boot_id and snap_boot != caps.boot_id:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_DEVICE_REBOOTED, json_path="/steps", fatal=True
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(code=RT_DEVICE_REBOOTED, json_path="/steps", fatal=True)
+        )
 
     # The preflight was captured as read-only; if the device is offline now
     # the run is gone, not merely degraded.
     if caps.device_online is False and preflight.initial_state.online:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_DEVICE_DISCONNECTED, json_path="/steps", fatal=True
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(code=RT_DEVICE_DISCONNECTED, json_path="/steps", fatal=True)
+        )
 
     # --- package installed (4) ---
     has_dynamic = any(step.tool_name in _DEVICE_STATE_TOOLS for step in plan.steps)
     if package_name is not None:
         if caps.package_installed is False:
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_PACKAGE_NOT_INSTALLED, json_path="/steps"
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(code=RT_PACKAGE_NOT_INSTALLED, json_path="/steps")
+            )
 
     # --- target process running, when a dynamic plan touches it (5) ---
     if has_dynamic:
         if not caps.target_pids and not application_launch_allowed:
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_TARGET_PID_NOT_FOUND, json_path="/steps",
-                expected="target_process_running", received_type="no_pid"
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(
+                    code=RT_TARGET_PID_NOT_FOUND,
+                    json_path="/steps",
+                    expected="target_process_running",
+                    received_type="no_pid",
+                )
+            )
 
     # --- foreground is the target (6) (soft: emu focus can lag) ---
-    if has_dynamic and package_name is not None and caps.foreground_package and caps.foreground_package != package_name:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_FOREGROUND_NOT_TARGET, json_path="/steps",
-            tool_name=caps.foreground_package if not caps.foreground_package.startswith("__") else None
-        ))
-
-    # --- frida readiness (7) ---
     if (
         has_dynamic
-        and caps.frida_server_present is False
-        and not application_launch_allowed
+        and package_name is not None
+        and caps.foreground_package
+        and caps.foreground_package != package_name
     ):
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_FRIDA_NOT_READY, json_path="/steps",
-            expected="frida_server_present"
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(
+                code=RT_FOREGROUND_NOT_TARGET,
+                json_path="/steps",
+                tool_name=caps.foreground_package
+                if not caps.foreground_package.startswith("__")
+                else None,
+            )
+        )
+
+    # --- frida readiness (7) ---
+    if has_dynamic and caps.frida_server_present is False and not application_launch_allowed:
+        issues.append(
+            RuntimePlanValidationIssue(
+                code=RT_FRIDA_NOT_READY, json_path="/steps", expected="frida_server_present"
+            )
+        )
 
     # --- frida owned elsewhere (8) ---
     if (
@@ -259,22 +265,18 @@ def validate_plan_against_runtime_state(
         and not caps.frida_server_owned
         and not application_launch_allowed
     ):
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_FRIDA_OWNED_ELSEWHERE, json_path="/steps"
-        ))
+        issues.append(RuntimePlanValidationIssue(code=RT_FRIDA_OWNED_ELSEWHERE, json_path="/steps"))
 
     # --- Native-bridge-as-anti-debug risk (9) (soft, recorded not blocking) ---
     if has_dynamic and caps.native_bridge_detected:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_NATIVE_BRIDGE_RISK, json_path="/steps"
-        ))
+        issues.append(RuntimePlanValidationIssue(code=RT_NATIVE_BRIDGE_RISK, json_path="/steps"))
 
     # --- lease availability (10/11/12) ---
     if has_dynamic or effective_strategy in {"dynamic_only", "full_analysis"}:
         if lease_state is None:
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_LEASE_REQUIRED_BUT_NONE, json_path="/steps"
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(code=RT_LEASE_REQUIRED_BUT_NONE, json_path="/steps")
+            )
         else:
             ls = lease_state.state
             if (
@@ -284,45 +286,55 @@ def validate_plan_against_runtime_state(
             ):
                 # Owner is never persisted to artifacts, so this branch is
                 # information-only — the lease layer gates the actual acquire.
-                issues.append(RuntimePlanValidationIssue(
-                    code=RT_LEASE_HELD_BY_OTHER, json_path="/steps"
-                ))
+                issues.append(
+                    RuntimePlanValidationIssue(code=RT_LEASE_HELD_BY_OTHER, json_path="/steps")
+                )
             elif ls == "stale":
-                issues.append(RuntimePlanValidationIssue(
-                    code=RT_LEASE_STALE_BLOCKED, json_path="/steps"
-                ))
+                issues.append(
+                    RuntimePlanValidationIssue(code=RT_LEASE_STALE_BLOCKED, json_path="/steps")
+                )
 
     # --- consent gate consistency (13/14) ---
     if has_dynamic and require_consent_checkpoint:
         if confirmation is None:
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_CONSENT_GATE_MISMATCH, json_path="/steps",
-                expected="awaiting_consent_action"
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(
+                    code=RT_CONSENT_GATE_MISMATCH,
+                    json_path="/steps",
+                    expected="awaiting_consent_action",
+                )
+            )
         elif confirmation.status == "awaiting":
             # Correct: dynamic plan with a checkpoint awaiting the operator.
             pass
         elif confirmation.status in {"confirmed", "not_found", "skipped"}:
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_CONSENT_ALREADY_RESOLVED, json_path="/steps"
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(code=RT_CONSENT_ALREADY_RESOLVED, json_path="/steps")
+            )
         elif confirmation.status == "cancelled":
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_CONSENT_GATE_MISMATCH, json_path="/steps",
-                expected="awaiting_consent_action", fatal=True
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(
+                    code=RT_CONSENT_GATE_MISMATCH,
+                    json_path="/steps",
+                    expected="awaiting_consent_action",
+                    fatal=True,
+                )
+            )
         elif confirmation.status == "expired":
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_CONSENT_GATE_MISMATCH, json_path="/steps"
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(code=RT_CONSENT_GATE_MISMATCH, json_path="/steps")
+            )
     elif not has_dynamic:
         # A non-dynamic plan must NOT have an awaiting checkpoint dragging
         # the run into a consent wait it will never resolve.
         if confirmation is not None and confirmation.status == "awaiting":
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_CONSENT_GATE_MISMATCH, json_path="/steps",
-                expected="no_awaiting_consent_for_static_plan"
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(
+                    code=RT_CONSENT_GATE_MISMATCH,
+                    json_path="/steps",
+                    expected="no_awaiting_consent_for_static_plan",
+                )
+            )
 
     # --- effective-strategy dynamic gate (15) ---
     effective_has_dynamic = (
@@ -331,69 +343,88 @@ def validate_plan_against_runtime_state(
         and "dynamic_analysis" in confirmed_tools
     )
     if has_dynamic and not effective_has_dynamic:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_DYNAMIC_NOT_ALLOWED_EFFECTIVE, json_path="/steps",
-            expected="allow_dynamic_and_confirmed"
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(
+                code=RT_DYNAMIC_NOT_ALLOWED_EFFECTIVE,
+                json_path="/steps",
+                expected="allow_dynamic_and_confirmed",
+            )
+        )
 
     # --- network capture gate (16) ---
     has_traffic = any(step.tool_name == "traffic_analysis" for step in plan.steps)
     if has_traffic and not allow_network and not has_dynamic:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_NETWORK_NOT_ALLOWED, json_path="/steps",
-            expected="allow_network_or_dynamic_analysis"
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(
+                code=RT_NETWORK_NOT_ALLOWED,
+                json_path="/steps",
+                expected="allow_network_or_dynamic_analysis",
+            )
+        )
     if has_traffic and not has_dynamic and not allow_network:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_TRAFFIC_REQUIRES_DYNAMIC, json_path="/steps"
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(code=RT_TRAFFIC_REQUIRES_DYNAMIC, json_path="/steps")
+        )
 
     # --- requested/effective strategy conflict with steps (17) ---
     if requested_strategy != effective_strategy and not _steps_fit_strategy(
         plan, effective_strategy
     ):
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_SCOPE_DRIFT, json_path="/steps",
-            expected=effective_strategy,
-            received_type=requested_strategy
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(
+                code=RT_SCOPE_DRIFT,
+                json_path="/steps",
+                expected=effective_strategy,
+                received_type=requested_strategy,
+            )
+        )
     if effective_strategy == "static_only" and has_dynamic:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_STATIC_PLAN_TOUCHES_DEVICE, json_path="/steps"
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(code=RT_STATIC_PLAN_TOUCHES_DEVICE, json_path="/steps")
+        )
     if effective_strategy == "report_only" and has_dynamic:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_REPORT_ONLY_WITH_DYNAMIC, json_path="/steps"
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(code=RT_REPORT_ONLY_WITH_DYNAMIC, json_path="/steps")
+        )
     if requested_strategy not in {
-        "static_only", "dynamic_only", "full_analysis", "report_only",
-        "strict", "balanced", "attach_only",
+        "static_only",
+        "dynamic_only",
+        "full_analysis",
+        "report_only",
+        "strict",
+        "balanced",
+        "attach_only",
     }:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_UNKNOWN_RUNTIME_STATE, json_path="/steps"
-        ))
+        issues.append(RuntimePlanValidationIssue(code=RT_UNKNOWN_RUNTIME_STATE, json_path="/steps"))
 
     # --- plan length at runtime (18) (mirrors schema cap, kept distinct so
     # the runtime layer can report it independently of the schema layer) ---
     if len(plan.steps) > max_steps:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_PLAN_TOO_LONG_RUNTIME, json_path="/steps",
-            received_type=str(len(plan.steps))
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(
+                code=RT_PLAN_TOO_LONG_RUNTIME,
+                json_path="/steps",
+                received_type=str(len(plan.steps)),
+            )
+        )
 
     # --- dynamic-tool-only-after-consent ordering (19) ---
     if has_dynamic and confirmation is not None:
         if confirmation.status not in {"awaiting", "confirmed"}:
-            issues.append(RuntimePlanValidationIssue(
-                code=RT_DYNAMIC_TOOL_AFTER_CONSENT, json_path="/steps"
-            ))
+            issues.append(
+                RuntimePlanValidationIssue(code=RT_DYNAMIC_TOOL_AFTER_CONSENT, json_path="/steps")
+            )
 
     # --- strategy/steps fundamental conflict (20) ---
     if effective_strategy != requested_strategy and has_dynamic and not allow_dynamic:
-        issues.append(RuntimePlanValidationIssue(
-            code=RT_STRATEGY_CONFLICT, json_path="/steps",
-            expected=requested_strategy, received_type=effective_strategy
-        ))
+        issues.append(
+            RuntimePlanValidationIssue(
+                code=RT_STRATEGY_CONFLICT,
+                json_path="/steps",
+                expected=requested_strategy,
+                received_type=effective_strategy,
+            )
+        )
 
     advisory_codes = {RT_FOREGROUND_NOT_TARGET, RT_NATIVE_BRIDGE_RISK}
     ok = not any(issue.code not in advisory_codes for issue in issues)
@@ -408,23 +439,39 @@ def _steps_fit_strategy(plan: AIPlan, strategy: str) -> bool:
 
     allowed: dict[str, frozenset[str]] = {
         "static_only": frozenset(
-            {"environment_check", "static_analysis", "privacy_findings",
-             "deterministic_report"}
+            {"environment_check", "static_analysis", "privacy_findings", "deterministic_report"}
         ),
         "dynamic_only": frozenset(
-            {"environment_check", "dynamic_analysis", "traffic_analysis",
-             "evidence_correlation", "privacy_findings", "deterministic_report"}
+            {
+                "environment_check",
+                "dynamic_analysis",
+                "traffic_analysis",
+                "evidence_correlation",
+                "privacy_findings",
+                "deterministic_report",
+            }
         ),
         "full_analysis": frozenset(
-            {"environment_check", "static_analysis", "dynamic_analysis",
-             "traffic_analysis", "evidence_correlation", "privacy_findings",
-             "deterministic_report"}
+            {
+                "environment_check",
+                "static_analysis",
+                "dynamic_analysis",
+                "traffic_analysis",
+                "evidence_correlation",
+                "privacy_findings",
+                "deterministic_report",
+            }
         ),
         "report_only": frozenset({"deterministic_report", "privacy_findings"}),
     }
     # Dynamic policies govern execution mechanics, not analysis routing.
     # Their allowed tool envelope is the full-analysis envelope.
-    bag = allowed.get(strategy, allowed["full_analysis"] if strategy in {"strict", "balanced", "attach_only"} else frozenset())
+    bag = allowed.get(
+        strategy,
+        allowed["full_analysis"]
+        if strategy in {"strict", "balanced", "attach_only"}
+        else frozenset(),
+    )
     return all(step.tool_name in bag for step in plan.steps)
 
 

@@ -24,26 +24,26 @@ import logging
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+import app.config as app_config
+import app.container as container
 import app.main as main_module
+import app.pipelines.task_runner as task_runner
 from app.ai import secret_store as secret_store_module
 from app.ai.provider import OpenAICompatibleProvider
 from app.ai.secret_store import DPAPIError, SecretStore
 from app.ai.settings_service import (
-    AIProviderFactory,
     AISettingsService,
     AISettingsValidationError,
 )
 from app.ai.settings_store import (
     AISettingsStore,
-    LocalSettings,
-    SettingsCorruptionError,
 )
+from app.api import middleware as middleware_module
 from app.repositories import TaskRepository
 
 
@@ -54,7 +54,7 @@ from app.repositories import TaskRepository
 def _rewire(store_dir: Path) -> tuple[Path, Path]:
     settings_path = Path(store_dir) / "ai-settings.json"
     secret_path = Path(store_dir) / "ai-secret.bin"
-    store = main_module.ai_settings_service.store
+    store = container.ai_settings_service.store
     store._path = settings_path  # noqa: SLF001 — tests own the seam
     store.secret_store._path = secret_path  # noqa: SLF001
     return settings_path, secret_path
@@ -68,8 +68,9 @@ def ai_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings_path, secret_path = _rewire(tmp_path)
     # Rebuild a fresh factory+service bound to the freshly re-wired store so
     # provider cache state never bleeds between tests.
-    service = AISettingsService(main_module.ai_settings_service.store)
-    monkeypatch.setattr(main_module, "ai_settings_service", service)
+    service = AISettingsService(container.ai_settings_service.store)
+    monkeypatch.setattr(container, "ai_settings_service", service)
+    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     return service
 
 
@@ -97,9 +98,13 @@ def test_default_no_local_config(ai_store: AISettingsService):
 
 def test_save_deepseek_provider(ai_store: AISettingsService):
     out = ai_store.save_settings(
-        {"enabled": True, "provider": "deepseek",
-         "base_url": "https://api.deepseek.com", "model": "deepseek-chat",
-         "timeout_seconds": 60}
+        {
+            "enabled": True,
+            "provider": "deepseek",
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-chat",
+            "timeout_seconds": 60,
+        }
     )
     assert out["provider"] == "deepseek"
     assert out["model"] == "deepseek-chat"
@@ -107,9 +112,13 @@ def test_save_deepseek_provider(ai_store: AISettingsService):
 
 def test_save_plain_config_without_key(ai_store: AISettingsService):
     out = ai_store.save_settings(
-        {"enabled": True, "provider": "openai_compatible",
-         "base_url": "https://example.com/v1", "model": "m1",
-         "timeout_seconds": 60}
+        {
+            "enabled": True,
+            "provider": "openai_compatible",
+            "base_url": "https://example.com/v1",
+            "model": "m1",
+            "timeout_seconds": 60,
+        }
     )
     assert out["model"] == "m1"
     assert out["enabled"] is True
@@ -210,9 +219,7 @@ def test_local_config_wins_over_default(ai_store: AISettingsService):
     assert payload["field_sources"]["max_tool_calls"] == "local_store"
 
 
-def test_corrupt_settings_degrades_to_defaults(
-    ai_store: AISettingsService, tmp_path: Path
-):
+def test_corrupt_settings_degrades_to_defaults(ai_store: AISettingsService, tmp_path: Path):
     ai_store.store.settings_path.parent.mkdir(parents=True, exist_ok=True)
     ai_store.store.settings_path.write_text("{ not valid json", encoding="utf-8")
     # Should not raise; falls back to defaults.
@@ -240,8 +247,9 @@ def test_atomic_write_no_partial_file(ai_store: AISettingsService, tmp_path: Pat
     parsed = json.loads(final)
     assert parsed["model"] == "m1"
     # No leftover temp files in the config dir.
-    leftovers = [p.name for p in ai_store.store.settings_path.parent.iterdir()
-                 if p.name.startswith(".")]
+    leftovers = [
+        p.name for p in ai_store.store.settings_path.parent.iterdir() if p.name.startswith(".")
+    ]
     assert leftovers == []
 
 
@@ -276,9 +284,7 @@ def test_api_key_not_in_response(client: TestClient, ai_store: AISettingsService
 # ---------------------------------------------------------------------------
 def test_non_loopback_write_rejected(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     # Force the middleware to see a remote host by patching the helper.
-    monkeypatch.setattr(
-        main_module, "_client_is_loopback", lambda host: False
-    )
+    monkeypatch.setattr(middleware_module, "_client_is_loopback", lambda host: False)
     r = client.put("/ai/settings", json={"model": "x"})
     assert r.status_code == 403
     assert r.json()["error_code"] == "ai_settings_remote_client_forbidden"
@@ -286,18 +292,18 @@ def test_non_loopback_write_rejected(client: TestClient, monkeypatch: pytest.Mon
 
 def test_disallowed_origin_rejected(client: TestClient, ai_store: AISettingsService):
     r = client.put(
-        "/ai/settings", json={"model": "x"},
+        "/ai/settings",
+        json={"model": "x"},
         headers={"origin": "http://evil.example"},
     )
     assert r.status_code == 403
     assert r.json()["error_code"] == "ai_settings_origin_forbidden"
 
 
-def test_allowed_localhost_origin_accepted(
-    client: TestClient, ai_store: AISettingsService
-):
+def test_allowed_localhost_origin_accepted(client: TestClient, ai_store: AISettingsService):
     r = client.put(
-        "/ai/settings", json={"model": "ok-model"},
+        "/ai/settings",
+        json={"model": "ok-model"},
         headers={"origin": "http://127.0.0.1:5173"},
     )
     assert r.status_code == 200
@@ -378,8 +384,7 @@ def test_independent_delete_endpoint_removes_key(client: TestClient, ai_store: A
 # ---------------------------------------------------------------------------
 # 27-32: test-connection probe (httpx.MockTransport).
 # ---------------------------------------------------------------------------
-def _mock_transport(models_status: int = 200, chat_status: int = 200,
-                    timeout: bool = False):
+def _mock_transport(models_status: int = 200, chat_status: int = 200, timeout: bool = False):
     def handler(request: httpx.Request) -> httpx.Response:
         if timeout:
             raise httpx.ConnectTimeout("probe-timeout", request=request)
@@ -387,22 +392,30 @@ def _mock_transport(models_status: int = 200, chat_status: int = 200,
         if "/models" in url:
             return httpx.Response(models_status, json={"data": []})
         if "/chat/completions" in url:
-            return httpx.Response(chat_status,
-                                  json={"choices": [{"message": {"content": "ok"}}]})
+            return httpx.Response(chat_status, json={"choices": [{"message": {"content": "ok"}}]})
         return httpx.Response(404)
+
     return httpx.MockTransport(handler)
 
 
 def _provider_with(transport):
     return OpenAICompatibleProvider(
-        base_url="https://example.com/v1", api_key=API_KEY,
-        model="m", transport=transport,
+        base_url="https://example.com/v1",
+        api_key=API_KEY,
+        model="m",
+        transport=transport,
     )
 
 
 def test_test_connection_uses_saved_key(ai_store: AISettingsService):
-    ai_store.save_settings({"base_url": "https://example.com/v1", "model": "m",
-                            "api_key": API_KEY, "timeout_seconds": 10})
+    ai_store.save_settings(
+        {
+            "base_url": "https://example.com/v1",
+            "model": "m",
+            "api_key": API_KEY,
+            "timeout_seconds": 10,
+        }
+    )
     # Monkeypatch the service's test path to use a mock transport: we do this by
     # building the provider manually and asserting the service would reach the
     # same effective key. The service's probe is exercised via the endpoint
@@ -410,11 +423,20 @@ def test_test_connection_uses_saved_key(ai_store: AISettingsService):
     assert ai_store.store.effective_api_key() == API_KEY
 
 
-def test_test_connection_models_success(client: TestClient, ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch):
-    ai_store.save_settings({"base_url": "https://example.com/v1", "model": "m",
-                            "api_key": API_KEY, "timeout_seconds": 10})
+def test_test_connection_models_success(
+    client: TestClient, ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch
+):
+    ai_store.save_settings(
+        {
+            "base_url": "https://example.com/v1",
+            "model": "m",
+            "api_key": API_KEY,
+            "timeout_seconds": 10,
+        }
+    )
     monkeypatch.setattr(
-        OpenAICompatibleProvider, "_make_client",
+        OpenAICompatibleProvider,
+        "_make_client",
         lambda self: httpx.Client(transport=_mock_transport(200), timeout=10),
     )
     r = client.post("/ai/settings/test", json={"timeout_seconds": 10})
@@ -427,10 +449,17 @@ def test_test_connection_models_success(client: TestClient, ai_store: AISettings
 def test_test_connection_models_404_falls_back_to_chat(
     client: TestClient, ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch
 ):
-    ai_store.save_settings({"base_url": "https://example.com/v1", "model": "m",
-                            "api_key": API_KEY, "timeout_seconds": 10})
+    ai_store.save_settings(
+        {
+            "base_url": "https://example.com/v1",
+            "model": "m",
+            "api_key": API_KEY,
+            "timeout_seconds": 10,
+        }
+    )
     monkeypatch.setattr(
-        OpenAICompatibleProvider, "_make_client",
+        OpenAICompatibleProvider,
+        "_make_client",
         lambda self: httpx.Client(transport=_mock_transport(404, 200), timeout=10),
     )
     r = client.post("/ai/settings/test", json={"timeout_seconds": 10})
@@ -443,13 +472,19 @@ def test_test_connection_temp_key_not_saved(
     client: TestClient, ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        OpenAICompatibleProvider, "_make_client",
+        OpenAICompatibleProvider,
+        "_make_client",
         lambda self: httpx.Client(transport=_mock_transport(200), timeout=10),
     )
-    r = client.post("/ai/settings/test", json={
-        "base_url": "https://example.com/v1", "model": "m",
-        "api_key": "sk-temp-not-saved", "timeout_seconds": 10,
-    })
+    r = client.post(
+        "/ai/settings/test",
+        json={
+            "base_url": "https://example.com/v1",
+            "model": "m",
+            "api_key": "sk-temp-not-saved",
+            "timeout_seconds": 10,
+        },
+    )
     assert r.status_code == 200
     assert ai_store.store.has_api_key() is False
     assert ai_store.store.effective_api_key() is None
@@ -459,13 +494,19 @@ def test_test_connection_authentication_failed(
     client: TestClient, ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        OpenAICompatibleProvider, "_make_client",
+        OpenAICompatibleProvider,
+        "_make_client",
         lambda self: httpx.Client(transport=_mock_transport(401), timeout=10),
     )
-    r = client.post("/ai/settings/test", json={
-        "base_url": "https://example.com/v1", "model": "m",
-        "api_key": API_KEY, "timeout_seconds": 10,
-    })
+    r = client.post(
+        "/ai/settings/test",
+        json={
+            "base_url": "https://example.com/v1",
+            "model": "m",
+            "api_key": API_KEY,
+            "timeout_seconds": 10,
+        },
+    )
     assert r.json()["status"] == "authentication_failed"
 
 
@@ -473,13 +514,19 @@ def test_test_connection_timeout(
     client: TestClient, ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        OpenAICompatibleProvider, "_make_client",
+        OpenAICompatibleProvider,
+        "_make_client",
         lambda self: httpx.Client(transport=_mock_transport(timeout=True), timeout=2),
     )
-    r = client.post("/ai/settings/test", json={
-        "base_url": "https://example.com/v1", "model": "m",
-        "api_key": API_KEY, "timeout_seconds": 2,
-    })
+    r = client.post(
+        "/ai/settings/test",
+        json={
+            "base_url": "https://example.com/v1",
+            "model": "m",
+            "api_key": API_KEY,
+            "timeout_seconds": 2,
+        },
+    )
     assert r.json()["status"] == "timeout"
 
 
@@ -487,29 +534,61 @@ def test_test_connection_timeout(
 # 33-35: provider hot reload.
 # ---------------------------------------------------------------------------
 def test_save_hot_reloads_provider_for_new_tasks(ai_store: AISettingsService):
-    ai_store.save_settings({"base_url": "https://old/v1", "model": "old-model",
-                            "api_key": API_KEY, "timeout_seconds": 30})
+    ai_store.save_settings(
+        {
+            "base_url": "https://old/v1",
+            "model": "old-model",
+            "api_key": API_KEY,
+            "timeout_seconds": 30,
+        }
+    )
     old_provider = ai_store.factory.current()
     assert old_provider is not None and old_provider.model == "old-model"
-    ai_store.save_settings({"base_url": "https://new/v1", "model": "new-model",
-                            "api_key": API_KEY, "timeout_seconds": 30})
+    ai_store.save_settings(
+        {
+            "base_url": "https://new/v1",
+            "model": "new-model",
+            "api_key": API_KEY,
+            "timeout_seconds": 30,
+        }
+    )
     new_provider = ai_store.factory.current()
     assert new_provider is not None and new_provider.model == "new-model"
 
 
 def test_running_task_keeps_old_snapshot(ai_store: AISettingsService):
-    ai_store.save_settings({"base_url": "https://old/v1", "model": "old-model",
-                            "api_key": API_KEY, "timeout_seconds": 30})
+    ai_store.save_settings(
+        {
+            "base_url": "https://old/v1",
+            "model": "old-model",
+            "api_key": API_KEY,
+            "timeout_seconds": 30,
+        }
+    )
     snapshot = ai_store.factory.current()
-    ai_store.save_settings({"base_url": "https://new/v1", "model": "new-model",
-                            "api_key": API_KEY, "timeout_seconds": 30})
+    ai_store.save_settings(
+        {
+            "base_url": "https://new/v1",
+            "model": "new-model",
+            "api_key": API_KEY,
+            "timeout_seconds": 30,
+        }
+    )
     # The captured snapshot is a frozen reference; it must still be old.
     assert snapshot is not None and snapshot.model == "old-model"
 
 
-def test_provider_build_failure_keeps_old(ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch):
-    ai_store.save_settings({"base_url": "https://old/v1", "model": "old-model",
-                            "api_key": API_KEY, "timeout_seconds": 30})
+def test_provider_build_failure_keeps_old(
+    ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch
+):
+    ai_store.save_settings(
+        {
+            "base_url": "https://old/v1",
+            "model": "old-model",
+            "api_key": API_KEY,
+            "timeout_seconds": 30,
+        }
+    )
     before = ai_store.factory.current()
 
     def boom(self):  # noqa: ANN001
@@ -523,28 +602,29 @@ def test_provider_build_failure_keeps_old(ai_store: AISettingsService, monkeypat
 # ---------------------------------------------------------------------------
 # 36: AI disabled does not break deterministic tasks.
 # ---------------------------------------------------------------------------
-def test_ai_disabled_does_not_break_static_task(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_ai_disabled_does_not_break_static_task(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("AI_ENABLED", "false")
     repo = TaskRepository(tmp_path / "state" / "tasks.db")
     repo.initialize()
     from app.services import TaskService
+
     service = TaskService(repo, max_workers=1)
     run_dir = tmp_path / "runs" / "r1"
     run_dir.mkdir(parents=True)
     (run_dir / "report.json").write_text(json.dumps({"status": "success"}), "utf-8")
     service.set_runner(
-        lambda _t: {"ok": True, "status": "success",
-                    "report_json": str(run_dir / "report.json")}
+        lambda _t: {"ok": True, "status": "success", "report_json": str(run_dir / "report.json")}
     )
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repo)
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repo)
+    monkeypatch.setattr(task_runner, "task_service", service)
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(tmp_path))
     tc = TestClient(main_module.app)
-    created = tc.post("/tasks", json={"task_type": "static",
-                                     "apk_path": "D:/samples/app.apk"}).json()
+    created = tc.post(
+        "/tasks", json={"task_type": "static", "apk_path": "D:/samples/app.apk"}
+    ).json()
     import time as _time
+
     deadline = _time.monotonic() + 5
     while _time.monotonic() < deadline:
         st = service.get(created["id"]).status
@@ -567,8 +647,8 @@ def test_legacy_env_config_compatible(monkeypatch: pytest.MonkeyPatch, tmp_path:
     # store bound to the live env.
     store = AISettingsStore()
     _rewire(tmp_path)
-    main_module.ai_settings_service.store._env = store._env  # noqa: SLF001
-    payload = main_module.ai_settings_service.get_effective_settings()
+    container.ai_settings_service.store._env = store._env  # noqa: SLF001
+    payload = container.ai_settings_service.get_effective_settings()
     assert payload["base_url"] == "https://legacy/v1"
     assert payload["model"] == "legacy-model"
     assert payload["api_key_source"] == "environment"
@@ -576,16 +656,19 @@ def test_legacy_env_config_compatible(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
 
 # 38: pydantic serialization of the response model.
-def test_pydantic_serializes_ai_settings_response(
-    client: TestClient, ai_store: AISettingsService
-):
+def test_pydantic_serializes_ai_settings_response(client: TestClient, ai_store: AISettingsService):
     ai_store.save_settings({"model": "m1", "api_key": API_KEY})
     r = client.get("/ai/settings")
     # response_model = AISettingsResponse must accept the dict shape.
     assert r.status_code == 200
     body = r.json()
-    assert set(body.keys()) >= {"schema_version", "field_sources", "locked_fields",
-                                 "api_key_configured", "api_key_source"}
+    assert set(body.keys()) >= {
+        "schema_version",
+        "field_sources",
+        "locked_fields",
+        "api_key_configured",
+        "api_key_source",
+    }
     assert isinstance(body["field_sources"], dict)
     assert isinstance(body["locked_fields"], list)
 
@@ -596,14 +679,16 @@ def test_pydantic_serializes_ai_settings_response(
 def test_status_matches_local_effective_settings_without_probe(
     client: TestClient, ai_store: AISettingsService
 ):
-    ai_store.save_settings({
-        "enabled": True,
-        "provider": "openai_compatible",
-        "base_url": "https://example.invalid/v1",
-        "model": "saved-model",
-        "api_key": API_KEY,
-        "allow_dynamic_tools": True,
-    })
+    ai_store.save_settings(
+        {
+            "enabled": True,
+            "provider": "openai_compatible",
+            "base_url": "https://example.invalid/v1",
+            "model": "saved-model",
+            "api_key": API_KEY,
+            "allow_dynamic_tools": True,
+        }
+    )
 
     settings = client.get("/ai/settings").json()
     status = client.get("/ai/status").json()
@@ -620,12 +705,14 @@ def test_status_matches_local_effective_settings_without_probe(
 def test_status_updates_model_and_invalidates_provider_after_key_delete(
     client: TestClient, ai_store: AISettingsService
 ):
-    ai_store.save_settings({
-        "enabled": True,
-        "base_url": "https://example.invalid/v1",
-        "model": "old-model",
-        "api_key": API_KEY,
-    })
+    ai_store.save_settings(
+        {
+            "enabled": True,
+            "base_url": "https://example.invalid/v1",
+            "model": "old-model",
+            "api_key": API_KEY,
+        }
+    )
     first = ai_store.factory.current()
     assert first is not None and first.model == "old-model"
 
@@ -646,19 +733,24 @@ def test_successful_settings_test_does_not_make_status_unconfigured(
     ai_store: AISettingsService,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    ai_store.save_settings({
-        "enabled": True,
-        "base_url": "https://example.invalid/v1",
-        "model": "tested-model",
-        "api_key": API_KEY,
-    })
+    ai_store.save_settings(
+        {
+            "enabled": True,
+            "base_url": "https://example.invalid/v1",
+            "model": "tested-model",
+            "api_key": API_KEY,
+        }
+    )
     monkeypatch.setattr(
         OpenAICompatibleProvider,
         "probe_reachable",
         lambda self, **_kwargs: {
-            "status": "reachable", "provider": "openai_compatible",
-            "model": self.model, "latency_ms": 1,
-            "safe_message": "ok", "models_endpoint_supported": True,
+            "status": "reachable",
+            "provider": "openai_compatible",
+            "model": self.model,
+            "latency_ms": 1,
+            "safe_message": "ok",
+            "models_endpoint_supported": True,
         },
     )
 
@@ -673,12 +765,14 @@ def test_successful_settings_test_does_not_make_status_unconfigured(
 def test_new_ai_task_captures_provider_from_saved_effective_model(
     ai_store: AISettingsService, monkeypatch: pytest.MonkeyPatch
 ):
-    ai_store.save_settings({
-        "enabled": True,
-        "base_url": "https://example.invalid/v1",
-        "model": "new-task-model",
-        "api_key": API_KEY,
-    })
+    ai_store.save_settings(
+        {
+            "enabled": True,
+            "base_url": "https://example.invalid/v1",
+            "model": "new-task-model",
+            "api_key": API_KEY,
+        }
+    )
     captured: dict[str, str] = {}
 
     class StopAfterConstruction(RuntimeError):
@@ -692,12 +786,12 @@ def test_new_ai_task_captures_provider_from_saved_effective_model(
         def __init__(self, **_kwargs):  # noqa: ANN003
             raise StopAfterConstruction()
 
-    monkeypatch.setattr(main_module, "AIOrchestrator", CapturingOrchestrator)
-    monkeypatch.setattr(main_module, "AITaskService", StopTaskService)
-    monkeypatch.setattr(main_module, "report_step", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(task_runner, "AIOrchestrator", CapturingOrchestrator)
+    monkeypatch.setattr(task_runner, "AITaskService", StopTaskService)
+    monkeypatch.setattr(task_runner, "report_step", lambda *_args, **_kwargs: None)
 
     with pytest.raises(StopAfterConstruction):
-        main_module._execute_ai_orchestration(
+        task_runner._execute_ai_orchestration(
             task=SimpleNamespace(id="task-1"),
             payload={"analysis_scope": "static_only", "ai_enabled": True},
             run_dir=None,

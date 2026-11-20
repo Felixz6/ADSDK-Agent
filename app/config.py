@@ -7,18 +7,14 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = str(BASE_DIR / "output")
-TASK_DATABASE_PATH = (
-    os.getenv("TASK_DATABASE_PATH", "").strip()
-    or str(Path(OUTPUT_DIR) / "state" / "adsdk-agent.db")
+TASK_DATABASE_PATH = os.getenv("TASK_DATABASE_PATH", "").strip() or str(
+    Path(OUTPUT_DIR) / "state" / "adsdk-agent.db"
 )
 SAMPLES_DIR = str(BASE_DIR / "samples")
-STATIC_UNPACK_CACHE_DIR = (
-    os.getenv("STATIC_UNPACK_CACHE_DIR", "").strip()
-    or str(Path(OUTPUT_DIR) / "cache" / "static-unpack")
+STATIC_UNPACK_CACHE_DIR = os.getenv("STATIC_UNPACK_CACHE_DIR", "").strip() or str(
+    Path(OUTPUT_DIR) / "cache" / "static-unpack"
 )
 
-# 当前未使用,预留后续 AI 辅助分析扩展。
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 DEFAULT_HOST = os.getenv("HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.getenv("PORT", "8000"))
 
@@ -98,8 +94,7 @@ FRIDA_SERVER_MANAGEMENT_ENABLED = _env_bool(
 )
 FRIDA_SERVER_LOCAL_PATH = os.getenv("FRIDA_SERVER_LOCAL_PATH", "").strip()
 FRIDA_SERVER_REMOTE_PATH = (
-    os.getenv("FRIDA_SERVER_REMOTE_PATH", "").strip()
-    or "/data/local/tmp/frida-server"
+    os.getenv("FRIDA_SERVER_REMOTE_PATH", "").strip() or "/data/local/tmp/frida-server"
 )
 FRIDA_SERVER_START_TIMEOUT_SECONDS = _env_positive_float(
     "FRIDA_SERVER_START_TIMEOUT_SECONDS",
@@ -142,9 +137,7 @@ EVIDENCE_CORRELATION_WINDOW_MS = _env_int_range(
 # point the device proxy at ``10.0.2.2:<port>``. No default is changed for
 # non-emulator deployments unless this env var is set.
 MITM_LISTEN_HOST = os.getenv("MITM_LISTEN_HOST", "127.0.0.1").strip()
-MITM_DEVICE_PROXY_HOST = (
-    os.getenv("MITM_DEVICE_PROXY_HOST", "").strip() or None
-)
+MITM_DEVICE_PROXY_HOST = os.getenv("MITM_DEVICE_PROXY_HOST", "").strip() or None
 
 # Development fallback only. Deployments should set a stable random value in .env.
 REDACTION_HMAC_KEY = os.getenv(
@@ -164,24 +157,18 @@ SCHEMA_VERSION = "1.0"
 # its own redaction; this block only captures raw configurable surface.
 # ---------------------------------------------------------------------------
 AI_ENABLED = _env_bool("AI_ENABLED", default=False)
-AI_PROVIDER = os.getenv("AI_PROVIDER", "openai_compatible").strip() or (
-    "openai_compatible"
-)
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openai_compatible").strip() or ("openai_compatible")
 
 # API key: env var only. Never read a literal value here; never log it.
 AI_API_KEY = os.getenv("AI_API_KEY", "")
-AI_BASE_URL = (
-    os.getenv("AI_BASE_URL", "").strip() or "https://api.deepseek.com"
-)
+AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip() or "https://api.deepseek.com"
 AI_MODEL = os.getenv("AI_MODEL", "").strip() or "deepseek-chat"
 AI_TIMEOUT_SECONDS = _env_int_range("AI_TIMEOUT_SECONDS", 60, 1, 600)
 AI_MAX_ROUNDS = _env_int_range("AI_MAX_ROUNDS", 2, 1, 6)
 AI_MAX_TOOL_CALLS = _env_int_range("AI_MAX_TOOL_CALLS", 6, 1, 20)
 AI_MAX_INPUT_TOKENS = _env_int_range("AI_MAX_INPUT_TOKENS", 6000, 512, 65536)
 AI_MAX_OUTPUT_TOKENS = _env_int_range("AI_MAX_OUTPUT_TOKENS", 1800, 128, 16384)
-AI_MAX_TOOL_RESULT_CHARS = _env_int_range(
-    "AI_MAX_TOOL_RESULT_CHARS", 8000, 256, 65536
-)
+AI_MAX_TOOL_RESULT_CHARS = _env_int_range("AI_MAX_TOOL_RESULT_CHARS", 8000, 256, 65536)
 
 # M6C — DeepSeek runtime compatibility & low-token orchestration.
 #
@@ -203,33 +190,21 @@ AI_THINKING_MODE = os.getenv("AI_THINKING_MODE", "disabled").strip() or "disable
 # ai-report-v1 object truncated at 1000; a full repair must re-emit the whole
 # plan, so the old 300-token repair cap was structurally doomed. 800/1500/800
 # carry the measured outputs with headroom while staying low-token.
-AI_PLANNER_MAX_OUTPUT_TOKENS = _env_int_range(
-    "AI_PLANNER_MAX_OUTPUT_TOKENS", 800, 64, 4000
-)
-AI_REPORT_MAX_OUTPUT_TOKENS = _env_int_range(
-    "AI_REPORT_MAX_OUTPUT_TOKENS", 1500, 128, 8000
-)
-AI_REPAIR_MAX_OUTPUT_TOKENS = _env_int_range(
-    "AI_REPAIR_MAX_OUTPUT_TOKENS", 800, 64, 2000
-)
+AI_PLANNER_MAX_OUTPUT_TOKENS = _env_int_range("AI_PLANNER_MAX_OUTPUT_TOKENS", 800, 64, 4000)
+AI_REPORT_MAX_OUTPUT_TOKENS = _env_int_range("AI_REPORT_MAX_OUTPUT_TOKENS", 1500, 128, 8000)
+AI_REPAIR_MAX_OUTPUT_TOKENS = _env_int_range("AI_REPAIR_MAX_OUTPUT_TOKENS", 800, 64, 2000)
 # Retry-with-backoff. At most 1 retry by default (capped at 3). Base delay in
 # ms; actual delay respects the server's Retry-After header up to
 # AI_MAX_RETRY_AFTER_SECONDS, then falls back to exponential base-delay jitter
 # derived deterministically from the attempt (no real randomness so tests are
 # reproducible).
 AI_REQUEST_RETRIES = _env_int_range("AI_REQUEST_RETRIES", 1, 0, 3)
-AI_RETRY_BASE_DELAY_MS = _env_int_range(
-    "AI_RETRY_BASE_DELAY_MS", 200, 0, 5000
-)
-AI_MAX_RETRY_AFTER_SECONDS = _env_int_range(
-    "AI_MAX_RETRY_AFTER_SECONDS", 30, 1, 300
-)
+AI_RETRY_BASE_DELAY_MS = _env_int_range("AI_RETRY_BASE_DELAY_MS", 200, 0, 5000)
+AI_MAX_RETRY_AFTER_SECONDS = _env_int_range("AI_MAX_RETRY_AFTER_SECONDS", 30, 1, 300)
 # When True, store a short sanitized excerpt of the model response in the
 # reasoning audit trail. When False (default) no model response text is kept on
 # disk beyond the validated report artifact. Disabled by default per spec.
-AI_STORE_RESPONSE_EXCERPTS = _env_bool(
-    "AI_STORE_RESPONSE_EXCERPTS", default=False
-)
+AI_STORE_RESPONSE_EXCERPTS = _env_bool("AI_STORE_RESPONSE_EXCERPTS", default=False)
 AI_CACHE_ENABLED = _env_bool("AI_CACHE_ENABLED", default=True)
 AI_CACHE_TTL_SECONDS = _env_int_range("AI_CACHE_TTL_SECONDS", 86400, 60, 604800)
 AI_REPORT_LANGUAGE = os.getenv("AI_REPORT_LANGUAGE", "zh-CN").strip() or "zh-CN"
@@ -239,22 +214,43 @@ AI_ALLOW_DYNAMIC_TOOLS = _env_bool("AI_ALLOW_DYNAMIC_TOOLS", default=False)
 # Tagged version of the system prompt / tool definitions. Bump it when the
 # prompt or tool schemas change; it is part of the cache key so cached answers
 # are not reused against a different prompt surface.
-AI_PROMPT_VERSION = os.getenv("AI_PROMPT_VERSION", "ai-plan-v1.1").strip() or (
-    "ai-plan-v1.1"
-)
+AI_PROMPT_VERSION = os.getenv("AI_PROMPT_VERSION", "ai-plan-v1.1").strip() or ("ai-plan-v1.1")
+
+
+def _env_int_with_alias(
+    primary_key: str,
+    alias_key: str,
+    default: int,
+    min_val: int,
+    max_val: int,
+) -> int:
+    val_str = os.getenv(primary_key)
+    if val_str is None or not val_str.strip():
+        val_str = os.getenv(alias_key)
+    if val_str is None or not val_str.strip():
+        return default
+    try:
+        val = int(val_str.strip())
+        return max(min_val, min(max_val, val))
+    except (ValueError, TypeError):
+        return default
+
 
 # ---------------------------------------------------------------------------
-# M7A — full-analysis orchestration (device lease + consent checkpoint).
+# Full-analysis orchestration (device lease + consent checkpoint).
 # ---------------------------------------------------------------------------
 # How long a device lease may go without a heartbeat before another run may
 # reclaim it. A lease whose holder is still alive is never stolen regardless of
 # this value; the window only bounds recovery after a crash.
-M7A_LEASE_STALE_SECONDS = _env_int_range(
-    "M7A_LEASE_STALE_SECONDS", 600, 30, 86400
+DEVICE_LEASE_STALE_SECONDS = _env_int_with_alias(
+    "DEVICE_LEASE_STALE_SECONDS", "M7A_LEASE_STALE_SECONDS", 600, 30, 86400
 )
+M7A_LEASE_STALE_SECONDS = DEVICE_LEASE_STALE_SECONDS
+
 # Upper bound on how long the orchestrator waits for the operator to resolve a
 # consent checkpoint. Reaching it NEVER auto-confirms consent — the wait exits
 # so cleanup can run and the run is recorded as partial.
-M7A_CONSENT_WAIT_SECONDS = _env_int_range(
-    "M7A_CONSENT_WAIT_SECONDS", 900, 30, 86400
+CONSENT_CHECKPOINT_WAIT_SECONDS = _env_int_with_alias(
+    "CONSENT_CHECKPOINT_WAIT_SECONDS", "M7A_CONSENT_WAIT_SECONDS", 900, 30, 86400
 )
+M7A_CONSENT_WAIT_SECONDS = CONSENT_CHECKPOINT_WAIT_SECONDS

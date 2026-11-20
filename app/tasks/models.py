@@ -4,13 +4,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 TaskType = Literal["static", "dynamic", "comparison", "ai_orchestrated"]
 TaskStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 TaskStepStatus = Literal["success", "partial", "failed", "skipped", "running"]
-AnalysisScope = Literal[
-    "static_only", "dynamic_only", "full_analysis", "report_only"
-]
+AnalysisScope = Literal["static_only", "dynamic_only", "full_analysis", "report_only"]
 
 
 class TaskCreateRequest(BaseModel):

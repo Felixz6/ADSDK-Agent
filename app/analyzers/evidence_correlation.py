@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import math
-from typing import Any, Literal, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
-
 
 CorrelationStatus = Literal[
     "evaluated",
@@ -147,7 +147,7 @@ def _utc_ms(value: datetime | None) -> float | None:
         return None
     if value.tzinfo is None:
         return None
-    return value.astimezone(timezone.utc).timestamp() * 1000.0
+    return value.astimezone(UTC).timestamp() * 1000.0
 
 
 def _consent_compatible(left: ConsentState, right: ConsentState) -> bool:
@@ -174,8 +174,7 @@ def calculate_confidence(
     """Apply the fixed correlation-v1 confidence thresholds."""
 
     same_known_consent = (
-        dynamic_consent_state != "unknown"
-        and dynamic_consent_state == network_consent_state
+        dynamic_consent_state != "unknown" and dynamic_consent_state == network_consent_state
     )
     if time_source == "monotonic" and delta_ms <= 500 and same_known_consent:
         return "high"
@@ -208,9 +207,7 @@ def build_correlation_summary(
 
 
 def _stable_id(event_id: str, request_id: str) -> str:
-    digest = hashlib.sha256(
-        f"correlation-v1\0{event_id}\0{request_id}".encode("utf-8")
-    ).hexdigest()
+    digest = hashlib.sha256(f"correlation-v1\0{event_id}\0{request_id}".encode()).hexdigest()
     return f"corr-{digest[:24]}"
 
 
@@ -245,11 +242,7 @@ def _validate_network(
 ) -> NetworkEvidence | None:
     payload = {
         **raw,
-        "request_id": str(
-            raw.get("request_id")
-            or raw.get("flow_id")
-            or f"request-{index + 1}"
-        ),
+        "request_id": str(raw.get("request_id") or raw.get("flow_id") or f"request-{index + 1}"),
     }
     try:
         return NetworkEvidence.model_validate(payload)
@@ -350,9 +343,7 @@ def build_evidence_correlations(
     consent_utc: datetime | None
     if isinstance(consent_timestamp_utc, str):
         try:
-            consent_utc = datetime.fromisoformat(
-                consent_timestamp_utc.replace("Z", "+00:00")
-            )
+            consent_utc = datetime.fromisoformat(consent_timestamp_utc.replace("Z", "+00:00"))
         except ValueError:
             consent_utc = None
     else:
@@ -361,14 +352,12 @@ def build_evidence_correlations(
     events = [
         model
         for index, raw in enumerate(dynamic_events)
-        if isinstance(raw, Mapping)
-        and (model := _validate_dynamic(raw, index)) is not None
+        if isinstance(raw, Mapping) and (model := _validate_dynamic(raw, index)) is not None
     ]
     requests = [
         model
         for index, raw in enumerate(network_requests)
-        if isinstance(raw, Mapping)
-        and (model := _validate_network(raw, index)) is not None
+        if isinstance(raw, Mapping) and (model := _validate_network(raw, index)) is not None
     ]
     comparable_time_seen = False
     items: list[CorrelationItem] = []
@@ -405,20 +394,14 @@ def build_evidence_correlations(
             reasons = [
                 "monotonic_near" if time_source == "monotonic" else "utc_time_near",
             ]
-            if (
-                event_consent != "unknown"
-                and event_consent == request_consent
-            ):
+            if event_consent != "unknown" and event_consent == request_consent:
                 reasons.append("same_consent_state")
             if "unknown" in {event_consent, request_consent}:
                 reasons.append("unknown_consent_state")
             reasons.append("time_only_correlation")
             if time_source == "utc":
                 reasons.append("clock_unreliable")
-            summary = (
-                f"时间差 {delta} ms，时间上接近，可能相关；"
-                "该结果不表示事件触发了网络请求"
-            )
+            summary = f"时间差 {delta} ms，时间上接近，可能相关；该结果不表示事件触发了网络请求"
             item = CorrelationItem(
                 correlation_id=_stable_id(event.event_id, request.request_id),
                 dynamic_event_id=event.event_id,
@@ -439,9 +422,7 @@ def build_evidence_correlations(
         candidates.sort(key=lambda value: (value[0], value[1]))
         items.extend(
             item
-            for _delta, _request_id, item in candidates[
-                : selected_config.max_candidates_per_event
-            ]
+            for _delta, _request_id, item in candidates[: selected_config.max_candidates_per_event]
         )
 
     if not comparable_time_seen:

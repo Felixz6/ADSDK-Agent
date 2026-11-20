@@ -1,6 +1,6 @@
 import json
 
-from app.tools.timeline_rules import evaluate_timeline_rules
+from app.orchestration.timeline_rules import evaluate_timeline_rules
 
 
 def test_timeline_rules_pre_consent_and_high_frequency(tmp_path):
@@ -64,15 +64,6 @@ def test_timeline_rules_without_consent_time(tmp_path):
     )
 
     assert findings["summary"]["pre_consent_sensitive_access_strict"] == "not_evaluated"
-    assert (
-        findings["summary"]["pre_consent_high_frequency_sensitive_access"]
-        == "not_evaluated"
-    )
-    assert (
-        findings["evaluation_summary"]["pre_consent_sensitive_access_strict"]
-        == "not_evaluated"
-    )
-    assert {
-        rule["status"]
-        for rule in findings["rules"]
-    } == {"not_evaluated"}
+    assert findings["summary"]["pre_consent_high_frequency_sensitive_access"] == "not_evaluated"
+    assert findings["evaluation_summary"]["pre_consent_sensitive_access_strict"] == "not_evaluated"
+    assert {rule["status"] for rule in findings["rules"]} == {"not_evaluated"}

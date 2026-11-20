@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
-from typing import Iterable
 import zipfile
-
+from collections.abc import Iterable
+from pathlib import Path
 
 PathInput = str | os.PathLike[str]
 

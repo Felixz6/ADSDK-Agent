@@ -149,10 +149,7 @@ def compare_preflight(
 
     # --- package installed (a uninstall between preflight and state change
     # means the dynamic leg has nothing to attach to) ---
-    if (
-        orig.package_installed is True
-        and now.package_installed is False
-    ):
+    if orig.package_installed is True and now.package_installed is False:
         res.changes.append(CHANGE_PACKAGE_UNINSTALLED)
         res.preflight_changed = True
 

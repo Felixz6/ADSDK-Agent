@@ -15,6 +15,8 @@ repair / deterministic fallback path.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -25,9 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # ---------------------------------------------------------------------------
 AI_PLAN_SCHEMA_VERSION: Literal["ai-plan-v1"] = "ai-plan-v1"
 AI_REPORT_SCHEMA_VERSION: Literal["ai-report-v1"] = "ai-report-v1"
-EVIDENCE_DIGEST_SCHEMA_VERSION: Literal["evidence-digest-v1"] = (
-    "evidence-digest-v1"
-)
+EVIDENCE_DIGEST_SCHEMA_VERSION: Literal["evidence-digest-v1"] = "evidence-digest-v1"
 # M6C — runtime diagnostics artifact. Records observable runtime facts about
 # AI execution: per-round token provenance, error classification, latency, cache
 # status, retry counts. Contains NO API key, NO full prompt, NO full model
@@ -41,9 +41,7 @@ AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION: Literal["ai-runtime-diagnostics-v1"] = (
 # Secret-free: never the original prompt, model response, reasoning_content,
 # argument values, or API key. Stored next to ai-plan.json as
 # ai-plan-validation-v2.
-AI_PLAN_VALIDATION_SCHEMA_VERSION: Literal["ai-plan-validation-v2"] = (
-    "ai-plan-validation-v2"
-)
+AI_PLAN_VALIDATION_SCHEMA_VERSION: Literal["ai-plan-validation-v2"] = "ai-plan-validation-v2"
 
 
 def ai_plan_schema_version() -> str:
@@ -171,9 +169,7 @@ class ToolCompactResult(BaseModel):
 # ---------------------------------------------------------------------------
 # ai-plan-v1
 # ---------------------------------------------------------------------------
-PlanStrategy = Literal[
-    "static_only", "dynamic_only", "full_analysis", "report_only"
-]
+PlanStrategy = Literal["static_only", "dynamic_only", "full_analysis", "report_only"]
 
 
 class PlanStep(BaseModel):
@@ -237,9 +233,7 @@ class EvidenceDigest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["evidence-digest-v1"] = (
-        EVIDENCE_DIGEST_SCHEMA_VERSION
-    )
+    schema_version: Literal["evidence-digest-v1"] = EVIDENCE_DIGEST_SCHEMA_VERSION
     task: dict[str, Any] = Field(default_factory=dict)
     environment: dict[str, Any] = Field(default_factory=dict)
     static_summary: dict[str, Any] = Field(default_factory=dict)
@@ -247,9 +241,7 @@ class EvidenceDigest(BaseModel):
     network_summary: dict[str, Any] = Field(default_factory=dict)
     correlation_summary: dict[str, Any] = Field(default_factory=dict)
     privacy_findings_summary: dict[str, Any] = Field(default_factory=dict)
-    top_findings: list[EvidenceDigestFinding] = Field(
-        default_factory=list, max_length=10
-    )
+    top_findings: list[EvidenceDigestFinding] = Field(default_factory=list, max_length=10)
     evidence_gaps: list[str] = Field(default_factory=list)
     artifact_refs: list[EvidenceDigestArtifactRef] = Field(default_factory=list)
     digest_hash: str = Field(default="")
@@ -291,9 +283,7 @@ def _collect_evidence_ids(node: Any) -> set[str]:
 # ---------------------------------------------------------------------------
 # ai-report-v1
 # ---------------------------------------------------------------------------
-AISynthesisStatus = Literal[
-    "completed", "partial", "failed", "budget_exhausted", "disabled"
-]
+AISynthesisStatus = Literal["completed", "partial", "failed", "budget_exhausted", "disabled"]
 
 # Section 十六 — provenance tag recorded on every persisted AI report so the
 # acceptance metrics can distinguish a report the model actually authored and
@@ -332,9 +322,7 @@ class AIReport(BaseModel):
     # path that forgot to stamp it.
     report_source: AIReportSource = "deterministic_fallback"
     executive_summary: str = Field(default="", max_length=2400)
-    key_findings: list[AIKeyFinding] = Field(
-        default_factory=list, max_length=10
-    )
+    key_findings: list[AIKeyFinding] = Field(default_factory=list, max_length=10)
     evidence_gaps: list[str] = Field(default_factory=list)
     risk_priorities: list[str] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
@@ -467,9 +455,7 @@ class AIRuntimeDiagnostic(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["ai-runtime-diagnostics-v1"] = (
-        AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION
-    )
+    schema_version: Literal["ai-runtime-diagnostics-v1"] = AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION
     task_id: str
     model: str = ""
     provider_profile: str = ""
@@ -600,9 +586,7 @@ class PreparedPlan(BaseModel):
 # reasoning_content, never argument values, never an API key. The original body
 # stays in memory only for this turn; only the codes travel out.
 # ---------------------------------------------------------------------------
-AIStrategyValue = Literal[
-    "static_only", "dynamic_only", "full_analysis", "report_only"
-]
+AIStrategyValue = Literal["static_only", "dynamic_only", "full_analysis", "report_only"]
 DynamicStrategyValue = Literal["strict", "balanced", "attach_only"]
 AnalysisScopeValue = AIStrategyValue
 
@@ -647,9 +631,7 @@ class PlanValidationDiagnostics(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["ai-plan-validation-v2"] = (
-        AI_PLAN_VALIDATION_SCHEMA_VERSION
-    )
+    schema_version: Literal["ai-plan-validation-v2"] = AI_PLAN_VALIDATION_SCHEMA_VERSION
     task_id: str = ""
     requested_strategy: AIStrategyValue = "static_only"
     effective_strategy: AIStrategyValue = "static_only"
@@ -664,3 +646,56 @@ class PlanValidationDiagnostics(BaseModel):
     fallback_used: bool = True
     fallback_reason: str | None = None
     diagnostics_hash: str = ""
+
+
+@dataclass(slots=True)
+class AIOrchestrationRequest:
+    """Everything the orchestrator needs for one AI task."""
+
+    objective: str
+    analysis_scope: str = "static_only"
+    analysis_mode: str | None = None
+    dynamic_mode_policy: str = "balanced"
+    task_id: str | None = None
+    allow_dynamic: bool = False
+    allow_network: bool = False
+    confirmed_tools: frozenset[str] = field(default_factory=frozenset)
+    token_budget: int | None = None
+    report_language: str = "zh-CN"
+    run_dir: Path | None = None
+    orchestration_entrypoint: str = ""
+    session_engine: str = ""
+    execution_pipeline_version: str = ""
+
+
+@dataclass(slots=True)
+class AIOrchestrationResult:
+    """The orchestrator's output; never raises into the task pipeline."""
+
+    status: AISynthesisStatus
+    plan: AIPlan
+    digest: EvidenceDigest
+    report: AIReport
+    trace: AIToolTrace
+    usage: AITokenUsage
+    tool_results: list[ToolCompactResult] = field(default_factory=list)
+    error_code: str | None = None
+    unavailable_reason: str | None = None
+    plan_rounds: list[PlanValidationRound] = field(default_factory=list)
+    report_synthesis_status: AISynthesisStatus = "completed"
+    runtime_validation: Any = None
+    diagnostic: AIRuntimeDiagnostic | None = None
+
+    def artifact_payloads(self) -> dict[str, Any]:
+        return {
+            "ai-plan.json": self.plan.model_dump(mode="json"),
+            "evidence-digest.json": self.digest.model_dump(mode="json"),
+            "ai-tool-trace.json": self.trace.model_dump(mode="json"),
+            "ai-report.json": self.report.model_dump(mode="json"),
+        }
+
+    def diagnostic_payload(self) -> dict[str, Any] | None:
+        """The runtime diagnostics artifact, or ``None`` when unavailable."""
+        if self.diagnostic is None:
+            return None
+        return self.diagnostic.model_dump(mode="json")

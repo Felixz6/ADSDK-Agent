@@ -1,11 +1,11 @@
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 
 from app.core.device import DeviceContext
-from app.tools.frida_session import (
+from app.frida.frida_session import (
     FridaSession,
     FridaSessionError,
     FridaSessionState,
@@ -14,7 +14,7 @@ from app.tools.frida_session import (
 
 class FakeClock:
     def __init__(self) -> None:
-        self.wall = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.wall = datetime(2026, 1, 1, tzinfo=UTC)
         self.monotonic_value = 10.0
 
     def utc_now(self) -> datetime:
@@ -339,9 +339,7 @@ def test_collection_and_consent_controls_share_device_monotonic_stream(tmp_path)
 
     events_json = tmp_path / "events.json"
     session.write_events_json(events_json)
-    assert '"consent_state": "pre_consent"' in events_json.read_text(
-        encoding="utf-8"
-    )
+    assert '"consent_state": "pre_consent"' in events_json.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -354,12 +352,8 @@ def test_collection_and_consent_controls_share_device_monotonic_stream(tmp_path)
 def test_start_failure_maps_to_specific_error(tmp_path, failure_kind, expected_code):
     session, _script, _calls = _make_session(
         tmp_path,
-        spawn_error=RuntimeError("opaque spawn diagnostic")
-        if failure_kind == "spawn"
-        else None,
-        load_error=RuntimeError("opaque load diagnostic")
-        if failure_kind == "load"
-        else None,
+        spawn_error=RuntimeError("opaque spawn diagnostic") if failure_kind == "spawn" else None,
+        load_error=RuntimeError("opaque load diagnostic") if failure_kind == "load" else None,
     )
 
     with pytest.raises(FridaSessionError) as captured:

@@ -28,8 +28,9 @@ without real wall-clock waits.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
-from typing import Callable, Literal
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
 
 LeaseState = Literal["held", "stale", "free"]
 
@@ -137,9 +138,7 @@ class LeaseRegistry:
         deadline = self._clock() + wait_timeout if wait else self._clock()
         while True:
             with self._lock:
-                lease = self._leases.setdefault(
-                    device_key, DeviceLease(device_key=device_key)
-                )
+                lease = self._leases.setdefault(device_key, DeviceLease(device_key=device_key))
                 now = self._clock()
                 if lease.owner_run_id is None:
                     lease.owner_run_id = run_id
@@ -149,10 +148,7 @@ class LeaseRegistry:
                     lease.alive = True
                     return lease
                 # Already held — decide stale vs busy.
-                holder_alive = (
-                    lease.alive
-                    and self._alive(lease.owner_task_id or "")
-                )
+                holder_alive = lease.alive and self._alive(lease.owner_task_id or "")
                 heartbeat_stale = (
                     lease.last_heartbeat_at is not None
                     and (now - lease.last_heartbeat_at) > self._stale_after

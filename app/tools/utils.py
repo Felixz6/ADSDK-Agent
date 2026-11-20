@@ -2,10 +2,9 @@ import os
 import shutil
 import signal
 import subprocess
-from datetime import datetime, timezone
-from typing import List, Optional
 
 from app.config import ADB_TIMEOUT
+from app.core.clock import utc_now_iso
 
 
 def ensure_dir(path: str):
@@ -13,12 +12,12 @@ def ensure_dir(path: str):
 
 
 def now_iso() -> str:
-    """Current UTC time as ISO-8601 with a trailing Z (e.g. 2026-03-14T10:00:00Z).
+    """Current UTC time as ISO-8601 with a trailing ``Z``.
 
-    Single source of truth for timestamps written into hook.log; matches the
-    ISO_TS_PATTERN consumed by hook_parser.
+    Delegates to the central clock while retaining the historical
+    auto-precision format used by hook.log.
     """
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return utc_now_iso(timespec="auto")
 
 
 def command_exists(cmd: str) -> bool:
@@ -26,7 +25,7 @@ def command_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
-def _resolve_spawn_argv(cmd: List[str]) -> List[str]:
+def _resolve_spawn_argv(cmd: list[str]) -> list[str]:
     """Build the argv actually passed to ``subprocess`` while keeping the
     caller-visible ``cmd`` record identical to what was requested.
 
@@ -64,8 +63,8 @@ def _resolve_spawn_argv(cmd: List[str]) -> List[str]:
 
 
 def run_cmd(
-    cmd: List[str],
-    cwd: Optional[str] = None,
+    cmd: list[str],
+    cwd: str | None = None,
     timeout: int = ADB_TIMEOUT,
 ) -> dict:
     """Run a subprocess with a hard timeout.

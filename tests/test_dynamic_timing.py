@@ -1,8 +1,8 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from app.tools.hook_parser import parse_hook_to_events_json
-from app.tools.timeline_rules import (
+from app.frida.hook_parser import parse_hook_to_events_json
+from app.orchestration.timeline_rules import (
     DynamicTimeline,
     classify_consent_state,
     evaluate_timeline_rules,
@@ -11,7 +11,7 @@ from app.tools.timeline_rules import (
 
 class FakeClock:
     def __init__(self) -> None:
-        self.wall = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        self.wall = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
         self.monotonic_value = 100.0
 
     def utc_now(self) -> datetime:
@@ -22,9 +22,7 @@ class FakeClock:
 
     def advance(self, seconds: float, *, wall_seconds: float | None = None) -> None:
         self.monotonic_value += seconds
-        self.wall += timedelta(
-            seconds=seconds if wall_seconds is None else wall_seconds
-        )
+        self.wall += timedelta(seconds=seconds if wall_seconds is None else wall_seconds)
 
 
 def test_collection_and_consent_use_monotonic_baseline_despite_wall_clock_jump():
@@ -145,9 +143,5 @@ def test_legacy_hook_without_reliable_timestamp_is_not_evaluated(tmp_path):
         consent_time="2026-01-01T00:00:10Z",
     )
 
-    assert {
-        rule["status"]
-        for rule in findings["rules"]
-    } == {"not_evaluated"}
+    assert {rule["status"] for rule in findings["rules"]} == {"not_evaluated"}
     assert findings["warnings"]
-

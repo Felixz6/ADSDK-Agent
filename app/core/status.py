@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -61,14 +62,12 @@ class StepResult(BaseModel):
     @field_validator("started_at", "ended_at")
     @classmethod
     def _require_timezone(cls, value: datetime | None) -> datetime | None:
-        if value is not None and (
-            value.tzinfo is None or value.utcoffset() is None
-        ):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise ValueError("step timestamps must include a timezone")
         return value
 
     @model_validator(mode="after")
-    def _validate_timing(self) -> "StepResult":
+    def _validate_timing(self) -> StepResult:
         if (
             self.started_at is not None
             and self.ended_at is not None
@@ -80,9 +79,7 @@ class StepResult(BaseModel):
             and self.started_at is not None
             and self.ended_at is not None
         ):
-            self.duration_seconds = (
-                self.ended_at - self.started_at
-            ).total_seconds()
+            self.duration_seconds = (self.ended_at - self.started_at).total_seconds()
         if self.duration_ms is None and self.duration_seconds is not None:
             self.duration_ms = max(0, int(self.duration_seconds * 1000))
         if not self.outputs and self.output_files:
@@ -120,21 +117,12 @@ def derive_overall_status(
 
     if not normalized:
         return StepStatus.SKIPPED
-    if any(
-        status is StepStatus.FAILED and required
-        for status, required in normalized
-    ):
+    if any(status is StepStatus.FAILED and required for status, required in normalized):
         return StepStatus.FAILED
     if all(status is StepStatus.SKIPPED for status, _ in normalized):
         return StepStatus.SKIPPED
-    if any(
-        status in {StepStatus.FAILED, StepStatus.PARTIAL}
-        for status, _ in normalized
-    ):
+    if any(status in {StepStatus.FAILED, StepStatus.PARTIAL} for status, _ in normalized):
         return StepStatus.PARTIAL
-    if any(
-        status is StepStatus.SKIPPED and required
-        for status, required in normalized
-    ):
+    if any(status is StepStatus.SKIPPED and required for status, required in normalized):
         return StepStatus.PARTIAL
     return StepStatus.SUCCESS

@@ -39,7 +39,12 @@ def build_timeline(report: dict[str, Any]) -> BehaviorTimeline:
     lifecycle_fields = (
         ("session_created", "会话已创建", "session_created_monotonic_ms", "session_created_at"),
         ("hook_ready", "Hook 已就绪", "hook_ready_monotonic_ms", "hook_ready_at"),
-        ("collection_started", "采集已开始", "collection_started_monotonic_ms", "collection_started_at"),
+        (
+            "collection_started",
+            "采集已开始",
+            "collection_started_monotonic_ms",
+            "collection_started_at",
+        ),
         ("app_resumed", "应用已恢复运行", "app_resumed_monotonic_ms", "app_resumed_at"),
         ("consent", "Consent 边界", "consent_monotonic_ms", "consent_at"),
         ("collection_ended", "采集已停止", "collection_ended_monotonic_ms", "collection_ended_at"),

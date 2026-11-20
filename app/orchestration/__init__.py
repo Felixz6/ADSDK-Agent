@@ -26,6 +26,8 @@ device, ADB, Frida, mitmproxy, or DeepSeek connection.
 
 from __future__ import annotations
 
+from app.ai.models import AIPlan
+
 from .cleanup_manager import CleanupManager, CleanupOutcome, ResourceOwnershipRegistry
 from .consent_checkpoint import (
     ConsentCheckpointRequest,
@@ -39,7 +41,6 @@ from .device_session import (
     DeviceState,
     SnapshotProbe,
 )
-from app.ai.models import AIPlan
 from .full_analysis_session import (
     FullAnalysisAcceptance,
     FullAnalysisSession,

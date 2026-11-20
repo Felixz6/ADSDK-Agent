@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 
 from app.core.device import DeviceContext
-from app.tools import mitm_session as mitm_session_module
-from app.tools.mitm_session import (
+from app.traffic import mitm_session as mitm_session_module
+from app.traffic.mitm_session import (
     MitmSession,
     MitmSessionState,
     PortAllocationError,
@@ -111,7 +111,8 @@ def _session(
         run_id=run_id,
         device=DeviceContext("emulator-5554"),
         traffic_dir=tmp_path / run_id / "traffic",
-        port_pool=port_pool or PortPool(
+        port_pool=port_pool
+        or PortPool(
             [18080, 18081],
             availability_probe=lambda _host, _port: True,
         ),

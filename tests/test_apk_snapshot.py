@@ -3,18 +3,18 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import zipfile
 from pathlib import Path
 from typing import BinaryIO
-import zipfile
 
 import pytest
 
-from app.core import apk_snapshot as snapshot_module
+import app.config as app_config
+import app.pipelines.common as common_module
+from app.core import apk_snapshot as snapshot_module, apk_unpack
 from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
 from app.core.device import DeviceContext
-from app import main as main_module
-from app.tools import adb_runner, apk_unpack
-from app.tools import utils as tools_utils
+from app.tools import adb_runner, utils as tools_utils
 
 
 def _sha256(content: bytes) -> str:
@@ -24,11 +24,7 @@ def _sha256(content: bytes) -> str:
 def _temporary_files(input_dir: Path) -> list[Path]:
     if not input_dir.exists():
         return []
-    return [
-        item
-        for item in input_dir.iterdir()
-        if item.name != "app.apk"
-    ]
+    return [item for item in input_dir.iterdir() if item.name != "app.apk"]
 
 
 def test_snapshot_streams_to_fixed_run_path_and_returns_safe_report_metadata(
@@ -110,7 +106,7 @@ def test_snapshot_streams_to_fixed_run_path_and_returns_safe_report_metadata(
 def test_snapshot_supports_chinese_and_spaces_in_source_and_run_paths(
     tmp_path: Path,
 ) -> None:
-    content = "中文 APK 快照".encode("utf-8") * 20
+    content = "中文 APK 快照".encode() * 20
     source = tmp_path / "输入 目录" / "广告 示例.apk"
     source.parent.mkdir()
     source.write_bytes(content)
@@ -341,14 +337,14 @@ def test_prepare_run_rebinds_all_downstream_reads_to_verified_snapshot(
         archive.writestr("classes.dex", b"dex\n035\x00")
     output_root = tmp_path / "output"
 
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(output_root))
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_root))
     monkeypatch.setattr(
-        main_module,
+        app_config,
         "APK_ALLOWED_ROOTS",
         (tmp_path.resolve(),),
     )
 
-    context, steps, failure = main_module._prepare_run(
+    context, steps, failure = common_module._prepare_run(
         str(source),
         device_id=None,
     )
@@ -397,7 +393,9 @@ def test_resolve_spawn_argv_wraps_bat_and_cmd_via_cmd_exe(monkeypatch: pytest.Mo
     assert original_cmd == ["wrapper.cmd", "--flag", "x"]
 
 
-def test_resolve_spawn_argv_does_not_wrap_plain_exe_or_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_spawn_argv_does_not_wrap_plain_exe_or_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A real PE executable (``.exe``) or an unresolved head must pass through
     unchanged so we don't wrongly shim executables that ``CreateProcess`` can
     already launch, and we don't invent a wrapper for missing commands.
@@ -419,7 +417,9 @@ def test_resolve_spawn_argv_does_not_wrap_plain_exe_or_unresolved(monkeypatch: p
     assert tools_utils._resolve_spawn_argv(unresolved) == unresolved
 
 
-def test_resolve_spawn_argv_passes_through_empty_and_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_spawn_argv_passes_through_empty_and_non_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Empty argv and non-Windows platforms must return the input unchanged
     (the wrapper is a Windows-only remediation).
     """

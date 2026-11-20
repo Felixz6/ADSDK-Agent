@@ -1,7 +1,6 @@
 import { Bot, CheckCircle2, Clock, Coins, Database, Layers, ShieldQuestion, XCircle } from 'lucide-react'
 import { GlassCard } from '@/components/common/GlassCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { cn } from '@/utils'
 import type {
   AIErrorObservation,
   AIOrchestrationSection,
@@ -112,7 +111,7 @@ export function AIOrchestrationCard({ section, loading }: Props) {
 
   return (
     <GlassCard padding="md" highlight className="min-w-0 overflow-hidden" data-testid="ai-orchestration-card">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
             <Bot size={16} className="text-[var(--accent-purple)]" /> AI 编排
@@ -122,34 +121,37 @@ export function AIOrchestrationCard({ section, loading }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {usage?.cache_hit && <MetaTag label="命中缓存" />}
+          {usage?.budget_exhausted && <MetaTag label="预算已用尽" warn />}
+          {section.plan?.generated_by === 'default' && <MetaTag label="确定性默认计划" />}
           <StatusBadge tone={statusTone(section.status)} label={STATUS_LABEL[section.status] ?? section.status} />
-          {usage?.cache_hit && <StatusBadge tone="success" label="命中缓存" />}
-          {usage?.budget_exhausted && <StatusBadge tone="warning" label="预算已用尽" />}
-          {section.plan?.generated_by === 'default' && <StatusBadge tone="neutral" label="确定性默认计划" />}
         </div>
       </div>
 
-      <dl className="mt-4 grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric icon={<Layers size={14} />} k="计划步骤" v={String(section.plan?.steps?.length ?? 0)} />
-        <Metric icon={<Database size={14} />} k="已复用工具" v={String(reusedCount)} />
-        <Metric icon={<Clock size={14} />} k="模型调用轮数" v={String(usage?.model_round_count ?? 0)} />
+      <dl className="mt-4 grid min-w-0 grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[var(--hairline)] rounded-[12px] border border-[var(--hairline)] bg-[var(--bg-soft)] overflow-hidden">
+        <Metric icon={<Layers size={13} />} k="计划步骤" v={String(section.plan?.steps?.length ?? 0)} />
+        <Metric icon={<Database size={13} />} k="已复用工具" v={String(reusedCount)} />
+        <Metric icon={<Clock size={13} />} k="模型调用轮数" v={String(usage?.model_round_count ?? 0)} />
         <Metric
-          icon={<Coins size={14} />}
+          icon={<Coins size={13} />}
           k={usage?.usage_is_estimate ? 'Token(估算)' : 'Token(实际)'}
           v={String((usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0) + (usage?.estimated_tokens ?? 0))}
         />
       </dl>
 
       {usage?.usage_is_estimate && (
-        <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">
+        <p className="mt-2 text-xs text-[var(--text-tertiary)]">
           供应商未返回真实 usage，以上为明确标注的估算值，不等同于实际计费 Token 数。
         </p>
       )}
 
       {blocked.length > 0 && (
-        <div className="mt-3 rounded-[10px] border border-[rgba(242,139,155,0.28)] p-3" data-testid="ai-blocked-confirmations">
+        <div
+          className="mt-3 rounded-[10px] border border-[var(--warning-line)] bg-[var(--warning-soft)] p-3"
+          data-testid="ai-blocked-confirmations"
+        >
           <p className="text-xs font-medium text-[var(--warning)]">待确认项（{blocked.length}）</p>
-          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] text-[var(--text-secondary)]">
+          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-[var(--text-secondary)]">
             {blocked.map((step) => (
               <li key={step.step_id}>
                 {TOOL_LABEL[step.tool_name] ?? step.tool_name} · 需显式确认后才会改变设备状态
@@ -161,38 +163,35 @@ export function AIOrchestrationCard({ section, loading }: Props) {
 
       {section.plan?.steps?.length ? (
         <section className="mt-4" aria-label="AI 计划与工具执行">
-          <p className="text-xs font-medium text-[var(--text-primary)]">计划步骤与工具执行</p>
-          <ol className="mt-2 flex flex-col gap-2">
+          <p className="text-xs font-medium text-[var(--text-primary)] mb-2">计划步骤与工具执行</p>
+          <ol className="divide-y divide-[var(--hairline)] border-t border-b border-[var(--hairline)]">
             {section.plan.steps.map((step) => {
               const executed = trace?.steps?.find((item) => item.step_id === step.step_id)
               const status = executed?.status ?? 'not_run'
               return (
-                <li
-                  key={step.step_id}
-                  className="min-w-0 rounded-[10px] border border-[var(--border-soft)] p-2.5 text-xs"
-                >
+                <li key={step.step_id} className="min-w-0 py-2.5 text-xs">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="flex min-w-0 items-center gap-1.5 text-[var(--text-primary)]">
+                    <span className="flex min-w-0 items-center gap-2 text-[var(--text-primary)] font-medium">
                       {status === 'success' ? (
-                        <CheckCircle2 size={13} className="shrink-0 text-[var(--success)]" />
+                        <CheckCircle2 size={14} className="shrink-0 text-[var(--success)]" />
                       ) : status === 'failed' ? (
-                        <XCircle size={13} className="shrink-0 text-[var(--danger)]" />
+                        <XCircle size={14} className="shrink-0 text-[var(--danger)]" />
                       ) : (
-                        <ShieldQuestion size={13} className="shrink-0 text-[var(--text-tertiary)]" />
+                        <ShieldQuestion size={14} className="shrink-0 text-[var(--text-tertiary)]" />
                       )}
                       <span className="truncate">{TOOL_LABEL[step.tool_name] ?? step.tool_name}</span>
                     </span>
-                    <span className="flex shrink-0 items-center gap-1.5">
+                    <span className="flex shrink-0 items-center gap-2">
                       {executed?.reused && (
-                        <span className="rounded-[6px] bg-[var(--success-soft)] px-1.5 py-0.5 text-[10px] text-[var(--success)]">
+                        <span className="rounded-[6px] bg-[var(--success-soft)] px-1.5 py-0.5 text-[11px] text-[var(--success)]">
                           已复用
                         </span>
                       )}
-                      <span className="text-[10px] text-[var(--text-tertiary)]">{TOOL_STATUS_LABEL[status]}</span>
+                      <span className="text-[11px] text-[var(--text-tertiary)]">{TOOL_STATUS_LABEL[status]}</span>
                     </span>
                   </div>
                   {step.reason && (
-                    <p className="mt-1 break-words text-[11px] text-[var(--text-tertiary)]">{step.reason}</p>
+                    <p className="mt-1 pl-6 break-words text-xs text-[var(--text-tertiary)]">{step.reason}</p>
                   )}
                 </li>
               )
@@ -202,7 +201,7 @@ export function AIOrchestrationCard({ section, loading }: Props) {
       ) : null}
 
       {section.plan?.limitations?.length ? (
-        <ul className="mt-3 list-disc space-y-1 pl-4 text-[11px] text-[var(--text-tertiary)]">
+        <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-[var(--text-tertiary)]">
           {section.plan.limitations.map((item) => (
             <li key={item}>{item}</li>
           ))}
@@ -221,6 +220,20 @@ function outcomeTone(outcome: string): 'success' | 'warning' | 'danger' | 'neutr
   return 'warning'
 }
 
+function MetaTag({ label, warn }: { label: string; warn?: boolean }) {
+  return (
+    <span
+      className={
+        warn
+          ? 'rounded-md border border-[var(--warning-line)] bg-[var(--warning-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--warning)]'
+          : 'rounded-md border border-[var(--hairline)] bg-[var(--bg-soft)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]'
+      }
+    >
+      {label}
+    </span>
+  )
+}
+
 /**
  * 运行时诊断块。仅展示可观事实(token 真实/估算来源、每轮来源、分类错误、
  * 延迟/缓存/重试/降级状态、结局)。绝不展示 reasoning_content 内容——仅每轮
@@ -234,56 +247,52 @@ function DiagnosticsBlock({ diag }: { diag: AIRuntimeDiagnostic }) {
     (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) + (usage.estimated_tokens ?? 0)
   return (
     <section
-      className="mt-4 rounded-[10px] border border-[var(--border-soft)] p-3"
+      className="mt-4 rounded-[12px] border border-[var(--hairline)] bg-[var(--bg-soft)] p-3.5"
       aria-label="AI 运行时诊断"
       data-testid="ai-runtime-diagnostics"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-primary)]">
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)]">
           <Clock size={13} className="text-[var(--text-tertiary)]" /> 运行时诊断
         </p>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {diag.cache_enabled && (
+            <MetaTag label={diag.cache_hit ? '缓存命中' : '缓存未命中'} />
+          )}
+          {!diag.enabled && <MetaTag label="AI 未启用" />}
           <StatusBadge
             tone={outcomeTone(diag.outcome)}
             label={`结局: ${OUTCOME_LABEL[diag.outcome] ?? diag.outcome}`}
           />
-          {diag.cache_enabled && (
-            <StatusBadge
-              tone={diag.cache_hit ? 'success' : 'neutral'}
-              label={diag.cache_hit ? '缓存命中' : '缓存未命中'}
-            />
-          )}
-          {!diag.enabled && <StatusBadge tone="neutral" label="AI 未启用" />}
         </div>
       </div>
 
       {diag.model && (
-        <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">
+        <p className="mt-2 font-mono text-[11px] text-[var(--text-tertiary)]">
           模型 {diag.model}
           {diag.provider_profile ? ` · 配置 ${diag.provider_profile}` : ''}
           {diag.thinking_mode ? ` · ${diag.thinking_mode}` : ''}
         </p>
       )}
 
-      <dl className="mt-2 grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
-        <Metric icon={<Layers size={14} />} k="总轮数" v={String(diag.total_rounds)} />
-        <Metric icon={<Clock size={14} />} k="总重试" v={String(diag.total_retries)} />
-        <Metric icon={<Coins size={14} />} k="真实 Token" v={String(realTotal)} />
-        <Metric
-          icon={<Coins size={14} />}
-          k="估算 Token"
-          v={String(estimatedTotal)}
-        />
+      <dl className="mt-2.5 grid min-w-0 grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[var(--hairline)] rounded-[10px] border border-[var(--hairline)] bg-[var(--bg-panel)] overflow-hidden">
+        <Metric icon={<Layers size={13} />} k="总轮数" v={String(diag.total_rounds)} />
+        <Metric icon={<Clock size={13} />} k="总重试" v={String(diag.total_retries)} />
+        <Metric icon={<Coins size={13} />} k="真实 Token" v={String(realTotal)} />
+        <Metric icon={<Coins size={13} />} k="估算 Token" v={String(estimatedTotal)} />
       </dl>
-      <p className="mt-1.5 text-[11px] text-[var(--text-tertiary)]">
+      <p className="mt-2 text-xs text-[var(--text-tertiary)] tabular-nums">
         Token 合计 {aggregateTotal}（来源:
         {USAGE_SOURCE_LABEL[usage.usage_source] ?? usage.usage_source}
         ）。真实与估算分别列示,便于区分实际计费与本地推算。
       </p>
 
-      <div className="mt-3 min-w-0 rounded-[8px] bg-[var(--bg-tertiary)] p-2.5 text-[11px] text-[var(--text-secondary)]" data-testid="m7b-plan-diagnostics">
+      <div
+        className="mt-3 min-w-0 rounded-[10px] border border-[var(--hairline)] bg-[var(--bg-tertiary)] p-3 text-xs text-[var(--text-secondary)]"
+        data-testid="m7b-plan-diagnostics"
+      >
         <p className="font-medium text-[var(--text-primary)]">计划与策略诊断</p>
-        <dl className="mt-1.5 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2">
+        <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
           <DiagnosticValue k="计划来源" v={diag.plan_source} />
           <DiagnosticValue k="首轮校验" v={diag.planning_failed ? '失败' : '通过或未执行'} />
           <DiagnosticValue k="修复" v={`尝试 ${yesNo(diag.repair_attempted)} · 成功 ${yesNo(diag.repair_succeeded)}`} />
@@ -291,18 +300,24 @@ function DiagnosticsBlock({ diag }: { diag: AIRuntimeDiagnostic }) {
           <DiagnosticValue k="校验错误" v={diag.validation_error_code} />
           <DiagnosticValue k="JSON 路径" v={diag.validation_json_path} />
           <DiagnosticValue k="请求/生效策略" v={strategyPair(diag.requested_strategy, diag.effective_strategy)} />
-          <DiagnosticValue k="归一化" v={diag.normalized ? `是${diag.normalization_reason ? ` · ${diag.normalization_reason}` : ''}` : '否'} />
+          <DiagnosticValue
+            k="归一化"
+            v={diag.normalized ? `是${diag.normalization_reason ? ` · ${diag.normalization_reason}` : ''}` : '否'}
+          />
           <DiagnosticValue k="目标运行中" v={yesNo(diag.target_running)} />
           <DiagnosticValue k="预检变化" v={yesNo(diag.preflight_changed)} />
           <DiagnosticValue k="AI 报告来源" v={diag.report_source} />
-          <DiagnosticValue k="证据校验" v={diag.report_source === 'deterministic_fallback' ? '确定性回退' : '已验证'} />
+          <DiagnosticValue
+            k="证据校验"
+            v={diag.report_source === 'deterministic_fallback' ? '确定性回退' : '已验证'}
+          />
         </dl>
       </div>
 
       {usage.rounds?.length ? (
         <div className="mt-3" data-testid="ai-diagnostic-rounds">
-          <p className="text-[11px] font-medium text-[var(--text-secondary)]">每轮来源明细</p>
-          <ul className="mt-1.5 space-y-1">
+          <p className="text-xs font-medium text-[var(--text-secondary)]">每轮来源明细</p>
+          <ul className="mt-1.5 divide-y divide-[var(--hairline)] border-t border-[var(--hairline)]">
             {usage.rounds.map((round) => (
               <RoundRow key={round.round_index} round={round} />
             ))}
@@ -312,10 +327,10 @@ function DiagnosticsBlock({ diag }: { diag: AIRuntimeDiagnostic }) {
 
       {diag.errors?.length ? (
         <div className="mt-3" data-testid="ai-diagnostic-errors">
-          <p className="text-[11px] font-medium text-[var(--warning)]">
+          <p className="text-xs font-medium text-[var(--warning)]">
             分类错误（{diag.errors.length}）
           </p>
-          <ul className="mt-1.5 space-y-1">
+          <ul className="mt-1.5 divide-y divide-[var(--hairline)] border-t border-[var(--hairline)]">
             {diag.errors.map((err, index) => (
               <ErrorRow key={index} err={err} />
             ))}
@@ -324,7 +339,7 @@ function DiagnosticsBlock({ diag }: { diag: AIRuntimeDiagnostic }) {
       ) : null}
 
       {diag.deterministic_fallback && (
-        <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">
+        <p className="mt-2 text-xs text-[var(--text-tertiary)]">
           本次最终降级为确定性模板生成,未由成功模型调用产出该产物。
         </p>
       )}
@@ -343,37 +358,35 @@ function strategyPair(requested?: string, effective?: string): string {
 
 function DiagnosticValue({ k, v }: { k: string; v?: string | null }) {
   return (
-    <div className="flex min-w-0 gap-1">
+    <div className="flex min-w-0 gap-1.5">
       <dt className="shrink-0 text-[var(--text-tertiary)]">{k}:</dt>
-      <dd className="min-w-0 break-words text-[var(--text-primary)]">{v || '—'}</dd>
+      <dd className="min-w-0 break-words font-mono text-[var(--text-primary)]">{v || '—'}</dd>
     </div>
   )
 }
 
 function RoundRow({ round }: { round: AIPerRoundUsage }) {
   return (
-    <li className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-[var(--text-secondary)]">
+    <li className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs text-[var(--text-secondary)]">
       <span>
-        <span className="text-[var(--text-primary)]">
+        <span className="font-medium text-[var(--text-primary)]">
           {ROUND_TYPE_LABEL[round.round_type] ?? round.round_type} #{round.round_index}
         </span>
         {round.retry_count > 0 && (
-          <span className="ml-1 text-[var(--text-tertiary)]">重试 {round.retry_count}</span>
+          <span className="ml-1.5 text-[var(--text-tertiary)] tabular-nums">重试 {round.retry_count}</span>
         )}
       </span>
-      <span className="flex flex-wrap items-center gap-1.5">
+      <span className="flex flex-wrap items-center gap-2 tabular-nums font-mono text-[11px] text-[var(--text-tertiary)]">
         {round.cache_hit && (
-          <span className="rounded-[6px] bg-[var(--success-soft)] px-1.5 py-0.5 text-[10px] text-[var(--success)]">
+          <span className="rounded-[6px] bg-[var(--success-soft)] px-1.5 py-0.5 font-sans text-[11px] text-[var(--success)]">
             命中缓存
           </span>
         )}
-        <span className="text-[10px] text-[var(--text-tertiary)]">
-          {USAGE_SOURCE_LABEL[round.usage_source] ?? round.usage_source}
-        </span>
-        <span className="text-[10px] text-[var(--text-tertiary)]">
+        <span>{USAGE_SOURCE_LABEL[round.usage_source] ?? round.usage_source}</span>
+        <span>
           in/out {round.input_tokens}/{round.output_tokens}
         </span>
-        <span className="text-[10px] text-[var(--text-tertiary)]">{round.latency_ms}ms</span>
+        <span>{round.latency_ms}ms</span>
       </span>
     </li>
   )
@@ -381,21 +394,23 @@ function RoundRow({ round }: { round: AIPerRoundUsage }) {
 
 function ErrorRow({ err }: { err: AIErrorObservation }) {
   return (
-    <li className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-[var(--text-secondary)]">
+    <li className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs text-[var(--text-secondary)]">
       <span>
-        <span className="text-[var(--danger)]">
+        <span className="font-medium text-[var(--danger)]">
           {ERROR_CODE_LABEL[err.code] ?? err.code}
         </span>
         {err.stage && (
-          <span className="ml-1 text-[var(--text-tertiary)]">
+          <span className="ml-1.5 font-mono text-[11px] text-[var(--text-tertiary)]">
             @{ROUND_TYPE_LABEL[err.stage] ?? err.stage}#{err.attempt}
           </span>
         )}
         {err.http_status != null && (
-          <span className="ml-1 text-[var(--text-tertiary)]">HTTP {err.http_status}</span>
+          <span className="ml-1.5 font-mono text-[11px] text-[var(--text-tertiary)]">
+            HTTP {err.http_status}
+          </span>
         )}
       </span>
-      <span className="text-[10px] text-[var(--text-tertiary)]">
+      <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums">
         {err.retryable ? '可重试' : '不可重试'}
         {err.finalized ? ' · 已终结' : ' · 进行中'}
         {err.latency_ms ? ` · ${err.latency_ms}ms` : ''}
@@ -406,12 +421,12 @@ function ErrorRow({ err }: { err: AIErrorObservation }) {
 
 function Metric({ icon, k, v }: { icon: React.ReactNode; k: string; v: string }) {
   return (
-    <div className={cn('min-w-0 rounded-[10px] border border-[var(--border-soft)] p-2.5')}>
-      <dt className="flex items-center gap-1.5 text-[10px] text-[var(--text-tertiary)]">
+    <div className="min-w-0 px-3 py-2.5">
+      <dt className="flex items-center gap-1.5 text-[11px] text-[var(--text-tertiary)]">
         {icon}
         <span className="truncate">{k}</span>
       </dt>
-      <dd className="mt-1 truncate text-sm font-medium text-[var(--text-primary)]" title={v}>
+      <dd className="mt-1 truncate text-base font-semibold tabular-nums text-[var(--text-primary)]" title={v}>
         {v}
       </dd>
     </div>

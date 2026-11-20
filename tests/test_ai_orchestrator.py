@@ -19,7 +19,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+import app.config as app_config
+import app.container as container
 import app.main as main_module
+import app.pipelines.dynamic as dynamic_module
+import app.pipelines.full_analysis as full_analysis_module
+import app.pipelines.task_runner as task_runner
 from app.ai.cache import AIResponseCache
 from app.ai.context_builder import (
     AIContextBuilder,
@@ -44,10 +49,10 @@ from app.ai.provider import (
     OpenAICompatibleProvider,
     ProviderError,
 )
+from app.ai.report_composer import FIXED_DISCLAIMER, AIReportComposer
 from app.ai.secret_store import SecretStore
 from app.ai.settings_service import AISettingsService
 from app.ai.settings_store import AISettingsStore
-from app.ai.report_composer import AIReportComposer, FIXED_DISCLAIMER
 from app.ai.tool_registry import (
     AIToolRegistry,
     InvalidToolArgumentsError,
@@ -77,14 +82,17 @@ def _install_local_ai_settings(
         secret_store=SecretStore(tmp_path / "ai-secret.bin"),
     )
     service = AISettingsService(store)
-    service.save_settings({
-        "enabled": True,
-        "provider": "openai_compatible",
-        "base_url": "https://example.invalid/v1",
-        "model": model,
-        "api_key": "sk-test-status-only",
-    })
-    monkeypatch.setattr(main_module, "ai_settings_service", service)
+    service.save_settings(
+        {
+            "enabled": True,
+            "provider": "openai_compatible",
+            "base_url": "https://example.invalid/v1",
+            "model": model,
+            "api_key": "sk-test-status-only",
+        }
+    )
+    monkeypatch.setattr(container, "ai_settings_service", service)
+    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     return service
 
 
@@ -101,7 +109,10 @@ def _digest_with_findings(**overrides: Any) -> EvidenceDigest:
         "task": {"task_id": "t1", "objective": "o"},
         "static_summary": {"sdk_count": 2, "permission_count": 5, "package_name": "com.example"},
         "dynamic_summary": {"event_count": 3, "evidence_available": True},
-        "network_summary": {"total_requests": 4, "top_hosts": [{"host": "api.example.com", "count": 4}]},
+        "network_summary": {
+            "total_requests": 4,
+            "top_hosts": [{"host": "api.example.com", "count": 4}],
+        },
         "correlation_summary": {"status": "evaluated", "correlated_pair_count": 1},
         "privacy_findings_summary": {"status": "evaluated", "finding_count": 1},
         "top_findings": [
@@ -237,9 +248,7 @@ def test_max_tool_calls_limit_trims_plan_by_priority():
 def test_token_budget_stops_model_and_marks_budget_exhausted():
     provider = MockAIProvider()
     orch = _orchestrator(provider)
-    result = _run(
-        orch, AIOrchestrationRequest(objective="o", token_budget=1)
-    )
+    result = _run(orch, AIOrchestrationRequest(objective="o", token_budget=1))
 
     assert result.status == "budget_exhausted"
     assert result.usage.budget_exhausted is True
@@ -261,9 +270,7 @@ def test_budget_exhausted_still_produces_deterministic_report():
 # 9-12. Provider failures and schema repair.
 # ---------------------------------------------------------------------------
 def test_provider_timeout_degrades_to_default_plan_and_template():
-    provider = MockAIProvider(
-        error=ProviderError("ai_provider_timeout", "timeout", retryable=True)
-    )
+    provider = MockAIProvider(error=ProviderError("ai_provider_timeout", "timeout", retryable=True))
     result = _run(_orchestrator(provider), AIOrchestrationRequest(objective="o"))
 
     assert result.plan.generated_by == "default"
@@ -377,9 +384,7 @@ def test_unconfirmed_device_tool_is_blocked_and_never_executed():
     orch = _orchestrator(MockAIProvider(plan=plan))
     result = _run(
         orch,
-        AIOrchestrationRequest(
-            objective="o", analysis_scope="full_analysis", allow_dynamic=True
-        ),
+        AIOrchestrationRequest(objective="o", analysis_scope="full_analysis", allow_dynamic=True),
         execute=execute,
     )
 
@@ -469,9 +474,7 @@ def test_corrupt_artifact_triggers_rerun(tmp_path: Path):
 
 def test_corrupt_artifact_summary_is_isolated(tmp_path: Path):
     (tmp_path / "correlations.json").write_text("<<<broken", encoding="utf-8")
-    service = AITaskService(
-        orchestrator=_orchestrator(MockAIProvider()), run_dir=tmp_path
-    )
+    service = AITaskService(orchestrator=_orchestrator(MockAIProvider()), run_dir=tmp_path)
     result = service.execute_tool("artifact_summary", {"artifact_kind": "correlations"})
 
     assert result.status == "failed"
@@ -622,9 +625,7 @@ def test_api_key_never_enters_logs(caplog: pytest.LogCaptureFixture):
     assert secret not in repr(provider)
 
 
-def test_api_key_never_enters_ai_status_response(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_api_key_never_enters_ai_status_response(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     secret = "sk-test-status-only"
     _install_local_ai_settings(monkeypatch, tmp_path)
     client = TestClient(main_module.app)
@@ -854,9 +855,7 @@ def test_deterministic_report_still_generated_when_ai_report_fails():
 
 
 def test_task_completes_when_provider_always_fails():
-    provider = MockAIProvider(
-        error=ProviderError("ai_provider_error", "boom", retryable=False)
-    )
+    provider = MockAIProvider(error=ProviderError("ai_provider_error", "boom", retryable=False))
     result = _run(_orchestrator(provider), AIOrchestrationRequest(objective="o"))
 
     assert result.plan.generated_by == "default"
@@ -946,9 +945,7 @@ def test_no_chain_of_thought_is_persisted(tmp_path: Path):
 
 def test_compact_tool_result_never_contains_full_artifacts(tmp_path: Path):
     _write_report(tmp_path, dynamic_events=[{"api": "x"} for _ in range(500)])
-    service = AITaskService(
-        orchestrator=_orchestrator(MockAIProvider()), run_dir=tmp_path
-    )
+    service = AITaskService(orchestrator=_orchestrator(MockAIProvider()), run_dir=tmp_path)
     result = service.execute_tool("static_analysis", {})
     serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
 
@@ -1061,9 +1058,7 @@ def test_report_only_task_sends_only_the_digest_and_reuses_artifacts(tmp_path: P
         static_runner=lambda: ran.__setitem__("static", ran["static"] + 1) or {},
         dynamic_runner=lambda: ran.__setitem__("dynamic", ran["dynamic"] + 1) or {},
     )
-    result = service.run(
-        AIOrchestrationRequest(objective="仅出报告", analysis_scope="report_only")
-    )
+    result = service.run(AIOrchestrationRequest(objective="仅出报告", analysis_scope="report_only"))
 
     assert ran == {"static": 0, "dynamic": 0}  # no expensive re-run
     assert result.status in {"completed", "partial"}
@@ -1089,9 +1084,7 @@ def test_model_failure_retries_at_most_once_without_looping():
 # ---------------------------------------------------------------------------
 # API surface.
 # ---------------------------------------------------------------------------
-def test_ai_status_endpoint_defaults_to_disabled(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_ai_status_endpoint_defaults_to_disabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     for name in ("AI_ENABLED", "AI_PROVIDER", "AI_BASE_URL", "AI_MODEL", "AI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     store = AISettingsStore(
@@ -1100,7 +1093,8 @@ def test_ai_status_endpoint_defaults_to_disabled(
     )
     service = AISettingsService(store)
     service.save_settings({"enabled": False})
-    monkeypatch.setattr(main_module, "ai_settings_service", service)
+    monkeypatch.setattr(container, "ai_settings_service", service)
+    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     client = TestClient(main_module.app)
     payload = client.get("/ai/status").json()
 
@@ -1149,9 +1143,10 @@ def test_ai_plan_and_report_endpoints_report_availability(
     service.set_runner(
         lambda _task: {"ok": True, "status": "success", "report_json": str(report_path)}
     )
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(tmp_path))
 
     client = TestClient(main_module.app)
     created = client.post(
@@ -1219,9 +1214,7 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
         calls["session"] += 1
         captured["session"] = session
         captured["effects"] = session.effects
-        assert isinstance(
-            session.effects, main_module.ProductionSessionEffects
-        )
+        assert isinstance(session.effects, full_analysis_module.ProductionSessionEffects)
         return SimpleNamespace(
             final_state="completed",
             runtime_validation_error_code=None,
@@ -1240,9 +1233,9 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
         calls["legacy_dynamic"] += 1
         raise AssertionError("legacy direct dynamic path executed")
 
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(
-        main_module,
+        full_analysis_module,
         "resolve_effective_ai_settings",
         lambda _store: {
             "enabled": False,
@@ -1250,11 +1243,12 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
             "report_language": "zh-CN",
         },
     )
-    monkeypatch.setattr(main_module.FullAnalysisSession, "run", run_session)
-    monkeypatch.setattr(main_module, "dynamic_analyze", legacy_dynamic)
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
-    service.set_runner(main_module._run_persisted_task)
+    monkeypatch.setattr(full_analysis_module.FullAnalysisSession, "run", run_session)
+    monkeypatch.setattr(dynamic_module, "dynamic_analyze", legacy_dynamic)
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
+    service.set_runner(task_runner._run_persisted_task)
     client = TestClient(main_module.app)
 
     response = client.post(
@@ -1294,10 +1288,6 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
 
 def test_token_budget_bounds_are_enforced_by_the_request_model():
     with pytest.raises(Exception):
-        TaskCreateRequest(
-            task_type="ai_orchestrated", apk_path="a.apk", token_budget=0
-        )
+        TaskCreateRequest(task_type="ai_orchestrated", apk_path="a.apk", token_budget=0)
     with pytest.raises(Exception):
-        TaskCreateRequest(
-            task_type="ai_orchestrated", apk_path="a.apk", token_budget=10_000_000
-        )
+        TaskCreateRequest(task_type="ai_orchestrated", apk_path="a.apk", token_budget=10_000_000)

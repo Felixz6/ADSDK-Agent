@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
+from typing import Any
 
 from .execution_modes import DynamicModePolicy, ExecutionAttempt, ExecutionMode
 
@@ -11,9 +12,13 @@ from .execution_modes import DynamicModePolicy, ExecutionAttempt, ExecutionMode
 def _utc_text(value: Any) -> str | None:
     if not isinstance(value, datetime):
         return None
-    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace(
-        "+00:00",
-        "Z",
+    return (
+        value.astimezone(UTC)
+        .isoformat(timespec="milliseconds")
+        .replace(
+            "+00:00",
+            "Z",
+        )
     )
 
 
@@ -98,9 +103,7 @@ class PolicyFridaSession:
                 # status/report payload can observe ``launch_timing``.  This
                 # must also hold when ``session.start()`` raises.
                 public_details = dict(launch_details)
-                internal_requested = public_details.pop(
-                    "_launch_requested_datetime", None
-                )
+                internal_requested = public_details.pop("_launch_requested_datetime", None)
                 if isinstance(internal_requested, datetime):
                     launch_requested = internal_requested
                 self.launch_timing.update(public_details)
@@ -144,7 +147,7 @@ class PolicyFridaSession:
             self.attempts[-1].timestamps = dict(self.launch_timing)
         return session
 
-    def start(self) -> "PolicyFridaSession":
+    def start(self) -> PolicyFridaSession:
         last_error: BaseException | None = None
         modes = self._modes()
         for index, mode in enumerate(modes):
@@ -203,9 +206,7 @@ class PolicyFridaSession:
                 getattr(self.active, "error_code", None) or "process_exited"
             )
             attempt.crash = getattr(self.active, "crash", None)
-            attempt.message = (
-                f"{self.selected_mode.value} 在等待 Hook 就绪时结束"
-            )
+            attempt.message = f"{self.selected_mode.value} 在等待 Hook 就绪时结束"
             self.error_code = attempt.reason_code
             self.error_message = str(exc)
             raise
@@ -269,9 +270,7 @@ class PolicyFridaSession:
             None,
         )
         attempt.crash = getattr(self.active, "crash", None)
-        attempt.message = (
-            "spawn_suspended 已成功完成 resume，目标进程在稳定窗口内结束"
-        )
+        attempt.message = "spawn_suspended 已成功完成 resume，目标进程在稳定窗口内结束"
         self.runtime_failure_sessions.append(self.active)
         self.environment_capabilities["spawn_resume_stable"] = False
 
@@ -350,9 +349,7 @@ class PolicyFridaSession:
     @property
     def valid_events(self) -> list[dict[str, Any]]:
         return [
-            item
-            for session in self.sessions
-            for item in list(getattr(session, "valid_events", []))
+            item for session in self.sessions for item in list(getattr(session, "valid_events", []))
         ]
 
     @property
@@ -408,9 +405,7 @@ class PolicyFridaSession:
         status.update(
             {
                 "selected_mode": self.selected_mode.value,
-                "attempts": [
-                    item.model_dump(mode="json") for item in self.attempts
-                ],
+                "attempts": [item.model_dump(mode="json") for item in self.attempts],
                 "fallback_path": list(self.fallback_path),
                 "environment_capabilities": dict(self.environment_capabilities),
                 "launch_timing": dict(self.launch_timing),

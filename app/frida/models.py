@@ -6,7 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 CheckStatus = Literal["pass", "warning", "error", "unknown", "not_configured"]
 OverallStatus = Literal["ready", "degraded", "blocked", "error"]
 RecommendedMode = Literal[
@@ -82,9 +81,7 @@ class FridaDiagnosticsResponse(BaseModel):
     duration_ms: int = Field(ge=0)
     device_ref: str | None = None
     management_enabled: bool = False
-    capabilities: FridaEnvironmentCapabilities = Field(
-        default_factory=FridaEnvironmentCapabilities
-    )
+    capabilities: FridaEnvironmentCapabilities = Field(default_factory=FridaEnvironmentCapabilities)
 
 
 class FridaServerActionRequest(BaseModel):

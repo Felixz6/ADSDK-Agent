@@ -44,29 +44,6 @@ PARSE_MULTIPLE_JSON_OBJECTS: ParseErrorCode = "multiple_json_objects"
 PARSE_INPUT_TOO_LONG: ParseErrorCode = "input_too_long"
 
 
-class PlanParseError(ValueError):
-    """Raised when the model response cannot be reduced to a single JSON object.
-
-    Carries a *stable* ``code`` (one of the ``PARSE_*`` constants) plus an
-    optional bounded location hint (``json_path`` / ``index``). No error
-    message here echoes the offending content — callers must not persist it.
-    """
-
-    __slots__ = ("code", "json_path", "index")
-
-    def __init__(
-        self,
-        code: ParseErrorCode,
-        *,
-        json_path: str | None = None,
-        index: int | None = None,
-    ) -> None:
-        super().__init__(code)
-        self.code = code
-        self.json_path = json_path
-        self.index = index
-
-
 @dataclass(slots=True)
 class ParseOutcome:
     """The result of a parse attempt.
@@ -228,9 +205,7 @@ def parse_plan_response(content: str | None) -> ParseOutcome:
         # happy path; an array/scalar here is a root-type reject.
         return ParseOutcome(
             None,
-            PARSE_JSON_ROOT_NOT_OBJECT
-            if isinstance(content, list | tuple)
-            else PARSE_INVALID_JSON,
+            PARSE_JSON_ROOT_NOT_OBJECT if isinstance(content, list | tuple) else PARSE_INVALID_JSON,
         )
     if isinstance(content, bytes):
         try:
@@ -253,7 +228,6 @@ def parse_plan_response(content: str | None) -> ParseOutcome:
         candidates.append((fenced, 0))
     candidates.append((text, 0))
 
-    last_json_error: ParseErrorCode | None = None
     for candidate, _offset in candidates:
         stripped = candidate.strip()
         if not stripped:
@@ -261,12 +235,9 @@ def parse_plan_response(content: str | None) -> ParseOutcome:
         try:
             parsed = json.loads(stripped)
         except json.JSONDecodeError as exc:
-            # Remember the most informative reason but keep scanning; the next
-            # candidate (whole-string vs fenced) may succeed.
-            last_json_error = PARSE_INVALID_JSON
-            # Suppress unused-variable noise while keeping the location hint
-            # available if we later need it (kept out of diagnostics on
-            # purpose — never echo offending text).
+            # Keep scanning; the next candidate (whole-string vs fenced)
+            # may succeed. The exception location is deliberately not echoed
+            # because it may contain response text.
             _ = exc
             continue
         # A JSON string ("...") whose content is itself JSON-as-text is a valid
@@ -313,6 +284,5 @@ __all__ = [
     "PARSE_INPUT_TOO_LONG",
     "ParseOutcome",
     "ParseErrorCode",
-    "PlanParseError",
     "parse_plan_response",
 ]

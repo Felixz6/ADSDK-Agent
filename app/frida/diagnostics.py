@@ -8,11 +8,13 @@ import platform
 import shutil
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any
 
 from app.core.device import DeviceContext
+from app.core.protocols import CommandRunner
 from app.tools.utils import run_cmd
 
 from .errors import DynamicErrorCode
@@ -20,22 +22,14 @@ from .models import (
     DiagnosticCheck,
     DiagnosticIssue,
     DiagnosticSection,
-    FridaEnvironmentCapabilities,
     FridaDiagnosticsRequest,
     FridaDiagnosticsResponse,
+    FridaEnvironmentCapabilities,
 )
 
 
-class CommandRunner(Protocol):
-    def __call__(
-        self, command: list[str], cwd: str | None = None, timeout: int = 10
-    ) -> dict[str, Any]: ...
-
-
 def _utc_text() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
-        "+00:00", "Z"
-    )
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _major(version: str | None) -> str | None:
@@ -157,9 +151,7 @@ class FridaDiagnosticsService:
                 detected=binding_version,
                 expected="importable project .venv binding",
                 error_code=(
-                    None
-                    if binding_version
-                    else DynamicErrorCode.HOST_FRIDA_VERSION_UNKNOWN.value
+                    None if binding_version else DynamicErrorCode.HOST_FRIDA_VERSION_UNKNOWN.value
                 ),
                 message="Frida Python 组件可导入",
             )
@@ -219,18 +211,14 @@ class FridaDiagnosticsService:
                 continue
             result = self._run([str(path), "--version"], timeout=10)
             version = (
-                str(result.get("stdout") or "").strip()
-                if result.get("returncode") == 0
-                else None
+                str(result.get("stdout") or "").strip() if result.get("returncode") == 0 else None
             )
             versions[name] = version
             checks[name] = self._check(
                 status="pass" if version else "warning",
                 detected={"path": str(path), "version": version},
                 expected="project .venv executable",
-                error_code=(
-                    None if version else DynamicErrorCode.HOST_FRIDA_VERSION_UNKNOWN.value
-                ),
+                error_code=(None if version else DynamicErrorCode.HOST_FRIDA_VERSION_UNKNOWN.value),
                 message=f"{filename} 已检测" if version else f"{filename} 版本读取失败",
                 evidence={
                     "returncode": result.get("returncode"),
@@ -253,7 +241,9 @@ class FridaDiagnosticsService:
                 status="pass" if binding_version and cli_version else "unknown",
                 detected={"binding": binding_version, "cli": cli_version},
                 expected="matching versions",
-                message="主机 Frida 组件版本兼容" if binding_version and cli_version else "主机组件版本尚不完整",
+                message="主机 Frida 组件版本兼容"
+                if binding_version and cli_version
+                else "主机组件版本尚不完整",
             )
         return self._section(checks), binding_version, issues
 
@@ -300,8 +290,16 @@ class FridaDiagnosticsService:
             )
         }
         for name in (
-            "abi", "android", "api_level", "manufacturer", "model", "selinux",
-            "shell_identity", "storage", "device_time", "proxy",
+            "abi",
+            "android",
+            "api_level",
+            "manufacturer",
+            "model",
+            "selinux",
+            "shell_identity",
+            "storage",
+            "device_time",
+            "proxy",
         ):
             result = results[name]
             ok = result.get("returncode") == 0
@@ -348,7 +346,9 @@ class FridaDiagnosticsService:
             "file": device.adb_command("shell", "ls", "-l", path),
             "version": device.adb_command("shell", path, "--version"),
             "process": device.adb_command("shell", "pidof", "frida-server"),
-            "port": device.adb_command("shell", "sh", "-c", "netstat -lnt 2>/dev/null | grep ':27042 '"),
+            "port": device.adb_command(
+                "shell", "sh", "-c", "netstat -lnt 2>/dev/null | grep ':27042 '"
+            ),
             "hash": device.adb_command("shell", "sha256sum", path),
         }
         results = {name: self._run(command, timeout=10) for name, command in commands.items()}
@@ -362,9 +362,7 @@ class FridaDiagnosticsService:
         executable = exists and len(file_text) >= 4 and "x" in file_text[:10]
         device_abi = str(device_results["abi"].get("stdout") or "").strip()
         process_text = str(results["process"].get("stdout") or "").strip()
-        process_running = (
-            results["process"].get("returncode") == 0 and bool(process_text)
-        )
+        process_running = results["process"].get("returncode") == 0 and bool(process_text)
         checks: dict[str, DiagnosticCheck] = {
             "configured_path": self._check(
                 status="pass",
@@ -376,9 +374,7 @@ class FridaDiagnosticsService:
                 status="pass" if exists else "warning",
                 detected={"exists": exists, "executable": executable},
                 expected="regular executable file",
-                error_code=(
-                    None if exists else DynamicErrorCode.FRIDA_SERVER_BINARY_MISSING.value
-                ),
+                error_code=(None if exists else DynamicErrorCode.FRIDA_SERVER_BINARY_MISSING.value),
                 message="设备端服务文件存在" if exists else "设备端服务文件缺失",
                 remediation="配置本地可信文件后，由用户显式发起部署",
                 evidence={
@@ -403,7 +399,9 @@ class FridaDiagnosticsService:
                 expected=binding_version,
                 error_code=(
                     DynamicErrorCode.FRIDA_SERVER_VERSION_MISMATCH.value
-                    if server_version and binding_version and _major(server_version) != _major(binding_version)
+                    if server_version
+                    and binding_version
+                    and _major(server_version) != _major(binding_version)
                     else None
                 ),
                 message="已读取设备端服务版本" if server_version else "设备端服务版本不可读",
@@ -418,13 +416,17 @@ class FridaDiagnosticsService:
                 status="pass" if process_running else "warning",
                 detected=process_text or None,
                 expected="running PID",
-                message="已观察到 frida-server 进程" if process_running else "未观察到 frida-server 进程",
+                message="已观察到 frida-server 进程"
+                if process_running
+                else "未观察到 frida-server 进程",
             ),
             "listen_port": self._check(
                 status="pass" if results["port"].get("returncode") == 0 else "unknown",
                 detected="27042" if results["port"].get("returncode") == 0 else None,
                 expected="27042 listening",
-                message="服务端口正在监听" if results["port"].get("returncode") == 0 else "服务端口监听状态未知",
+                message="服务端口正在监听"
+                if results["port"].get("returncode") == 0
+                else "服务端口监听状态未知",
             ),
         }
         return self._section(checks), server_version
@@ -469,9 +471,7 @@ class FridaDiagnosticsService:
                 }
             )
 
-    def _target(
-        self, request: FridaDiagnosticsRequest, device: DeviceContext
-    ) -> DiagnosticSection:
+    def _target(self, request: FridaDiagnosticsRequest, device: DeviceContext) -> DiagnosticSection:
         if not request.package_name:
             return DiagnosticSection(
                 status="unknown",
@@ -485,9 +485,7 @@ class FridaDiagnosticsService:
         installed = self._run(
             device.adb_command("shell", "pm", "path", request.package_name), timeout=10
         )
-        pid = self._run(
-            device.adb_command("shell", "pidof", request.package_name), timeout=10
-        )
+        pid = self._run(device.adb_command("shell", "pidof", request.package_name), timeout=10)
         pid_text = str(pid.get("stdout") or "").strip()
         process_running = pid.get("returncode") == 0 and bool(pid_text)
         present = installed.get("returncode") == 0 and "package:" in str(
@@ -600,9 +598,7 @@ class FridaDiagnosticsService:
                 transport_available=handshake_ok,
                 process_enumeration_available=handshake_ok,
                 attach_available=(
-                    handshake_ok
-                    and target_process is not None
-                    and target_process.status == "pass"
+                    handshake_ok and target_process is not None and target_process.status == "pass"
                 ),
             ),
         )

@@ -1,15 +1,12 @@
-import json
-
 import pytest
 
 from app.core.redaction import Redactor
-from app.tools.frida_events import (
+from app.frida.frida_events import (
     FridaEventValidationError,
     StructuredEventWriter,
     normalize_frida_payload,
 )
-from app.tools.hook_parser import parse_hook_log, parse_hook_to_events_json
-
+from app.frida.hook_parser import parse_hook_log, parse_hook_to_events_json
 
 RAW_IDENTIFIER = "fixture-sensitive-id-2026-NEVER-PERSIST"
 
@@ -180,7 +177,9 @@ def test_extended_sensitive_api_categories_normalization():
         "metadata": {"location_present": True},
         "stack": ["com.example.app.MapActivity.initLocation:42"],
     }
-    loc_event = normalize_frida_payload(loc_payload, run_id="run-1", session_id="session-1", redactor=redactor)
+    loc_event = normalize_frida_payload(
+        loc_payload, run_id="run-1", session_id="session-1", redactor=redactor
+    )
     assert loc_event.category == "location_access"
     assert loc_event.api == "LocationManager.getLastKnownLocation"
     assert loc_event.stack == ["com.example.app.MapActivity.initLocation:42"]
@@ -205,7 +204,9 @@ def test_extended_sensitive_api_categories_normalization():
         "metadata": {"count": 48},
         "stack": ["com.kwad.sdk.collector.AppScanner.scan:108"],
     }
-    pkg_event = normalize_frida_payload(pkg_payload, run_id="run-1", session_id="session-1", redactor=redactor)
+    pkg_event = normalize_frida_payload(
+        pkg_payload, run_id="run-1", session_id="session-1", redactor=redactor
+    )
     assert pkg_event.category == "app_list_access"
     assert pkg_event.metadata["count"] == 48
 
@@ -231,10 +232,11 @@ def test_extended_sensitive_api_categories_normalization():
         "stack": ["com.bytedance.sdk.openadsdk.core.IdUtils.getImei:75"],
         "metadata": {"value_length": 15},
     }
-    imei_event = normalize_frida_payload(imei_payload, run_id="run-1", session_id="session-1", redactor=redactor)
+    imei_event = normalize_frida_payload(
+        imei_payload, run_id="run-1", session_id="session-1", redactor=redactor
+    )
     assert imei_event.category == "identifier_access"
     assert imei_event.identifier_type == "imei"
     assert imei_event.value_token.startswith("redacted:")
     assert "860000000000001" not in imei_event.model_dump_json()
     assert imei_event.stack == ["com.bytedance.sdk.openadsdk.core.IdUtils.getImei:75"]
-

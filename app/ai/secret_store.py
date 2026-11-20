@@ -70,7 +70,7 @@ def _posix_key(salt: bytes) -> bytes:
         node = platform.node()
     except Exception:
         node = "localhost"
-    seed = f"{user}@{node}".encode("utf-8")
+    seed = f"{user}@{node}".encode()
     return hashlib.sha256(seed + salt).digest()
 
 
@@ -80,8 +80,7 @@ def _protect_posix(data: bytes) -> bytes:
     n = len(data)
     blocks = (n + 31) // 32
     keystream = b"".join(
-        hashlib.sha256(key + i.to_bytes(4, "big")).digest()
-        for i in range(blocks)
+        hashlib.sha256(key + i.to_bytes(4, "big")).digest() for i in range(blocks)
     )[:n]
     ciphertext = bytes(a ^ b for a, b in zip(data, keystream))
     mac = hmac.new(key, salt + ciphertext, hashlib.sha256).digest()
@@ -92,7 +91,7 @@ def _unprotect_posix(data: bytes) -> bytes:
     prefix = b"ADSDK_SEC1:"
     if not data.startswith(prefix):
         raise DPAPIError("dpapi_unprotect_failed", "unrecognized secret blob format")
-    payload = data[len(prefix):]
+    payload = data[len(prefix) :]
     if len(payload) < 48:
         raise DPAPIError("dpapi_unprotect_failed", "corrupted secret blob")
     salt = payload[:16]
@@ -105,8 +104,7 @@ def _unprotect_posix(data: bytes) -> bytes:
     n = len(ciphertext)
     blocks = (n + 31) // 32
     keystream = b"".join(
-        hashlib.sha256(key + i.to_bytes(4, "big")).digest()
-        for i in range(blocks)
+        hashlib.sha256(key + i.to_bytes(4, "big")).digest() for i in range(blocks)
     )[:n]
     return bytes(a ^ b for a, b in zip(ciphertext, keystream))
 

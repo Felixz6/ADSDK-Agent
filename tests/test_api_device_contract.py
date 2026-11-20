@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import app.config as app_config
 from app import main as main_module
 from app.core.device import DeviceContext
 from app.tools import adb_runner
@@ -15,9 +16,9 @@ def test_analyze_path_validation_returns_structured_422(
 ) -> None:
     output_root = tmp_path / "output"
     missing_apk = tmp_path / "missing.apk"
-    monkeypatch.setattr(main_module, "OUTPUT_DIR", str(output_root))
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_root))
     monkeypatch.setattr(
-        main_module,
+        app_config,
         "APK_ALLOWED_ROOTS",
         (tmp_path.resolve(),),
     )
@@ -44,11 +45,7 @@ def test_device_selection_requires_id_when_multiple_devices_are_online(
         "adb_devices",
         lambda: {
             "returncode": 0,
-            "stdout": (
-                "List of devices attached\n"
-                "emulator-5554\tdevice\n"
-                "R58M123456A\tdevice\n"
-            ),
+            "stdout": ("List of devices attached\nemulator-5554\tdevice\nR58M123456A\tdevice\n"),
             "stderr": "",
             "cmd": ["adb", "devices"],
         },
@@ -89,13 +86,15 @@ def test_selected_device_is_used_by_adb_install_and_launch(
     monkeypatch.setattr(
         adb_runner,
         "run_cmd",
-        lambda command: captured.append(command)
-        or {
-            "returncode": 0,
-            "stdout": "",
-            "stderr": "",
-            "cmd": command,
-        },
+        lambda command: (
+            captured.append(command)
+            or {
+                "returncode": 0,
+                "stdout": "",
+                "stderr": "",
+                "cmd": command,
+            }
+        ),
     )
     context = DeviceContext(serial="emulator-5554")
 

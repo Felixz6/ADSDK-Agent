@@ -5,28 +5,10 @@ import StaticAnalysis from './StaticAnalysis'
 import { renderWithProviders } from '@/test/render'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { AnalyzeResponse } from '@/types/api'
-import type { LocalTaskRecord } from '@/api/tasks'
 
 beforeEach(() => {
   useAnalysisStore.getState().clear()
 })
-
-const taskStub: LocalTaskRecord = {
-  local_id: 'local-static-1',
-  run_id: 'r-static-1',
-  kind: 'static',
-  apk_path: 'D:/authorized/sample.apk',
-  package_name: 'com.example.sample',
-  created_at: '2026-01-01T00:00:00Z',
-  status: 'success',
-  sdk_count: 0,
-  has_report: true,
-  report_md_path: null,
-  artifacts_count: 0,
-  error: null,
-  error_code: null,
-  summary: null,
-}
 
 function seedStatic(resp: Partial<AnalyzeResponse> = {}) {
   const base: AnalyzeResponse = {
@@ -79,7 +61,7 @@ function seedStatic(resp: Partial<AnalyzeResponse> = {}) {
     limitations: [],
   }
   const merged = { ...base, ...resp } as AnalyzeResponse
-  useAnalysisStore.getState().setActive(merged, taskStub, 'static')
+  useAnalysisStore.getState().setActive(merged, 'static')
   return merged
 }
 

@@ -1,8 +1,7 @@
 from pathlib import Path
 
 from app.analyzers.risk_scoring import calculate_risk_summary
-from app.tools.manifest_parser import parse_manifest_info
-
+from app.core.manifest_parser import parse_manifest_info
 
 MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -57,8 +56,6 @@ def test_risk_scoring_uses_only_declared_permissions():
 
 
 def test_legacy_permissions_field_remains_score_compatible():
-    summary = calculate_risk_summary(
-        {"app_info": {"permissions": ["android.permission.CAMERA"]}}
-    )
+    summary = calculate_risk_summary({"app_info": {"permissions": ["android.permission.CAMERA"]}})
     assert summary.score == 12
     assert summary.top_risks[0].id == "manifest_sensitive_permissions"

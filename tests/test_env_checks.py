@@ -13,14 +13,13 @@ import types
 
 import pytest
 
-from app.tools import env_checks
-from app.tools.env_checks import (
+from app.core import env_checks
+from app.core.env_checks import (
     check_apk_allowed_roots,
     check_apktool,
     check_frida_python_package,
     check_redaction_hmac_key,
 )
-
 
 # ---------------------------------------------------------------------------
 # apktool
@@ -38,9 +37,7 @@ def test_apktool_present(monkeypatch, tmp_path):
         stdout = "apktool 2.11.1\n"
         stderr = ""
 
-    monkeypatch.setattr(
-        env_checks.subprocess, "run", lambda *a, **kw: _Result()
-    )
+    monkeypatch.setattr(env_checks.subprocess, "run", lambda *a, **kw: _Result())
 
     info = check_apktool()
     assert info["apktool_available"] is True
@@ -76,9 +73,7 @@ def test_apktool_version_command_fails(monkeypatch, tmp_path):
         stdout = ""
         stderr = "java not found"
 
-    monkeypatch.setattr(
-        env_checks.subprocess, "run", lambda *a, **kw: _Result()
-    )
+    monkeypatch.setattr(env_checks.subprocess, "run", lambda *a, **kw: _Result())
 
     info = check_apktool()
     assert info["apktool_available"] is True  # found on PATH
@@ -187,7 +182,11 @@ def _set_hmac_key(monkeypatch, value):
     # The probe does `from app.config import REDACTION_HMAC_KEY` at call time
     # to read the module-level effective value, so patch it there too.
     monkeypatch.setattr("app.config.REDACTION_HMAC_KEY", value, raising=False)
-    monkeypatch.setattr(env_checks.os, "getenv", lambda name, default=None: value if name == "REDACTION_HMAC_KEY" else default)
+    monkeypatch.setattr(
+        env_checks.os,
+        "getenv",
+        lambda name, default=None: value if name == "REDACTION_HMAC_KEY" else default,
+    )
 
 
 def test_hmac_missing(monkeypatch):
@@ -246,19 +245,30 @@ def test_env_check_response_does_not_leak_hmac_key(monkeypatch):
     even when the key is securely configured."""
     from fastapi.testclient import TestClient
 
+    import app.api.env as env_module
     from app import main as main_module
 
     _set_hmac_key(monkeypatch, SECURE_KEY)
 
-    monkeypatch.setattr(main_module, "check_adb_available", lambda: {"ok": True, "stdout": "adb", "stderr": "", "cmd": ["adb"]})
     monkeypatch.setattr(
-        main_module,
+        env_module,
+        "check_adb_available",
+        lambda: {"ok": True, "stdout": "adb", "stderr": "", "cmd": ["adb"]},
+    )
+    monkeypatch.setattr(
+        env_module,
         "check_device_online",
         lambda device_id=None: {"ok": True, "device_id": device_id, "target": None, "devices": []},
     )
-    monkeypatch.setattr(main_module, "check_frida_connection", lambda device_id=None: {"ok": True, "stdout": "", "stderr": "", "cmd": []})
-    monkeypatch.setattr(main_module, "check_port_listening", lambda port=8080: True)
-    monkeypatch.setattr(main_module, "_check_output_writable", lambda: {"ok": True, "path": "/out", "error": None})
+    monkeypatch.setattr(
+        env_module,
+        "check_frida_connection",
+        lambda device_id=None: {"ok": True, "stdout": "", "stderr": "", "cmd": []},
+    )
+    monkeypatch.setattr(env_module, "check_port_listening", lambda port=8080: True)
+    monkeypatch.setattr(
+        env_module, "_check_output_writable", lambda: {"ok": True, "path": "/out", "error": None}
+    )
 
     client = TestClient(main_module.app)
     resp = client.get("/env/check")

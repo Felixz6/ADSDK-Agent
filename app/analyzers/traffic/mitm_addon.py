@@ -8,25 +8,23 @@ real collection process.
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 try:  # pragma: no cover - exercised only when mitmproxy is installed.
     from mitmproxy import ctx as _mitm_ctx
 except ImportError:  # Tests and static analysis do not require mitmproxy.
     _mitm_ctx = None
 
-from app.tools.traffic_events import (
+from app.core.clock import utc_now as _utc_now
+from app.traffic.traffic_events import (
     HttpRequestRecord,
     TrafficJSONLWriter,
     build_http_request_record,
     extract_query_keys,
 )
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class SafeTrafficAddon:
@@ -79,12 +77,8 @@ class SafeTrafficAddon:
 
         options = _mitm_ctx.options
         run_id = str(getattr(options, "adsdk_run_id", "")).strip()
-        session_id = str(
-            getattr(options, "adsdk_session_id", "")
-        ).strip()
-        jsonl_path = str(
-            getattr(options, "adsdk_jsonl_path", "")
-        ).strip()
+        session_id = str(getattr(options, "adsdk_session_id", "")).strip()
+        jsonl_path = str(getattr(options, "adsdk_jsonl_path", "")).strip()
         if not run_id or not session_id or not jsonl_path:
             raise RuntimeError("mitm addon ownership options are incomplete")
         self.run_id = run_id
@@ -138,9 +132,7 @@ class SafeTrafficAddon:
         timestamp = getattr(request, "timestamp_start", None)
         if timestamp is None:
             timestamp = self.utc_now()
-        selected_response = (
-            response if response is not None else getattr(flow, "response", None)
-        )
+        selected_response = response if response is not None else getattr(flow, "response", None)
         status_code = (
             getattr(selected_response, "status_code", None)
             if selected_response is not None
@@ -224,9 +216,7 @@ class SafeTrafficAddon:
             for flow_id, record in pending:
                 if flow_id in self._emitted:
                     continue
-                safe_record = record.model_copy(
-                    update={"error": "incomplete"}
-                )
+                safe_record = record.model_copy(update={"error": "incomplete"})
                 self._get_writer().write_request(safe_record)
                 self._emitted.add(flow_id)
 

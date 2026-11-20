@@ -24,9 +24,7 @@ class _AIService:
     def execute_prepared_plan(
         self, prepared: Any, request: Any, effective_plan: Any, decision: Any
     ) -> Any:
-        self.calls.append(
-            ("execute", prepared, request, effective_plan, decision)
-        )
+        self.calls.append(("execute", prepared, request, effective_plan, decision))
         return SimpleNamespace(diagnostic=SimpleNamespace())
 
     def run(self, request: Any) -> Any:
@@ -39,7 +37,9 @@ class _Consent:
         return SimpleNamespace(task_id=task_id, run_id=run_id, status="pending")
 
     def wait(self, *, task_id: str, is_cancelled: Any, **_kwargs: Any) -> Any:
-        return SimpleNamespace(task_id=task_id, status="cancelled" if is_cancelled() else "resolved")
+        return SimpleNamespace(
+            task_id=task_id, status="cancelled" if is_cancelled() else "resolved"
+        )
 
 
 def _effects(**overrides: Any) -> ProductionSessionEffects:
@@ -77,13 +77,9 @@ def test_production_effects_propagates_only_effective_strategy() -> None:
     request = SimpleNamespace(analysis_mode="full_analysis", analysis_scope="full_analysis")
     decision = SimpleNamespace(effective_strategy="balanced")
 
-    result = effects.execute_prepared_orchestration(
-        "prepared", request, "effective-plan", decision
-    )
+    result = effects.execute_prepared_orchestration("prepared", request, "effective-plan", decision)
 
-    assert ai_service.calls == [
-        ("execute", "prepared", request, "effective-plan", decision)
-    ]
+    assert ai_service.calls == [("execute", "prepared", request, "effective-plan", decision)]
     assert result.diagnostic.analysis_mode == "full_analysis"
     assert result.diagnostic.orchestration_entrypoint == "tasks_ai_orchestrated"
     assert result.diagnostic.session_engine == "FullAnalysisSession"
@@ -119,9 +115,7 @@ def test_production_effects_cleanup_verifies_residual_and_retries_once() -> None
         device_id="DEVICE",
     ).run()
 
-    diagnostic = next(
-        item for item in outcome.diagnostics if item.resource_type == "frida_helper"
-    )
+    diagnostic = next(item for item in outcome.diagnostics if item.resource_type == "frida_helper")
     assert kills == [("DEVICE", 123), ("DEVICE", 123)]
     assert diagnostic.retry_attempted is True
     assert diagnostic.verification_result == "verified"

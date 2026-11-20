@@ -14,5 +14,5 @@ def append_log(path: str, text: str):
 def read_log(path: str) -> str:
     if not os.path.exists(path):
         return ""
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+    with open(path, encoding="utf-8", errors="ignore") as f:
         return f.read()

@@ -27,12 +27,6 @@ from typing import Any
 
 import pytest
 
-from app.config import (
-    AI_PLANNER_MAX_OUTPUT_TOKENS,
-    AI_REPORT_MAX_OUTPUT_TOKENS,
-    AI_REPAIR_MAX_OUTPUT_TOKENS,
-)
-
 from app.ai.cache import AIResponseCache
 from app.ai.context_builder import AIContextBuilder
 from app.ai.models import (
@@ -43,12 +37,17 @@ from app.ai.models import (
     ToolCompactResult,
 )
 from app.ai.orchestrator import (
-    _normalize_plan_envelope,
     AIOrchestrationRequest,
     AIOrchestrator,
+    _normalize_plan_envelope,
     write_ai_artifacts,
 )
 from app.ai.provider import MockAIProvider, ProviderError, ProviderResponse
+from app.config import (
+    AI_PLANNER_MAX_OUTPUT_TOKENS,
+    AI_REPAIR_MAX_OUTPUT_TOKENS,
+    AI_REPORT_MAX_OUTPUT_TOKENS,
+)
 
 # A syntactically plausible key shape used ONLY to prove it never reaches an
 # artifact. It is not a real credential and is never sent anywhere.
@@ -120,9 +119,7 @@ class NoUsageProvider(MockAIProvider):
         response = super().call(**kwargs)
         return dataclasses.replace(
             response,
-            usage=dataclasses.replace(
-                response.usage, input_tokens=None, output_tokens=None
-            ),
+            usage=dataclasses.replace(response.usage, input_tokens=None, output_tokens=None),
             usage_source="unavailable",
         )
 
@@ -212,9 +209,10 @@ class TestStageOutputCaps:
         orch = _orchestrator(MockAIProvider())
         usage = AITokenUsage(input_tokens=10_000)
 
-        assert orch._remaining_output_cap(
-            "plan", _request(token_budget=0), usage
-        ) == AI_PLANNER_MAX_OUTPUT_TOKENS
+        assert (
+            orch._remaining_output_cap("plan", _request(token_budget=0), usage)
+            == AI_PLANNER_MAX_OUTPUT_TOKENS
+        )
 
     def test_stage_cap_still_bounds_a_generous_budget(self):
         orch = _orchestrator(MockAIProvider())
@@ -307,8 +305,7 @@ class TestPerRoundUsage:
         result = _run(_orchestrator(NoUsageProvider()), _request())
 
         # An estimated round must not present fabricated numbers as real.
-        assert all(r.input_tokens == 0 and r.output_tokens == 0
-                   for r in result.usage.rounds)
+        assert all(r.input_tokens == 0 and r.output_tokens == 0 for r in result.usage.rounds)
 
     def test_retry_count_defaults_to_zero_when_unreported(self):
         result = _run(_orchestrator(MockAIProvider()), _request())
@@ -408,9 +405,7 @@ class TestErrorClassification:
         assert result.diagnostic.errors[0].http_status == 408
 
     def test_observation_preserves_the_retryable_flag(self):
-        provider = self._failing(
-            "ai_provider_authentication_failed", retryable=False, status=401
-        )
+        provider = self._failing("ai_provider_authentication_failed", retryable=False, status=401)
         result = _run(_orchestrator(provider), _request())
 
         assert result.diagnostic.errors[0].retryable is False
@@ -443,8 +438,14 @@ class TestErrorClassification:
         dumped = result.diagnostic.errors[0].model_dump()
         assert "safe" not in json.dumps(dumped)
         assert set(dumped) == {
-            "code", "retryable", "attempt", "retry_count",
-            "stage", "http_status", "latency_ms", "finalized",
+            "code",
+            "retryable",
+            "attempt",
+            "retry_count",
+            "stage",
+            "http_status",
+            "latency_ms",
+            "finalized",
         }
 
     def test_a_successful_run_records_no_errors(self):
@@ -454,9 +455,7 @@ class TestErrorClassification:
 
     def test_a_retryable_plan_failure_is_recorded_as_not_finalized(self):
         provider = MockAIProvider(
-            error=ProviderError(
-                "ai_provider_timeout", "safe", retryable=True, status_code=408
-            )
+            error=ProviderError("ai_provider_timeout", "safe", retryable=True, status_code=408)
         )
         result = _run(_orchestrator(provider), _request())
 
@@ -632,9 +631,7 @@ class TestReasoningContentIsolation:
 
         blob = json.dumps(result.diagnostic.model_dump(mode="json"), ensure_ascii=False)
         # Only the boolean field name may appear — never a content string.
-        assert "reasoning_content\"" not in blob.replace(
-            "reasoning_content_present", ""
-        )
+        assert 'reasoning_content"' not in blob.replace("reasoning_content_present", "")
 
     def test_the_report_usage_carries_only_the_presence_boolean(self):
         result = _run(_orchestrator(ReasoningProvider()), _request())
@@ -660,18 +657,14 @@ class TestDiagnosticsArtifact:
         result = _run(_orchestrator(MockAIProvider()), _request())
         write_ai_artifacts(tmp_path, result)
 
-        payload = json.loads(
-            (tmp_path / "ai-runtime-diagnostics.json").read_text(encoding="utf-8")
-        )
+        payload = json.loads((tmp_path / "ai-runtime-diagnostics.json").read_text(encoding="utf-8"))
         assert payload["schema_version"] == "ai-runtime-diagnostics-v1"
 
     def test_the_artifact_round_trips_back_into_the_model(self, tmp_path: Path):
         result = _run(_orchestrator(MockAIProvider()), _request())
         write_ai_artifacts(tmp_path, result)
 
-        payload = json.loads(
-            (tmp_path / "ai-runtime-diagnostics.json").read_text(encoding="utf-8")
-        )
+        payload = json.loads((tmp_path / "ai-runtime-diagnostics.json").read_text(encoding="utf-8"))
         assert AIRuntimeDiagnostic.model_validate(payload).outcome == "ok"
 
     def test_no_artifact_is_written_without_a_diagnostic(self, tmp_path: Path):
@@ -711,34 +704,59 @@ class TestDiagnosticsArtifact:
         result = _run(_orchestrator(MockAIProvider()), _request())
         write_ai_artifacts(tmp_path, result)
 
-        payload = json.loads(
-            (tmp_path / "ai-runtime-diagnostics.json").read_text(encoding="utf-8")
-        )
+        payload = json.loads((tmp_path / "ai-runtime-diagnostics.json").read_text(encoding="utf-8"))
         assert set(payload) == {
-            "schema_version", "task_id", "model", "provider_profile",
-            "thinking_mode", "enabled", "usage", "rounds", "errors",
-            "total_rounds", "total_retries", "cache_hit", "cache_enabled",
-            "deterministic_fallback", "outcome", "generated_at",
+            "schema_version",
+            "task_id",
+            "model",
+            "provider_profile",
+            "thinking_mode",
+            "enabled",
+            "usage",
+            "rounds",
+            "errors",
+            "total_rounds",
+            "total_retries",
+            "cache_hit",
+            "cache_enabled",
+            "deterministic_fallback",
+            "outcome",
+            "generated_at",
             # M7B (Section 八/九) — plan-source + dynamic-strategy + report
             # provenance stamped on the runtime artifact. These are observable
             # secret-free fields (codes/labels/booleans), extended alongside the
             # ai-plan-validation-v2 artifact's parallel fields.
-            "plan_source", "planning_failed", "deterministic_plan_fallback",
-            "requested_strategy", "effective_strategy", "repair_attempted",
-            "repair_succeeded", "fallback_used", "validation_error_code",
-            "validation_json_path", "normalized", "normalization_reason",
-            "target_running", "preflight_changed", "report_source",
-            "analysis_mode", "orchestration_entrypoint", "session_engine",
-            "execution_pipeline_version", "root_type",
-            "schema_version_present", "steps_present", "steps_type",
-            "normalization_eligible", "normalization_applied",
-            "normalization_reason_code", "safe_wrapper_detected",
+            "plan_source",
+            "planning_failed",
+            "deterministic_plan_fallback",
+            "requested_strategy",
+            "effective_strategy",
+            "repair_attempted",
+            "repair_succeeded",
+            "fallback_used",
+            "validation_error_code",
+            "validation_json_path",
+            "normalized",
+            "normalization_reason",
+            "target_running",
+            "preflight_changed",
+            "report_source",
+            "analysis_mode",
+            "orchestration_entrypoint",
+            "session_engine",
+            "execution_pipeline_version",
+            "root_type",
+            "schema_version_present",
+            "steps_present",
+            "steps_type",
+            "normalization_eligible",
+            "normalization_applied",
+            "normalization_reason_code",
+            "safe_wrapper_detected",
             "top_level_field_count",
         }
 
-    def test_the_artifact_records_the_compat_profile_and_thinking_mode(
-        self, tmp_path: Path
-    ):
+    def test_the_artifact_records_the_compat_profile_and_thinking_mode(self, tmp_path: Path):
         orch = _orchestrator(
             MockAIProvider(), provider_profile="deepseek", thinking_mode="disabled"
         )
@@ -748,8 +766,9 @@ class TestDiagnosticsArtifact:
         assert result.diagnostic.thinking_mode == "disabled"
 
     def test_the_artifact_records_the_task_id_and_model(self, tmp_path: Path):
-        result = _run(_orchestrator(MockAIProvider(model="deepseek-v4-flash")),
-                      _request(task_id="t-9"))
+        result = _run(
+            _orchestrator(MockAIProvider(model="deepseek-v4-flash")), _request(task_id="t-9")
+        )
 
         assert result.diagnostic.task_id == "t-9"
         assert result.diagnostic.model == "deepseek-v4-flash"

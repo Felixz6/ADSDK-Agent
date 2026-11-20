@@ -8,16 +8,15 @@ that earlier digest.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import os
-from pathlib import Path
 import re
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, BinaryIO
 
 from .paths import PathInput, sha256_file
-
 
 DEFAULT_CHUNK_SIZE = 1024 * 1024
 SNAPSHOT_RELATIVE_PATH = Path("input") / "app.apk"
@@ -74,17 +73,13 @@ def _validate_positive_integer(value: int, *, name: str) -> int:
 
 def _normalize_expected_sha256(value: str) -> str:
     if not isinstance(value, str) or not _SHA256_PATTERN.fullmatch(value):
-        raise ValueError(
-            "expected_sha256 must contain exactly 64 hexadecimal characters"
-        )
+        raise ValueError("expected_sha256 must contain exactly 64 hexadecimal characters")
     return value.lower()
 
 
 def _safe_source_display(source_path: Path) -> str:
     name = "".join(
-        character
-        if ord(character) >= 32 and ord(character) != 127
-        else "_"
+        character if ord(character) >= 32 and ord(character) != 127 else "_"
         for character in source_path.name
     ).strip()
     return name or "app.apk"
@@ -252,10 +247,7 @@ def create_apk_snapshot(
             resolved_source,
             chunk_size=normalized_chunk_size,
         )
-        if (
-            after_copy != before_copy
-            or source_sha256_after_copy != normalized_expected_sha256
-        ):
+        if after_copy != before_copy or source_sha256_after_copy != normalized_expected_sha256:
             raise ApkSnapshotError(
                 "apk_snapshot_source_changed",
                 "The APK source changed while the snapshot was being created.",

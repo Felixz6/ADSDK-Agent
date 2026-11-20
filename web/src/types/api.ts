@@ -1,17 +1,11 @@
 /**
  * AdSDK Agent 后端 API 类型定义
  *
- * 来源:严格依据后端 Pydantic 模型 (app/models.py 等) 及各工具模块导出的
- * 序列化结构,字段名、可空性、取值与后端保持一致。前端不做臆造,缺失字段
- * 在类型层以 Optional 暴露,由 UI 层判定为「不可用」而非「安全」。
- *
- * 约定:
- * - `string | null` 表示后端可能返回 null;`T | undefined` 通常表示可选键,
- *   但后端多数以 null 填充而非省略,因此本文件几乎都以 `| null` 表达。
- * - 所有时间戳字段均为 ISO8601 (UTC, 带 Z) 字符串。
- * - 红色脱敏标识统一为 `redacted:<20-hex>` 或 `redacted:withheld-at-source`,
- *   均不自伪造。`raw_retained` 始终为 false。
+ * 核心 schema 由后端 FastAPI OpenAPI 生成 (npm run gen:api -> web/src/types/openapi.ts)。
+ * 本文件对外暴露标准契约与前端业务扩展类型。
  */
+
+export type { paths, components, operations } from './openapi'
 
 /* =========================================================================
  * 通用与状态枚举

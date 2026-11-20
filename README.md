@@ -60,7 +60,7 @@
 | **后端核心** | Python 3.12+、FastAPI、Pydantic v2 | 高性能异步 API，严格输入校验与强类型响应契约 |
 | **底层工具链** | apktool、ADB、Frida 17、mitmproxy | 离线静态解包、设备交互、底层 API Hook、受控流量镜像 |
 | **数据与安全** | SQLite (WAL 模式)、Windows DPAPI | 单机任务状态持久化、本地机器级别加密保护 AI API 密钥 |
-| **后端质量** | pytest、httpx | 776 项自动化测试通过，涵盖单元、链路、降级与真实回放 |
+| **后端质量** | pytest、httpx | 788 项自动化测试通过，涵盖单元、链路、降级与真实回放 |
 
 ---
 
@@ -276,7 +276,7 @@ output/runs/<run_id>/
 ```powershell
 # 运行后端全量测试套件 (pytest)
 .venv\Scripts\python.exe -m pytest -q
-# 输出结果：776 passed
+# 输出结果：788 passed
 
 # 运行前端全量测试套件 (vitest)
 cd web
@@ -290,20 +290,50 @@ npm run build
 
 ---
 
+## 平台支持矩阵与已知限制
+
+### 支持矩阵
+
+| 宿主/设备环境 | 支持等级 | 说明与建议 |
+| :--- | :--- | :--- |
+| **Windows 11 / 10** | Tier 1 (全功能) | 宿主系统原生支持，提供一键启动脚本、Windows DPAPI 硬件密钥加密保护 |
+| **Linux (Ubuntu 22.04+)** | Tier 1 (全功能) | 提供 `start.sh` / `stop.sh` 脚本，支持无头服务器部署与 CI 自动化 |
+| **macOS (Apple Silicon / Intel)** | Tier 2 (可用) | 支持静态分析与流量审计，动态真机需要配置 ADB 与对应 Frida Server 架构 |
+| **物理真机 (Rooted Android 9~14)** | Tier 1 (推荐) | 取证真实性最高，支持全部 ARM64/ARMv7 目标 API 插桩与硬件标识读取 |
+| **MuMu 模拟器 12 (Android 12 x86_64)** | Tier 1 (已深度适配) | 支持基于 QEMU 网关 `10.0.2.2` 的宿主代理直连与 Native Bridge 指令集兼容自愈 |
+| **非 Root 原生设备** | Tier 3 (受限) | 仅支持静态分析与受限的基于 VPN/Wi-Fi 代理的网络流量抓取，不支持 Frida 注入 |
+
+### 已知限制与运行提示
+
+1. **预编译 Frida Agent (`app/frida_hooks/agent.compiled.js`)**：
+   - 仓库内已内置预编译好的独立 bundle，开箱即用，无需在宿主机额外安装 Node 依赖即可执行动态分析。
+   - 如需自定义修改 `app/frida_hooks/sensitive_apis.js` 或更新底层 Java Bridge，可在 `scripts/frida-agent` 安装 npm 依赖并通过 `python scripts/build_frida_agent.py` 重新构建。
+2. **Native Bridge (libndk_translation / houdini) 模拟器兼容性**：
+   - 在 x86_64 架构模拟器上运行纯 ARM64 APK 时，底层翻译器可能与 Frida GumJS 产生指令竞争。系统已集成 `native_bridge_compatibility_suspected` 自动识别与 `balanced` 自愈降级策略。
+3. **证书 Pinning 应对边界**：
+   - 系统内置 `ssl_unpinning.js` 针对主流 OkHttp、TrustManager 与 WebView 进行解除，但对使用自研汇编混淆加固或自定义 BoringSSL 握手的极端商业壳，可能出现网络拒绝（表现为 `collector_success_zero_requests` 并记录证据缺口）。
+
+---
+
 ## 目录结构索引
 
 ```text
 adsdk-agent/
 ├── app/                          # 后端核心应用模块
-│   ├── ai/                       # AI 编排器、工具注册中心、Digest 压缩与配置
-│   ├── analyzers/                # Manifest、SDK 指纹、关联算法与隐私发现引擎
+│   ├── ai/                       # AI 编排器 (Planner, Executor, Narrator) 与模型 Provider
+│   ├── analyzers/                # Manifest、SDK 指纹、关联算法与隐私发现规则引擎
+│   ├── api/                      # 模块化路由端点、Depends 依赖与安全中间件
 │   ├── comparisons/              # APK 版本比对分析器
-│   ├── core/                     # 快照、解包缓存、路径安全与 HMAC 脱敏
+│   ├── core/                     # APK 快照、解包缓存、路径安全与 HMAC 脱敏
 │   ├── frida/                    # Frida 诊断、会话控制与 Native Bridge 兼容适配
 │   ├── orchestration/            # 确认门、排他租约、Consent 检查点与清理管理
+│   ├── pipelines/                # 静态分析、动态分析与全流程会话流水线编排
 │   ├── repositories/             # SQLite 任务与步骤持久化仓储
 │   ├── reporting/                # HTML / Markdown 报告生成器
-│   └── main.py                   # FastAPI 应用入口与路由分发
+│   ├── tools/                    # 通用工具 (ADB 运行器、基础工具)
+│   ├── traffic/                  # Mitm 代理会话、流量解析与 Zero-Leak 隐私保护
+│   ├── container.py              # 全局服务单例与可注入会话工厂容器
+│   └── main.py                   # FastAPI 应用入口与中间件配置 (精简 74 行)
 ├── web/                          # 前端工程 (React 18 + Vite 6 + TypeScript)
 │   ├── src/
 │   │   ├── api/                  # 强类型后端 API 交互封装
@@ -314,14 +344,20 @@ adsdk-agent/
 │   │   ├── tokens.css            # 设计令牌 (颜色、边距、阴影、层级)
 │   │   └── index.css             # 基础排版、胶囊组件与动效样式
 │   └── package.json
-├── docs/                         # 产品设计、可靠性分析与真机验收归档
+├── docs/                         # 平台架构文档、可靠性规范与真机验收归档
+│   ├── archive/                  # 历史阶段临时文档与交付报告归档
+│   └── ARCHITECTURE.md           # 平台系统架构与数据流向设计说明书
 ├── samples/                      # 待测 APK 安全存放目录
 ├── scripts/                      # 离线 Frida Agent 预构建脚本
 ├── tests/                        # 后端自动化测试套件
 ├── .env.example                  # 环境变量配置模板
-├── requirements.txt              # 后端 Python 依赖清单
+├── pyproject.toml                # 现代 Python 依赖与工程配置
+├── requirements.txt              # 依赖锁定清单 (Lockfile)
 ├── start-adsdk-agent.bat         # Windows 一键启动脚本
-└── stop-adsdk-agent.bat          # Windows 一键停止脚本
+├── start-adsdk-agent.ps1         # PowerShell 一键启动脚本
+├── start.sh                      # POSIX 一键启动脚本
+├── stop-adsdk-agent.bat          # Windows 一键停止脚本
+└── stop.sh                       # POSIX 一键停止脚本
 ```
 
 ---

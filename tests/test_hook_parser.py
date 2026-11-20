@@ -1,7 +1,7 @@
 import json
 
 from app.config import SCHEMA_VERSION
-from app.tools.hook_parser import parse_hook_log, parse_hook_to_events_json
+from app.frida.hook_parser import parse_hook_log, parse_hook_to_events_json
 
 
 def test_parse_hook_log_and_write_events_json(tmp_path):
@@ -11,10 +11,7 @@ def test_parse_hook_log_and_write_events_json(tmp_path):
         "\n".join(
             [
                 "[INFO] 2026-03-13T10:00:00Z capture window start seconds=15",
-                (
-                    "[HOOK] Settings.Secure.getString "
-                    f"name=android_id ret={raw_android_id}"
-                ),
+                (f"[HOOK] Settings.Secure.getString name=android_id ret={raw_android_id}"),
                 "[HOOK] ClipboardManager.getPrimaryClip called",
                 "[ERROR] frida disconnected",
             ]

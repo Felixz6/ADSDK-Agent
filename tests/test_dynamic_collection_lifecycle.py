@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 @dataclass
 class FakeClock:
-    wall: datetime = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    wall: datetime = datetime(2026, 7, 24, tzinfo=UTC)
     monotonic_value: float = 100.0
 
     def utc_now(self) -> datetime:
@@ -96,7 +96,7 @@ class FakeFridaSession:
 
 
 def _import_collection_api() -> tuple[Any, Any]:
-    from app.tools.dynamic_collection import (
+    from app.orchestration.dynamic_collection import (
         DynamicCollectionConfig,
         run_dynamic_collection,
     )
@@ -232,9 +232,7 @@ def test_post_resume_crash_preserves_resume_success_and_fails_stability_gate() -
             enable_traffic=False,
             frida_spawn_stability_seconds=3,
         ),
-        emit_control_event=lambda event: calls.append(
-            f"control.{event['event']}"
-        ),
+        emit_control_event=lambda event: calls.append(f"control.{event['event']}"),
         clock=FakeClock(),
     )
 
@@ -368,9 +366,7 @@ def test_primary_failure_and_cleanup_failures_are_preserved_together() -> None:
             pre_consent_seconds=0,
             post_consent_seconds=0,
         ),
-        emit_control_event=lambda event: calls.append(
-            f"control.{event['event']}"
-        ),
+        emit_control_event=lambda event: calls.append(f"control.{event['event']}"),
         clock=FakeClock(),
     )
 

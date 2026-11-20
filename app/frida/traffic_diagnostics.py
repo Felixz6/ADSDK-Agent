@@ -135,10 +135,15 @@ def diagnose_traffic(
         )
     )
     # A suspicion requires TLS failure evidence and an otherwise ready collector.
-    pinning = tls_failure and listener == "listening" and proxy_status in {
-        "applied",
-        "restored",
-    }
+    pinning = (
+        tls_failure
+        and listener == "listening"
+        and proxy_status
+        in {
+            "applied",
+            "restored",
+        }
+    )
     # M7B Phase C — deterministic visibility facts from the in-window device
     # network observation (counts/booleans only; see summarize_proc_net).
     observation = (
@@ -219,9 +224,11 @@ def diagnose_traffic(
         proxy_status=proxy_status,  # type: ignore[arg-type]
         host_listener=listener,  # type: ignore[arg-type]
         device_reachability=(
-            "reachable" if proxy_reachable is True else
-            "unreachable" if proxy_reachable is False else
-            "unknown"
+            "reachable"
+            if proxy_reachable is True
+            else "unreachable"
+            if proxy_reachable is False
+            else "unknown"
         ),
         tls_failure_observed=tls_failure,
         pinning_suspected=pinning,

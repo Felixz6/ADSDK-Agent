@@ -27,7 +27,13 @@ const DIRECTORY = [
   { to: '/settings', label: '设置' },
 ]
 
-const SUBNAV = DIRECTORY.filter((item) => item.to !== '/')
+const SUBNAV = [
+  { to: '/static', label: '静态分析' },
+  { to: '/dynamic', label: '动态分析' },
+  { to: '/traffic', label: '流量' },
+  { to: '/comparisons', label: '版本对比' },
+  { to: '/settings', label: '设置' },
+]
 
 export function SiteNav() {
   const navigate = useNavigate()

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from uuid import uuid4
 
-from app.core.application_names import stable_application_name
 from app.comparisons.models import (
     ComparisonCreateRequest,
     ComparisonResult,
     DifferenceSet,
 )
+from app.core.application_names import stable_application_name
 from app.repositories.task_repository import TaskRepository, utc_now
 
 
@@ -18,7 +19,9 @@ def _strings(values: Iterable[Any]) -> set[str]:
     return {str(value) for value in values if value is not None and str(value)}
 
 
-def _diff(base: Iterable[Any], target: Iterable[Any], *, unavailable: bool = False) -> DifferenceSet:
+def _diff(
+    base: Iterable[Any], target: Iterable[Any], *, unavailable: bool = False
+) -> DifferenceSet:
     left = _strings(base)
     right = _strings(target)
     return DifferenceSet(

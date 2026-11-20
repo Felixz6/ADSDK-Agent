@@ -4,10 +4,25 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from typing import TYPE_CHECKING
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse
 
-from app.config import OUTPUT_DIR
+from app import config as app_config
+from app.api.deps import (
+    get_consent_checkpoint_service,
+    get_task_repository,
+    get_task_service,
+)
+from app.api.errors import task_not_found
 from app.orchestration.consent_checkpoint import (
     ConsentCheckpointError,
     ConsentCheckpointRequest,
@@ -22,18 +37,20 @@ from app.tasks.models import (
     TaskSystemStatus,
 )
 
+if TYPE_CHECKING:
+    from app.orchestration.consent_checkpoint import ConsentCheckpointService
+    from app.repositories import TaskRepository
+    from app.services import TaskService
+
 router = APIRouter(tags=["tasks"])
 
 
-def _main():
-    import app.main as main_module
-    return main_module
-
-
 @router.post("/tasks", response_model=TaskRecord, status_code=202)
-def create_task(request: TaskCreateRequest):
-    main = _main()
-    return main.task_service.create(request)
+def create_task(
+    request: TaskCreateRequest,
+    task_service: TaskService = Depends(get_task_service),
+):
+    return task_service.create(request)
 
 
 @router.get("/tasks", response_model=TaskListResponse)
@@ -44,8 +61,8 @@ def list_tasks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     sort: str = Query(default="-created_at"),
+    task_service: TaskService = Depends(get_task_service),
 ):
-    main = _main()
     allowed_statuses = {"queued", "running", "completed", "failed", "cancelled"}
     allowed_types = {"static", "dynamic", "comparison", "ai_orchestrated"}
     if status and status not in allowed_statuses:
@@ -58,7 +75,7 @@ def list_tasks(
             status_code=422,
             detail={"code": "invalid_task_type", "message": "任务类型筛选值无效"},
         )
-    return main.task_service.list(
+    return task_service.list(
         status=status,
         task_type=task_type,
         keyword=keyword,
@@ -69,60 +86,71 @@ def list_tasks(
 
 
 @router.get("/tasks/system/status", response_model=TaskSystemStatus)
-def task_system_status():
-    main = _main()
-    running = main.task_service.list(status="running", page=1, page_size=1).total
-    queued = main.task_service.list(status="queued", page=1, page_size=1).total
+def task_system_status(
+    task_service: TaskService = Depends(get_task_service),
+    task_repository: TaskRepository = Depends(get_task_repository),
+):
+    running = task_service.list(status="running", page=1, page_size=1).total
+    queued = task_service.list(status="queued", page=1, page_size=1).total
     return TaskSystemStatus(
         database_ok=True,
-        database_path=str(main.task_repository.database_path),
+        database_path=str(task_repository.database_path),
         running_tasks=running,
         queued_tasks=queued,
-        occupied_devices=main.task_service.occupied_devices(),
+        occupied_devices=task_service.occupied_devices(),
     )
 
 
 @router.get("/tasks/{task_id}", response_model=TaskRecord)
-def get_task(task_id: str):
-    main = _main()
-    task = main.task_service.get(task_id)
+def get_task(
+    task_id: str,
+    task_service: TaskService = Depends(get_task_service),
+):
+    task = task_service.get(task_id)
     if task is None:
-        raise main._task_not_found(task_id)
+        raise task_not_found(task_id)
     return task
 
 
 @router.get("/tasks/{task_id}/report", response_model=TaskReportResponse)
-def get_task_report(task_id: str):
-    main = _main()
+def get_task_report(
+    task_id: str,
+    task_service: TaskService = Depends(get_task_service),
+):
     try:
-        return main.task_service.report(task_id)
+        return task_service.report(task_id)
     except KeyError:
-        raise main._task_not_found(task_id)
+        raise task_not_found(task_id)
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=TaskActionResponse)
-def cancel_task(task_id: str):
-    main = _main()
+def cancel_task(
+    task_id: str,
+    task_service: TaskService = Depends(get_task_service),
+    consent_checkpoint_service: ConsentCheckpointService = Depends(get_consent_checkpoint_service),
+):
     try:
-        result = main.task_service.cancel(task_id)
+        result = task_service.cancel(task_id)
     except KeyError:
-        raise main._task_not_found(task_id)
+        raise task_not_found(task_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=409,
             detail={"code": "task_not_cancellable", "message": str(exc)},
         )
-    main.consent_checkpoint_service.cancel(task_id=task_id)
+    consent_checkpoint_service.cancel(task_id=task_id)
     return result
 
 
 @router.post("/tasks/{task_id}/retry", response_model=TaskActionResponse, status_code=202)
-def retry_task(task_id: str):
-    main = _main()
+def retry_task(
+    task_id: str,
+    task_service: TaskService = Depends(get_task_service),
+):
     try:
-        return main.task_service.retry(task_id)
+        return task_service.retry(task_id)
     except KeyError:
-        raise main._task_not_found(task_id)
+        raise task_not_found(task_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=409,
@@ -134,11 +162,14 @@ def retry_task(task_id: str):
     "/tasks/{task_id}/consent-checkpoint",
     response_model=ConsentCheckpointState,
 )
-def get_consent_checkpoint(task_id: str):
-    main = _main()
-    if main.task_service.get(task_id) is None:
-        raise main._task_not_found(task_id)
-    state = main.consent_checkpoint_service.state(task_id)
+def get_consent_checkpoint(
+    task_id: str,
+    task_service: TaskService = Depends(get_task_service),
+    consent_checkpoint_service: ConsentCheckpointService = Depends(get_consent_checkpoint_service),
+):
+    if task_service.get(task_id) is None:
+        raise task_not_found(task_id)
+    state = consent_checkpoint_service.state(task_id)
     if state is None:
         raise HTTPException(
             status_code=404,
@@ -154,12 +185,16 @@ def get_consent_checkpoint(task_id: str):
     "/tasks/{task_id}/consent-checkpoint",
     response_model=ConsentCheckpointState,
 )
-def resolve_consent_checkpoint(task_id: str, req: ConsentCheckpointRequest):
-    main = _main()
-    if main.task_service.get(task_id) is None:
-        raise main._task_not_found(task_id)
+def resolve_consent_checkpoint(
+    task_id: str,
+    req: ConsentCheckpointRequest,
+    task_service: TaskService = Depends(get_task_service),
+    consent_checkpoint_service: ConsentCheckpointService = Depends(get_consent_checkpoint_service),
+):
+    if task_service.get(task_id) is None:
+        raise task_not_found(task_id)
     try:
-        return main.consent_checkpoint_service.resolve(
+        return consent_checkpoint_service.resolve(
             task_id=task_id,
             action=req.action,
             note=req.note,
@@ -173,26 +208,31 @@ def resolve_consent_checkpoint(task_id: str, req: ConsentCheckpointRequest):
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
-def delete_task(task_id: str):
-    main = _main()
+def delete_task(
+    task_id: str,
+    task_service: TaskService = Depends(get_task_service),
+):
     try:
-        deleted = main.task_service.delete(task_id)
+        deleted = task_service.delete(task_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=409,
             detail={"code": "active_task", "message": str(exc)},
         )
     if not deleted:
-        raise main._task_not_found(task_id)
+        raise task_not_found(task_id)
     return None
 
 
 @router.get("/tasks/{task_id}/artifacts/{artifact_kind}")
-def download_task_artifact(task_id: str, artifact_kind: str):
-    main = _main()
-    task = main.task_service.get(task_id)
+def download_task_artifact(
+    task_id: str,
+    artifact_kind: str,
+    task_service: TaskService = Depends(get_task_service),
+):
+    task = task_service.get(task_id)
     if task is None:
-        raise main._task_not_found(task_id)
+        raise task_not_found(task_id)
     field_map = {
         "json": (task.report_json_path, "application/json", "report.json"),
         "markdown": (task.report_markdown_path, "text/markdown", "report.md"),
@@ -210,8 +250,7 @@ def download_task_artifact(task_id: str, artifact_kind: str):
             detail={"code": "artifact_not_found", "message": "报告产物尚未生成"},
         )
     path = Path(path_text).resolve(strict=False)
-    output_dir = getattr(main, "OUTPUT_DIR", OUTPUT_DIR)
-    allowed = (Path(output_dir).resolve(strict=False) / "runs").resolve(strict=False)
+    allowed = (Path(app_config.OUTPUT_DIR).resolve(strict=False) / "runs").resolve(strict=False)
     if not path.is_relative_to(allowed) or not path.is_file():
         raise HTTPException(
             status_code=404,
@@ -222,12 +261,12 @@ def download_task_artifact(task_id: str, artifact_kind: str):
 
 @router.websocket("/ws/tasks/{task_id}")
 async def task_progress_websocket(websocket: WebSocket, task_id: str):
-    main = _main()
     await websocket.accept()
+    task_svc = get_task_service()
     last_updated: str | None = None
     try:
         while True:
-            task = main.task_service.get(task_id)
+            task = task_svc.get(task_id)
             if task is None:
                 await websocket.send_json(
                     {"error": {"code": "task_not_found", "message": "任务不存在"}}
@@ -237,9 +276,6 @@ async def task_progress_websocket(websocket: WebSocket, task_id: str):
             if task.updated_at != last_updated:
                 await websocket.send_json(task.model_dump(mode="json"))
                 last_updated = task.updated_at
-            if task.status in {"completed", "failed", "cancelled"}:
-                await websocket.close(code=1000)
-                return
             await asyncio.sleep(0.5)
     except WebSocketDisconnect:
-        return
+        pass

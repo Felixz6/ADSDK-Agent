@@ -27,15 +27,12 @@ The model call itself stays in the orchestrator so token accounting and the
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
-from .models import AI_PLAN_SCHEMA_VERSION, AIPlan, PlanStep
+from .models import AI_PLAN_SCHEMA_VERSION
 from .plan_validator import (
     PlanValidationResult,
-    STAGE_DAG,
-    STAGE_SCHEMA,
-    STAGE_WHITELIST,
-    validate_plan,
 )
 from .tool_registry import AIToolRegistry
 
@@ -159,9 +156,7 @@ def _summarize_rejected_plan(plan: Mapping[str, Any] | None) -> str:
     return " | ".join(parts) if parts else "<empty>"
 
 
-def _plan_references_dynamic(
-    plan: Mapping[str, Any] | None, registry: AIToolRegistry
-) -> bool:
+def _plan_references_dynamic(plan: Mapping[str, Any] | None, registry: AIToolRegistry) -> bool:
     """Whether the rejected plan already named a device-touching tool."""
 
     if not isinstance(plan, Mapping):
@@ -193,10 +188,7 @@ def _scope_note(
             )
         return ""
     if not confirmed_tools:
-        return (
-            "Note: no device-state tool has user confirmation, so none may be "
-            "planned.\n"
-        )
+        return "Note: no device-state tool has user confirmation, so none may be planned.\n"
     return ""
 
 
@@ -240,42 +232,8 @@ def attempt_repair(
     )
 
 
-def revalidate_repaired(
-    payload: Mapping[str, Any],
-    *,
-    registry: AIToolRegistry,
-    strategy: str,
-    allow_dynamic: bool,
-    confirmed_tools: frozenset[str] | set[str],
-) -> PlanValidationResult:
-    """Re-run the schema/whitelist/DAG layers on the repaired payload.
-
-    The repair round's output must pass the *same* validation as the initial
-    plan — never trusted outright. Returns the :class:`PlanValidationResult`
-    so the caller can record the round and decide ``plan_source``."""
-
-    return validate_plan(
-        payload,
-        registry=registry,
-        strategy=strategy,
-        allow_dynamic=allow_dynamic,
-        confirmed_tools=confirmed_tools,
-    )
-
-
-def repaired_plan_from(validation: PlanValidationResult) -> AIPlan | None:
-    """Return the validated repaired plan, or ``None`` when the repair still
-    fails so the orchestrator falls back deterministically."""
-
-    if validation.ok and validation.plan is not None:
-        return validation.plan.model_copy(update={"generated_by": "ai"})
-    return None
-
-
 __all__ = [
     "MAX_PLAN_REPAIRS",
     "attempt_repair",
     "build_plan_repair_contract",
-    "repaired_plan_from",
-    "revalidate_repaired",
 ]

@@ -5,28 +5,10 @@ import DynamicAnalysis from './DynamicAnalysis'
 import { renderWithProviders } from '@/test/render'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { AnalyzeResponse } from '@/types/api'
-import type { LocalTaskRecord } from '@/api/tasks'
 
 beforeEach(() => {
   useAnalysisStore.getState().clear()
 })
-
-const taskStub: LocalTaskRecord = {
-  local_id: 'local-dynamic-1',
-  run_id: 'r-dynamic-1',
-  kind: 'dynamic',
-  apk_path: 'D:/authorized/demo.apk',
-  package_name: 'com.example.demo',
-  created_at: '2026-01-01T00:00:00Z',
-  status: 'success',
-  sdk_count: 0,
-  has_report: true,
-  report_md_path: null,
-  artifacts_count: 0,
-  error: null,
-  error_code: null,
-  summary: null,
-}
 
 function seedDynamic(resp: Partial<AnalyzeResponse> = {}) {
   const base: AnalyzeResponse = {
@@ -74,7 +56,7 @@ function seedDynamic(resp: Partial<AnalyzeResponse> = {}) {
     limitations: [],
   }
   const merged = { ...base, ...resp } as AnalyzeResponse
-  useAnalysisStore.getState().setActive(merged, taskStub, 'dynamic')
+  useAnalysisStore.getState().setActive(merged, 'dynamic')
   return merged
 }
 

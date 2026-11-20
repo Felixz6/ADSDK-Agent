@@ -24,12 +24,29 @@ class FakeActions:
             self.retry_present.discard(key)
         return True
 
-    def kill_pid(self, device, pid): return self._stop("app_process", pid) if ("app_process", pid) in self.present or ("app_process", pid) in self.retry_present else self._stop("frida_helper", pid)
-    def stop_mitm_pid(self, pid): return self._stop("mitm_process", pid)
-    def stop_frida_session(self, ref): return True
-    def set_proxy(self, device, value): self.proxy = value; return True
-    def delete_proxy(self, device): self.proxy = ":null"; return True
-    def read_proxy(self, device): return self.proxy
+    def kill_pid(self, device, pid):
+        return (
+            self._stop("app_process", pid)
+            if ("app_process", pid) in self.present or ("app_process", pid) in self.retry_present
+            else self._stop("frida_helper", pid)
+        )
+
+    def stop_mitm_pid(self, pid):
+        return self._stop("mitm_process", pid)
+
+    def stop_frida_session(self, ref):
+        return True
+
+    def set_proxy(self, device, value):
+        self.proxy = value
+        return True  # noqa: E702
+
+    def delete_proxy(self, device):
+        self.proxy = ":null"
+        return True  # noqa: E702
+
+    def read_proxy(self, device):
+        return self.proxy
 
 
 class PackageActions(FakeActions):
@@ -57,13 +74,18 @@ class PackageActions(FakeActions):
 
 
 def snapshot(proxy=":null"):
-    return DeviceSessionSnapshot(run_id="run", device_ref="masked", captured_at="t",
-        initial_state=DeviceState(http_proxy=proxy))
+    return DeviceSessionSnapshot(
+        run_id="run",
+        device_ref="masked",
+        captured_at="t",
+        initial_state=DeviceState(http_proxy=proxy),
+    )
 
 
 def run(reg, actions, proxy=":null"):
-    return CleanupManager(registry=reg, actions=actions, snapshot=snapshot(proxy),
-        device_id="TARGET").run()
+    return CleanupManager(
+        registry=reg, actions=actions, snapshot=snapshot(proxy), device_id="TARGET"
+    ).run()
 
 
 def test_owned_target_cleanup_verified_and_external_target_preserved():
@@ -92,9 +114,11 @@ def test_target_exact_retry_once_then_success():
 def test_target_remaining_after_bounded_retry_is_not_success():
     reg = ResourceOwnershipRegistry()
     reg.mark_owned("app_process", "target", pid=101)
-    actions = FakeActions(present={("app_process", 101)}, retry_present={("app_process", 101), ("app_process", 101)})
+    actions = FakeActions(
+        present={("app_process", 101)}, retry_present={("app_process", 101), ("app_process", 101)}
+    )
     # Retain it after both exact attempts.
-    actions._stop = lambda kind, pid: (actions.calls.append((kind, pid)) or True)
+    actions._stop = lambda kind, pid: actions.calls.append((kind, pid)) or True
     outcome = run(reg, actions)
     assert outcome.status == "partial"
     assert outcome.diagnostics[0].reason_code == "target_process_still_running"
@@ -164,7 +188,8 @@ def test_preexisting_external_target_is_never_force_stopped():
 
 
 def test_production_target_probe_detects_replacement_package_pid(monkeypatch):
-    import app.main as main_module
+    import app.orchestration.device_ops as device_ops_module
+    import app.pipelines.full_analysis as full_analysis_module
 
     commands = []
     results = iter(
@@ -178,15 +203,15 @@ def test_production_target_probe_detects_replacement_package_pid(monkeypatch):
         commands.append(command)
         return next(results)
 
-    monkeypatch.setattr(main_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(device_ops_module, "run_cmd", fake_run_cmd)
     detail = {
         "pid": 100,
         "device_id": "DEVICE",
         "expected_command_token": "com.phoenix.read",
     }
 
-    assert main_module._m7b_resource_present("app_process", detail) is True
-    assert main_module._m7b_resource_present("app_process", detail) is False
+    assert full_analysis_module._m7b_resource_present("app_process", detail) is True
+    assert full_analysis_module._m7b_resource_present("app_process", detail) is False
     assert commands == [
         ["adb", "-s", "DEVICE", "shell", "pidof", "com.phoenix.read"],
         ["adb", "-s", "DEVICE", "shell", "pidof", "com.phoenix.read"],
@@ -202,7 +227,9 @@ def test_owned_frida_helper_and_ports_must_disappear():
     # Port probe is exact and reports absent; helper was stopped.
     assert outcome.status == "success"
     assert {d.reason_code for d in outcome.diagnostics} >= {
-        "frida_helper_cleanup_verified", "frida_port_cleanup_verified"}
+        "frida_helper_cleanup_verified",
+        "frida_port_cleanup_verified",
+    }
 
 
 def test_mitm_port_and_proxy_mismatch_make_cleanup_partial():
@@ -212,7 +239,9 @@ def test_mitm_port_and_proxy_mismatch_make_cleanup_partial():
     actions.delete_proxy = lambda device: True
     outcome = run(reg, actions)
     assert outcome.status == "partial"
-    assert {"mitm_port_still_listening", "proxy_restore_mismatch"} <= {d.reason_code for d in outcome.diagnostics}
+    assert {"mitm_port_still_listening", "proxy_restore_mismatch"} <= {
+        d.reason_code for d in outcome.diagnostics
+    }
 
 
 def test_verification_unavailable_never_claims_success():
@@ -234,7 +263,6 @@ def test_diagnostics_are_identifier_only_and_secret_free():
     assert "identifier_hash" in text
 
 
-
 def test_identity_changed_target_is_not_killed():
     reg = ResourceOwnershipRegistry()
     reg.mark_owned("app_process", "target", pid=101)
@@ -251,7 +279,7 @@ def test_offline_acceptance_regression_action_success_with_residual_is_partial()
     reg = ResourceOwnershipRegistry()
     reg.mark_owned("frida_helper", "fixture-helper", pid=303)
     actions = FakeActions(present={("frida_helper", 303)})
-    actions._stop = lambda kind, pid: (actions.calls.append((kind, pid)) or True)
+    actions._stop = lambda kind, pid: actions.calls.append((kind, pid)) or True
     outcome = run(reg, actions)
     assert outcome.status == "partial"
     assert outcome.diagnostics[0].cleanup_action_result is True

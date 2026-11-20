@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 from types import SimpleNamespace
 
 from app.analyzers.evidence_correlation import (
@@ -9,7 +9,7 @@ from app.analyzers.evidence_correlation import (
     build_evidence_correlations,
 )
 from app.reporting import render_html_report
-from app.tools.report_writer import write_markdown_report
+from app.reporting.report_writer import write_markdown_report
 
 
 def _event(**values):
@@ -125,8 +125,7 @@ def test_untrusted_time_is_not_evaluated():
 
 def test_only_five_nearest_candidates_are_kept_per_event():
     requests = [
-        _request(flow_id=f"req-{index}", monotonic_ms=1000 + index * 100)
-        for index in range(1, 8)
+        _request(flow_id=f"req-{index}", monotonic_ms=1000 + index * 100) for index in range(1, 8)
     ]
     result = build_evidence_correlations([_event()], requests)
     assert [item.network_request_id for item in result.items] == [
@@ -210,7 +209,7 @@ def test_correlation_failure_isolated_and_error_artifact_written(
     tmp_path,
     monkeypatch,
 ):
-    import app.main as main
+    import app.pipelines.common as main
 
     def fail(*_args, **_kwargs):
         raise RuntimeError("synthetic correlation failure")
@@ -225,6 +224,4 @@ def test_correlation_failure_isolated_and_error_artifact_written(
     )
 
     assert payload["status"] == "error"
-    assert json.loads(context.correlations_path.read_text(encoding="utf-8"))[
-        "status"
-    ] == "error"
+    assert json.loads(context.correlations_path.read_text(encoding="utf-8"))["status"] == "error"

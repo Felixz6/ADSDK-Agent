@@ -121,6 +121,20 @@ if (-not $npm) {
     throw "未找到 npm，请先安装 Node.js 并确认 npm 可用。"
 }
 
+$AgentBundle = Join-Path $Root "app\frida_hooks\agent.compiled.js"
+if (-not (Test-Path -LiteralPath $AgentBundle -PathType Leaf)) {
+    Write-Host "提示：未检测到预编译 Frida Agent 产物，正在尝试自动构建……" -ForegroundColor Yellow
+    $buildScript = Join-Path $Root "scripts\build_frida_agent.py"
+    if (Test-Path -LiteralPath $buildScript -PathType Leaf) {
+        try {
+            & $VenvPython $buildScript
+        }
+        catch {
+            Write-Warning "自动构建 Frida Agent 失败。如需全功能动态分析请在 scripts/frida-agent 下运行 npm install 并执行 python scripts/build_frida_agent.py"
+        }
+    }
+}
+
 New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
 
 Write-Host ""

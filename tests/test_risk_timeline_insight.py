@@ -2,7 +2,7 @@ from app.analyzers.compliance_insight import generate_compliance_insight
 from app.analyzers.risk_scoring import calculate_risk_summary, level_for_score
 from app.analyzers.timeline_builder import build_timeline, classify_timing
 from app.models import AnalyzeResponse
-from app.tools.report_writer import write_markdown_report
+from app.reporting.report_writer import write_markdown_report
 
 
 def test_risk_level_boundaries():
@@ -138,9 +138,7 @@ def test_insight_only_uses_risk_evidence():
 
 
 def test_old_report_without_enrichment_fields_remains_readable():
-    response = AnalyzeResponse.model_validate(
-        {"ok": True, "apk_path": "sample.apk", "sdks": []}
-    )
+    response = AnalyzeResponse.model_validate({"ok": True, "apk_path": "sample.apk", "sdks": []})
     assert response.risk_summary is None
     assert response.timeline is None
     assert response.compliance_insight is None

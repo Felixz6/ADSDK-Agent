@@ -21,7 +21,8 @@ is ever copied into a finding.
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Literal, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -307,7 +308,7 @@ def build_finding_id(
 
     joined = "\0".join(sorted(str(value) for value in evidence_ids))
     digest = hashlib.sha256(
-        f"{SCHEMA_VERSION}\0{rule_id}\0{joined}\0{consent_state}".encode("utf-8")
+        f"{SCHEMA_VERSION}\0{rule_id}\0{joined}\0{consent_state}".encode()
     ).hexdigest()
     return f"pf-{digest[:24]}"
 
@@ -374,10 +375,7 @@ def _request_ref(request: NetworkRequestEvidence) -> PrivacyEvidenceRef:
         evidence_type="network_request",
         evidence_id=request.request_id,
         artifact="traffic/requests.jsonl",
-        label=(
-            f"{request.method.upper()} {request.host}"
-            f"{safe_path_summary(request.path)}"
-        ),
+        label=(f"{request.method.upper()} {request.host}{safe_path_summary(request.path)}"),
     )
 
 
@@ -489,10 +487,11 @@ class PrivacyRuleContext(BaseModel):
 
     @property
     def dynamic_conclusions_allowed(self) -> bool:
-        return (
-            self.dynamic_evidence_available
-            and _normalized_grade(self.dynamic_grade) in {"A", "B", "C"}
-        )
+        return self.dynamic_evidence_available and _normalized_grade(self.dynamic_grade) in {
+            "A",
+            "B",
+            "C",
+        }
 
 
 def _rule_preconsent_sensitive_event(
@@ -560,9 +559,7 @@ def _rule_preconsent_sensitive_event(
         confidence=confidence,
         finding_type="observed",
         consent_state="pre_consent",
-        summary=(
-            f"在 Consent 之前观察到 {len(matched)} 条敏感 API 调用记录。"
-        ),
+        summary=(f"在 Consent 之前观察到 {len(matched)} 条敏感 API 调用记录。"),
         explanation=(
             "本次采集在可信 Consent 边界之前记录到敏感 API 调用。"
             "这是对技术调用行为的观察，不代表这些数据被上传或被用于特定用途，"
@@ -614,11 +611,7 @@ def _rule_preconsent_network(
             [],
         )
 
-    matched = [
-        request
-        for request in context.requests
-        if request.consent_state == "pre_consent"
-    ]
+    matched = [request for request in context.requests if request.consent_state == "pre_consent"]
     if not matched:
         return (
             PrivacyRuleResult(
@@ -644,10 +637,7 @@ def _rule_preconsent_network(
         confidence=confidence,
         finding_type="observed",
         consent_state="pre_consent",
-        summary=(
-            f"在 Consent 之前观察到 {len(matched)} 条网络请求，"
-            f"涉及 {len(hosts)} 个主机。"
-        ),
+        summary=(f"在 Consent 之前观察到 {len(matched)} 条网络请求，涉及 {len(hosts)} 个主机。"),
         explanation=(
             "采集器在可信 Consent 边界之前记录到网络请求元数据（主机、方法、粗粒度路径）。"
             "请求内容未被解析或保存，因此不能据此判断是否传输了个人信息，"
@@ -692,11 +682,7 @@ def _rule_preconsent_correlated_activity(
             [],
         )
 
-    matched = [
-        item
-        for item in context.correlations
-        if item.consent_state == "pre_consent"
-    ]
+    matched = [item for item in context.correlations if item.consent_state == "pre_consent"]
     if not matched:
         return (
             PrivacyRuleResult(
@@ -737,9 +723,7 @@ def _rule_preconsent_correlated_activity(
         confidence=confidence,
         finding_type="suspected",
         consent_state="pre_consent",
-        summary=(
-            f"在 Consent 之前存在 {len(matched)} 组时间接近的动态事件与网络请求。"
-        ),
+        summary=(f"在 Consent 之前存在 {len(matched)} 组时间接近的动态事件与网络请求。"),
         explanation=(
             "该结果只表示两类证据在时间上接近，可能相关。"
             "它不证明事件触发了网络请求，也不证明请求中包含个人信息，"
@@ -782,9 +766,7 @@ def _rule_consent_state_unknown(
             [],
         )
 
-    unknown_events = [
-        event for event in context.events if event.consent_state == "unknown"
-    ]
+    unknown_events = [event for event in context.events if event.consent_state == "unknown"]
     unknown_requests = [
         request for request in context.requests if request.consent_state == "unknown"
     ]
@@ -808,9 +790,7 @@ def _rule_consent_state_unknown(
     if not context.consent_boundary_available:
         reason_codes.insert(0, "consent_boundary_missing")
         limitations.append("缺少可信 Consent 时间边界")
-        refs.append(
-            _timeline_ref("consent_boundary", "Consent 边界缺失或时间不可信")
-        )
+        refs.append(_timeline_ref("consent_boundary", "Consent 边界缺失或时间不可信"))
     finding = _make_finding(
         rule_id=rule_id,
         title="部分观察的 Consent 阶段无法判定",
@@ -819,9 +799,7 @@ def _rule_consent_state_unknown(
         confidence="low",
         finding_type="evidence_gap",
         consent_state="unknown",
-        summary=(
-            f"有 {total} 条观察缺少可信时间信息，无法归入 Consent 前或 Consent 后。"
-        ),
+        summary=(f"有 {total} 条观察缺少可信时间信息，无法归入 Consent 前或 Consent 后。"),
         explanation=(
             "这是证据覆盖度提示，不是风险判定。"
             "这些观察既不能用于支持 Consent 前风险提示，也不能用于证明不存在相关行为。"
@@ -974,11 +952,7 @@ def _rule_postconsent_observation(
         for event in context.events
         if event.is_sensitive and event.consent_state == "post_consent"
     ]
-    requests = [
-        request
-        for request in context.requests
-        if request.consent_state == "post_consent"
-    ]
+    requests = [request for request in context.requests if request.consent_state == "post_consent"]
     if not events and not requests:
         return (
             PrivacyRuleResult(
@@ -1003,8 +977,7 @@ def _rule_postconsent_observation(
         finding_type="observed",
         consent_state="post_consent",
         summary=(
-            f"Consent 之后观察到 {len(events)} 条敏感 API 调用与 "
-            f"{len(requests)} 条网络请求。"
+            f"Consent 之后观察到 {len(events)} 条敏感 API 调用与 {len(requests)} 条网络请求。"
         ),
         explanation=(
             "这些观察发生在 Consent 之后，作为行为基线信息记录。"
@@ -1063,9 +1036,7 @@ def evaluate_privacy_rules(
                     rule_id=rule_id,
                     status="error",
                     reason_codes=["rule_execution_error"],
-                    limitations=[
-                        f"规则执行异常（{type(exc).__name__}），其他规则不受影响"
-                    ],
+                    limitations=[f"规则执行异常（{type(exc).__name__}），其他规则不受影响"],
                 )
             )
             continue
@@ -1084,20 +1055,12 @@ def build_findings_summary(
         medium_severity_count=sum(item.severity == "medium" for item in findings),
         low_severity_count=sum(item.severity == "low" for item in findings),
         info_severity_count=sum(item.severity == "info" for item in findings),
-        confirmed_observation_count=sum(
-            item.finding_type == "observed" for item in findings
-        ),
+        confirmed_observation_count=sum(item.finding_type == "observed" for item in findings),
         suspected_risk_count=sum(item.finding_type == "suspected" for item in findings),
-        evidence_gap_count=sum(
-            item.finding_type == "evidence_gap" for item in findings
-        ),
+        evidence_gap_count=sum(item.finding_type == "evidence_gap" for item in findings),
         matched_rule_count=sum(item.status == "matched" for item in rule_results),
-        not_matched_rule_count=sum(
-            item.status == "not_matched" for item in rule_results
-        ),
-        not_evaluated_rule_count=sum(
-            item.status == "not_evaluated" for item in rule_results
-        ),
+        not_matched_rule_count=sum(item.status == "not_matched" for item in rule_results),
+        not_evaluated_rule_count=sum(item.status == "not_evaluated" for item in rule_results),
         error_rule_count=sum(item.status == "error" for item in rule_results),
     )
 
@@ -1131,10 +1094,7 @@ def _validate_events(
             **raw,
             "event_id": str(raw.get("event_id") or f"event-{index + 1}"),
             "event_type": str(
-                raw.get("event_type")
-                or raw.get("category")
-                or raw.get("action")
-                or "dynamic_event"
+                raw.get("event_type") or raw.get("category") or raw.get("action") or "dynamic_event"
             ),
         }
         try:
@@ -1154,9 +1114,7 @@ def _validate_requests(
     for index, raw in enumerate(raw_requests):
         if not isinstance(raw, Mapping):
             continue
-        request_id = str(
-            raw.get("request_id") or raw.get("flow_id") or f"request-{index + 1}"
-        )
+        request_id = str(raw.get("request_id") or raw.get("flow_id") or f"request-{index + 1}")
         payload = {**raw, "request_id": request_id}
         resolved_state = states.get(request_id)
         if resolved_state in {"pre_consent", "post_consent", "unknown"}:
@@ -1180,9 +1138,7 @@ def _validate_correlations(
             continue
         payload = {
             **raw,
-            "correlation_id": str(
-                raw.get("correlation_id") or f"correlation-{index + 1}"
-            ),
+            "correlation_id": str(raw.get("correlation_id") or f"correlation-{index + 1}"),
         }
         try:
             items.append(CorrelationEvidence.model_validate(payload))

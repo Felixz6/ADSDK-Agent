@@ -3,19 +3,18 @@ import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { GlassCard } from '@/components/common/GlassCard'
 import { PageHeader } from '@/components/common/PageHeader'
-import { StatCard } from '@/components/common/StatCard'
+import { StatCard, MetricStrip } from '@/components/common/StatCard'
 import { PipelineTimeline } from '@/components/report/PipelineTimeline'
 import { STEP_STATUS_LABEL } from '@/components/common/StatusBadge'
 import { RiskSummaryCard } from '@/components/analysis/RiskSummaryCard'
 import { SdkIntelligencePanel } from '@/components/analysis/SdkIntelligencePanel'
 import { PermissionSummaryPanel } from '@/components/analysis/PermissionSummaryPanel'
 import { useActiveResult, NoActiveResult } from '@/pages/shared/NoActiveResult'
-import { useAnalysisStore } from '@/stores/analysisStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useTaskReport } from '@/hooks/useTasks'
 import { ErrorState, LoadingState } from '@/components/common/States'
 import { RiskBadge, deriveRiskLevel } from '@/components/common/RiskBadge'
-import { cn, copyText, formatDateTime } from '@/utils'
+import { cn, copyText } from '@/utils'
 
 export default function StaticAnalysis() {
   const [searchParams] = useSearchParams()
@@ -23,7 +22,6 @@ export default function StaticAnalysis() {
   const localResp = useActiveResult('static')
   const remote = useTaskReport(taskId)
   const resp = remote.data?.report ?? localResp
-  const task = useAnalysisStore((s) => s.task)
   const pushToast = useUIStore((s) => s.pushToast)
 
   if (taskId && remote.isLoading) return renderShell(<LoadingState title="正在加载静态报告…" />)
@@ -43,16 +41,16 @@ export default function StaticAnalysis() {
       <PageHeader
         title="静态分析"
         description="基于 AndroidManifest 解析与 SDK 指纹识别的结果概览。原始敏感字段已脱敏。"
-        eyebrow={`任务 ${taskId ?? task?.local_id ?? ''} · 完成于 ${formatDateTime(task?.created_at)}`}
+        eyebrow={taskId ? `任务 ${taskId}` : '当前分析'}
         actions={<RiskBadge level={risk} />}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="应用包名" value={info?.package_name ?? '—'} tone="default" icon={<Package size={18} />} hint={info?.application_label ?? undefined} />
-        <StatCard label="版本" value={info?.version_name ?? '—'} tone="accent" hint={info?.version_code != null ? `versionCode ${info.version_code}` : undefined} />
-        <StatCard label="识别 SDK 数" value={resp.sdk_count} tone="success" icon={<ShieldCheck size={18} />} />
-        <StatCard label="整体状态" value={STEP_STATUS_LABEL[resp.status] ?? resp.status} tone={resp.status === 'success' ? 'success' : 'warning'} icon={<CheckCircle2 size={18} />} />
-      </div>
+      <MetricStrip>
+        <StatCard embedded label="应用包名" value={info?.package_name ?? '—'} tone="default" icon={<Package size={17} />} hint={info?.application_label ?? undefined} />
+        <StatCard embedded label="版本" value={info?.version_name ?? '—'} tone="accent" hint={info?.version_code != null ? `versionCode ${info.version_code}` : undefined} />
+        <StatCard embedded label="识别 SDK 数" value={resp.sdk_count} tone="success" icon={<ShieldCheck size={17} />} />
+        <StatCard embedded label="整体状态" value={STEP_STATUS_LABEL[resp.status] ?? resp.status} tone={resp.status === 'success' ? 'success' : 'warning'} icon={<CheckCircle2 size={17} />} />
+      </MetricStrip>
 
       <RiskSummaryCard summary={resp.risk_summary} />
       <PermissionSummaryPanel appInfo={info} />

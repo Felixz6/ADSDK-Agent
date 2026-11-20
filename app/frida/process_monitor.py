@@ -7,19 +7,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 _FATAL_SIGNAL = re.compile(
     r"Fatal signal\s+(?P<number>\d+)\s+\((?P<signal>SIG[A-Z0-9]+)\),"
     r"\s+code\s+(?P<code_number>-?\d+)\s+\((?P<signal_code>[A-Z0-9_]+)\)"
     r"(?:,\s+fault addr\s+(?P<fault_address>0x[0-9a-fA-F]+))?"
 )
 _CAUSE = re.compile(r"(?:Cause|Abort message):\s*['\"]?(?P<summary>[^\r\n'\"]+)")
-_PROCESS = re.compile(
-    r"(?m)^[^\r\n]*>>>\s*(?P<process>[^\r\n<]+?)\s*<<<"
-)
-_THREAD = re.compile(
-    r"(?m)^[^\r\n]*\bname:\s*(?P<thread>[^\r\n>]+?)\s+>>>"
-)
+_PROCESS = re.compile(r"(?m)^[^\r\n]*>>>\s*(?P<process>[^\r\n<]+?)\s*<<<")
+_THREAD = re.compile(r"(?m)^[^\r\n]*\bname:\s*(?P<thread>[^\r\n>]+?)\s+>>>")
 _NATIVE_FRAME = re.compile(r"^\s*#\d+\s+pc\s+.+$", re.IGNORECASE)
 
 
@@ -100,11 +95,7 @@ def _native_crash(
         summary = "trying to execute non-executable memory"
     process_match = _PROCESS.search(joined)
     thread_match = _THREAD.search(joined)
-    native_frames = [
-        line.strip()
-        for line in lines
-        if _NATIVE_FRAME.match(line)
-    ]
+    native_frames = [line.strip() for line in lines if _NATIVE_FRAME.match(line)]
     folded = joined.casefold()
     components: list[str] = []
     for marker, label in (
@@ -156,9 +147,7 @@ def _native_crash(
         signal=signal,
         signal_code=signal_code,
         fault_address=fault_address,
-        process_name=(
-            process_match.group("process").strip() if process_match else None
-        ),
+        process_name=(process_match.group("process").strip() if process_match else None),
         thread_name=thread_match.group("thread").strip() if thread_match else None,
         process_uptime=(duration_ms / 1000.0 if duration_ms is not None else None),
         native_frames=native_frames,

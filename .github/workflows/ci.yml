@@ -25,8 +25,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Run Ruff Lint
+        run: ruff check app tests scripts
+
+      - name: Run Ruff Format Check
+        run: ruff format --check app tests scripts
+
       - name: Run Pytest
         run: pytest -q
+
+      - name: Check OpenAPI Schema Drift
+        run: |
+          python scripts/export_openapi.py
+          git diff --exit-code openapi.json
 
   frontend-check:
     name: Frontend Quality & Build (Node 20)
@@ -44,6 +55,11 @@ jobs:
 
       - name: Install dependencies
         run: npm --prefix web ci
+
+      - name: Verify Generated API Types Up To Date
+        run: |
+          npm --prefix web run gen:api
+          git diff --exit-code web/src/types/openapi.ts
 
       - name: Typecheck
         run: npm --prefix web run typecheck

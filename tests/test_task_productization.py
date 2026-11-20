@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import app.container as container
 import app.main as main_module
+import app.pipelines.task_runner as task_runner
 from app.comparisons import ComparisonCreateRequest, ComparisonService
 from app.reporting import render_html_report, write_html_report
 from app.repositories import TaskRepository
@@ -182,9 +184,7 @@ def test_task_service_records_real_progress_and_report_index(tmp_path: Path):
         return payload
 
     service.set_runner(runner)
-    task = service.create(
-        TaskCreateRequest(task_type="static", apk_path="D:/samples/app.apk")
-    )
+    task = service.create(TaskCreateRequest(task_type="static", apk_path="D:/samples/app.apk"))
     result = _wait_terminal(service, task.id)
     report = service.report(task.id)
 
@@ -212,9 +212,7 @@ def test_task_service_failure_retry_and_delete(tmp_path: Path):
         }
 
     service.set_runner(runner)
-    task = service.create(
-        TaskCreateRequest(task_type="static", apk_path="D:/samples/app.apk")
-    )
+    task = service.create(TaskCreateRequest(task_type="static", apk_path="D:/samples/app.apk"))
     failed = _wait_terminal(service, task.id)
     retried = service.retry(task.id).task
     retried_terminal = _wait_terminal(service, retried.id)
@@ -286,8 +284,8 @@ def test_html_report_is_printable_and_escapes_untrusted_content(tmp_path: Path):
 def test_recover_interrupted_tasks_on_restart(tmp_path: Path):
     repository = _repository(tmp_path)
     running_task = _create_task(repository, task_id="orphan-1", status="running")
-    queued_task = _create_task(repository, task_id="orphan-2", status="queued")
-    completed_task = _create_task(repository, task_id="normal-3", status="completed")
+    queued_task = _create_task(repository, task_id="orphan-2", status="queued")  # noqa: F841
+    completed_task = _create_task(repository, task_id="normal-3", status="completed")  # noqa: F841
 
     repository.upsert_step(
         running_task.id,
@@ -376,9 +374,7 @@ def test_comparison_is_deterministic_and_persistent(tmp_path: Path):
     )
     service = ComparisonService(repository)
 
-    result = service.create(
-        ComparisonCreateRequest(base_task_id=base.id, target_task_id=target.id)
-    )
+    result = service.create(ComparisonCreateRequest(base_task_id=base.id, target_task_id=target.id))
     loaded = service.get(result.id)
 
     assert result.schema_version == "comparison-v1"
@@ -448,8 +444,9 @@ def test_task_api_create_list_detail_report_and_websocket(
     report_path.write_text(json.dumps(payload), encoding="utf-8")
     service = TaskService(repository, max_workers=1)
     service.set_runner(lambda _task: payload)
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
 
     client = TestClient(main_module.app)
     created_response = client.post(
@@ -480,8 +477,9 @@ def test_task_api_stable_errors_and_delete(
     repository = _repository(tmp_path)
     service = TaskService(repository, max_workers=1)
     service.set_runner(lambda _task: {"ok": False, "status": "failed"})
-    monkeypatch.setattr(main_module, "task_service", service)
-    monkeypatch.setattr(main_module, "task_repository", repository)
+    monkeypatch.setattr(container, "task_service", service)
+    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setattr(task_runner, "task_service", service)
     client = TestClient(main_module.app)
 
     missing = client.get("/tasks/missing")
