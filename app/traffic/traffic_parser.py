@@ -1,3 +1,12 @@
+"""Traffic summary writer and legacy text parser for historical artifacts.
+
+注意：当前流量采集已全面采用结构化 requests.jsonl 格式 (validate_traffic_jsonl)。
+parse_traffic_text 纯文本正则解析仅用于兼容读取历史 mitm.stderr.log 文本产物，
+计划在 v0.4 移除。
+"""
+
+from __future__ import annotations
+
 import os
 import re
 from collections import Counter
@@ -148,3 +157,16 @@ def parse_structured_traffic_to_summary_json(
     summary = build_structured_traffic_summary(collection)
     write_traffic_summary(summary, os.fspath(output_path))
     return summary
+
+
+# Entry point for reading legacy plain-text traffic logs (planned removal in v0.4)
+read_legacy_traffic_text = parse_traffic_text
+
+__all__ = [
+    "build_structured_traffic_summary",
+    "build_traffic_summary",
+    "parse_structured_traffic_to_summary_json",
+    "parse_traffic_text",
+    "read_legacy_traffic_text",
+    "write_traffic_summary",
+]

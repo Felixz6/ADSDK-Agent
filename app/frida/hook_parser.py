@@ -1,3 +1,12 @@
+"""Frida hook log parser.
+
+注意：当前动态分析采集已全面采用结构化 JSONL (FridaEvent / StructuredEventWriter)。
+本模块中的纯文本匹配逻辑仅用于向下兼容读取历史任务产生的文本 hook.log 产物，
+计划在 v0.4 彻底移除纯文本解析支持。
+"""
+
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -195,3 +204,13 @@ def parse_hook_to_events_json(
     )
     write_events_json(events, output_path)
     return events
+
+
+# Entry point for reading legacy hook.log artifacts (planned removal in v0.4)
+read_legacy_hook_log = parse_hook_log
+
+__all__ = [
+    "parse_hook_log",
+    "parse_hook_to_events_json",
+    "read_legacy_hook_log",
+]

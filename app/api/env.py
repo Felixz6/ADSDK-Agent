@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Query
@@ -110,8 +112,22 @@ def traffic_check(device_id: str):
         resolved_device_id = device_id
     device_info = check_device_online(device_id=resolved_device_id)
     mitm_status = get_mitm_status(port=app_config.DEFAULT_MITM_PORT)
-    stream_log = mitm_status.get("stream_log")
-    records = parse_traffic_text(stream_log) if stream_log else []
+    records: list[dict[str, Any]] = []
+    jsonl_path = mitm_status.get("jsonl_path")
+    if jsonl_path and Path(jsonl_path).is_file():
+        try:
+            with open(jsonl_path, encoding="utf-8") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped:
+                        item = json.loads(stripped)
+                        if item.get("type") == "http_request":
+                            records.append(item)
+        except Exception:
+            pass
+    if not records:
+        stream_log = mitm_status.get("stream_log")
+        records = parse_traffic_text(stream_log) if stream_log else []
     flow_file_size = mitm_status.get("flow_file_size", 0)
 
     captured_ok = bool(records) and bool(mitm_status.get("owned_by_session"))
