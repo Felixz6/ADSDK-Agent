@@ -20,7 +20,7 @@ class TrafficDiagnostics(BaseModel):
     outcome: str
     reason_codes: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
-    # M7B Phase C visibility facts. All values are deterministic observations
+    # Visibility facts. All values are deterministic observations
     # (counts / booleans) — never raw socket tables, addresses or payloads, and
     # never transport attributions (an observed UDP:443 endpoint is NOT QUIC).
     proxy_reachable: bool | None = None
@@ -144,7 +144,7 @@ def diagnose_traffic(
             "restored",
         }
     )
-    # M7B Phase C — deterministic visibility facts from the in-window device
+    # Deterministic visibility facts from the in-window device
     # network observation (counts/booleans only; see summarize_proc_net).
     observation = (
         status.get("network_observation")

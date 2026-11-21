@@ -36,7 +36,7 @@ EVIDENCE_DIGEST_SCHEMA_VERSION: Literal["evidence-digest-v1"] = "evidence-digest
 AI_RUNTIME_DIAGNOSTICS_SCHEMA_VERSION: Literal["ai-runtime-diagnostics-v1"] = (
     "ai-runtime-diagnostics-v1"
 )
-# M7B — plan validation diagnostics artifact. Records the stable error code,
+# Plan validation diagnostics artifact. Records the stable error code,
 # stage, and bounded location info for each plan validation / repair attempt.
 # Secret-free: never the original prompt, model response, reasoning_content,
 # argument values, or API key. Stored next to ai-plan.json as
@@ -382,7 +382,7 @@ class AIPerRoundUsage(BaseModel):
     reasoning_content_present: bool = False
     retry_count: int = 0
     cache_hit: bool = False
-    # M7B Phase B truncation diagnostics: the output-token cap this round was
+    # Truncation diagnostics: the output-token cap this round was
     # given, and the model response length in characters (a count only — the
     # response text itself is never persisted).
     requested_output_tokens: int | None = None
@@ -481,7 +481,7 @@ class AIRuntimeDiagnostic(BaseModel):
     # needed; ``failed`` means no model artifact was produced.
     outcome: Literal["ok", "degraded", "failed", "disabled"] = "ok"
     # ------------------------------------------------------------------
-    # M7B (Section 八/九) — plan-source + dynamic-strategy provenance stamped
+    # Plan-source + dynamic-strategy provenance stamped
     # on every run so the acceptance metrics / UI can reconstruct why a run
     # ended up with the plan and strategy it actually executed. Defaults are
     # the safest values: a run is treated as deterministic-fallback, planning
@@ -492,8 +492,8 @@ class AIRuntimeDiagnostic(BaseModel):
     # ``plan_source``/``planning_failed``/``deterministic_plan_fallback``/
     # ``repair_attempted`` describe the plan leg; ``requested_strategy`` →
     # ``effective_strategy`` describe the deterministic dynamic-strategy
-    # normalization (Section 十二, Rules A–F); ``report_source`` is the
-    # provenance of the final AI synthesis report (Section 十六).
+    # normalization (Rules A–F); ``report_source`` is the
+    # provenance of the final AI synthesis report.
     plan_source: Literal["ai", "repaired", "deterministic"] = "deterministic"
     planning_failed: bool = False
     deterministic_plan_fallback: bool = True

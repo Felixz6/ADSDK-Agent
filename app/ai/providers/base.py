@@ -180,7 +180,7 @@ class ProviderResponse:
     usage_source: str = "unavailable"
     finish_reason: str | None = None
     reasoning_content_present: bool = False
-    # M7B Phase B truncation diagnostics: length of the raw model content in
+    # Truncation diagnostics: length of the raw model content in
     # characters. A count only — the content itself is never carried here.
     content_chars: int | None = None
 

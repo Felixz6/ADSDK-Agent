@@ -57,7 +57,7 @@ from app.tools.utils import run_cmd
 from app.traffic.mitm_runner import check_port_listening
 
 
-def _capture_m7b_device_snapshot(
+def _capture_device_snapshot(
     *, run_id: str, device_id: str | None, package_name: str | None, capture_kind: str
 ) -> DeviceSessionSnapshot:
     state = DeviceState()
@@ -95,7 +95,7 @@ def _capture_m7b_device_snapshot(
     )
 
 
-def _m7b_target_pid(device_id: str, package_name: str) -> int | None:
+def _target_pid(device_id: str, package_name: str) -> int | None:
     if not device_id or not package_name:
         return None
     result = run_cmd(["adb", "-s", device_id, "shell", "pidof", package_name])
@@ -103,7 +103,7 @@ def _m7b_target_pid(device_id: str, package_name: str) -> int | None:
     return int(value[0]) if value and value[0].isdigit() and int(value[0]) > 0 else None
 
 
-def _m7b_resource_present(kind: str, detail: dict[str, Any]) -> bool | None:
+def _resource_present(kind: str, detail: dict[str, Any]) -> bool | None:
     pid = int(detail.get("pid") or -1)
     if kind == "app_process":
         device = str(detail.get("device_id") or "")
@@ -129,7 +129,7 @@ def _m7b_resource_present(kind: str, detail: dict[str, Any]) -> bool | None:
     return None
 
 
-def _m7b_resource_identity_matches(kind: str, detail: dict[str, Any]) -> bool:
+def _resource_identity_matches(kind: str, detail: dict[str, Any]) -> bool:
     """Treat absence as a verified cleanup state; guard only live PID reuse."""
     pid = int(detail.get("pid") or -1)
     expected = str(detail.get("expected_command_token") or "").casefold()
@@ -144,7 +144,7 @@ def _m7b_resource_identity_matches(kind: str, detail: dict[str, Any]) -> bool:
     return bool(expected) and expected in command.casefold()
 
 
-def _register_m7b_owned_resources(
+def _register_owned_resources(
     *,
     report: dict[str, Any],
     registry: ResourceOwnershipRegistry,
@@ -200,7 +200,7 @@ def _register_m7b_owned_resources(
         )
 
 
-def _run_m7b_full_analysis_session(
+def run_full_analysis_session(
     *, task: TaskRecord, payload: dict[str, Any]
 ) -> dict[str, Any] | JSONResponse:
     """Single production entry for ai_orchestrated full_analysis tasks."""
@@ -225,7 +225,7 @@ def _run_m7b_full_analysis_session(
     def snapshot_factory(
         device_id: str | None, package_name: str | None, capture_kind: str
     ) -> DeviceSessionSnapshot:
-        snapshot = _capture_m7b_device_snapshot(
+        snapshot = _capture_device_snapshot(
             run_id=task.id,
             device_id=device_id,
             package_name=package_name,
@@ -265,7 +265,7 @@ def _run_m7b_full_analysis_session(
         report_holder["value"] = report
         before = initial_snapshot.get("value")
         if before is not None:
-            _register_m7b_owned_resources(
+            _register_owned_resources(
                 report=report,
                 registry=registry,
                 payload=payload,
@@ -317,8 +317,8 @@ def _run_m7b_full_analysis_session(
         stop_mitm_pid_action=_stop_owned_host_pid,
         stop_frida_session_action=stop_registered_frida_session,
         read_proxy_action=_read_device_proxy,
-        resource_present_action=_m7b_resource_present,
-        resource_identity_matches_action=_m7b_resource_identity_matches,
+        resource_present_action=_resource_present,
+        resource_identity_matches_action=_resource_identity_matches,
         force_stop_package_action=lambda device, package: _adb_cleanup_action(
             device, ["shell", "am", "force-stop", package]
         ),
@@ -347,7 +347,7 @@ def _run_m7b_full_analysis_session(
     transition = session.run()
     before_snapshot = initial_snapshot.get("value") or getattr(transition, "snapshot", None)
     postflight_snapshot = (
-        _capture_m7b_device_snapshot(
+        _capture_device_snapshot(
             run_id=task.id,
             device_id=payload.get("device_id"),
             package_name=payload.get("package_name"),
@@ -356,7 +356,7 @@ def _run_m7b_full_analysis_session(
         if before_snapshot is not None
         else None
     )
-    postflight_target_pid = _m7b_target_pid(
+    postflight_target_pid = _target_pid(
         str(payload.get("device_id") or ""), str(payload.get("package_name") or "")
     )
     preflight_target_absent = bool(
@@ -402,8 +402,9 @@ def _run_m7b_full_analysis_session(
             "schema_version": SCHEMA_VERSION,
             "run_id": task.id,
             "status": ("success" if transition.final_state == "completed" else "failed"),
-            "error_code": transition.runtime_validation_error_code or "m7b_session_failed",
-            "error": "; ".join(transition.failures)[:500] or "M7B session failed",
+            "error_code": transition.runtime_validation_error_code
+            or "full_analysis_session_failed",
+            "error": "; ".join(transition.failures)[:500] or "Full analysis session failed",
             "output_dir": str(run_dir),
         },
     )
@@ -479,21 +480,19 @@ def _run_m7b_full_analysis_session(
     return report
 
 
-capture_device_session_snapshot = _capture_m7b_device_snapshot
-find_target_process_pid = _m7b_target_pid
-check_owned_resource_present = _m7b_resource_present
-match_owned_resource_identity = _m7b_resource_identity_matches
-register_session_owned_resources = _register_m7b_owned_resources
-run_full_analysis_session = _run_m7b_full_analysis_session
+capture_device_session_snapshot = _capture_device_snapshot
+find_target_process_pid = _target_pid
+check_owned_resource_present = _resource_present
+match_owned_resource_identity = _resource_identity_matches
+register_session_owned_resources = _register_owned_resources
 
 
 __all__ = [
-    "_capture_m7b_device_snapshot",
-    "_m7b_resource_identity_matches",
-    "_m7b_resource_present",
-    "_m7b_target_pid",
-    "_register_m7b_owned_resources",
-    "_run_m7b_full_analysis_session",
+    "_capture_device_snapshot",
+    "_register_owned_resources",
+    "_resource_identity_matches",
+    "_resource_present",
+    "_target_pid",
     "capture_device_session_snapshot",
     "check_owned_resource_present",
     "find_target_process_pid",

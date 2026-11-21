@@ -289,7 +289,7 @@ class MitmSession:
     stop_timeout: float = 3.0
     addon_path: Path | None = None
     device_proxy_host: str | None = None
-    # M7B Phase C visibility observation: the target package (when provided)
+    # Target package visibility observation: the target package (when provided)
     # enables a per-uid socket-activity count at window end.
     package_name: str | None = None
     command_runner: CommandRunner = field(default=run_cmd, repr=False)
@@ -313,7 +313,7 @@ class MitmSession:
     original_device_proxy: str | None = field(default=None, init=False)
     device_proxy_configured: bool = field(default=False, init=False)
     device_proxy_restored: bool | None = field(default=None, init=False)
-    # M7B Phase C — deterministic visibility facts gathered while the window
+    # Deterministic visibility facts gathered while the window
     # is live: a device→proxy TCP probe (after the proxy is applied) and a
     # /proc/net snapshot at window end. Counts/booleans only; raw rows,
     # addresses and payloads are never stored.
@@ -728,7 +728,7 @@ class MitmSession:
                 raise RuntimeError("mitm session is not ready")
             if self.device_proxy_host is not None:
                 self._configure_device_proxy()
-                # M7B Phase C: device→proxy TCP reachability, measured while
+                # Device→proxy TCP reachability, measured while
                 # the proxy is applied. A transport fact only — it never
                 # implies the target actually used the proxy.
                 try:
@@ -874,7 +874,7 @@ class MitmSession:
                 return self._stop_result
             preserve_failure = self.state is MitmSessionState.FAILED
             if self.state is MitmSessionState.COLLECTING:
-                # M7B Phase C: end-of-window device network observation —
+                # End-of-window device network observation —
                 # counts/booleans only. Diagnostic-only: it must never break
                 # proxy restore or process teardown.
                 try:

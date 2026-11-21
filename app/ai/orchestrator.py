@@ -89,8 +89,8 @@ from .tool_registry import (
     AIToolRegistry,
 )
 
-# M7B (Section 十二) — deterministic dynamic-strategy normalization owns the
-# ``requested_strategy -> effective_strategy`` decision (Rules A–F). The
+# Deterministic dynamic-strategy normalization owns the
+# ``requested_strategy -> effective_strategy`` decision. The
 # orchestrator records both on the runtime diagnostic so the acceptance
 # metrics can show when the AI requested ``dynamic_only`` but the runtime
 # normalized to ``attach_only`` (e.g. the target process was not running).
@@ -313,7 +313,7 @@ class AIOrchestrator:
         # point of use, so budget_exhausted (a template) and a validated model
         # report carrying a plan_error are both classified correctly.
         deterministic_fallback = self._used_deterministic_report
-        # M7B (Section 十二) — deterministic dynamic-strategy normalization owns
+        # Deterministic dynamic-strategy normalization owns
         # the ``requested_strategy -> effective_strategy`` decision. The AI may
         # *request* ``dynamic_only`` but the operator's flags (allow_dynamic /
         # allow_network / confirmed_tools) deterministic gate it. We record
@@ -723,7 +723,7 @@ class AIOrchestrator:
             cache_enabled=self._cache.enabled,
             deterministic_fallback=deterministic_fallback,
             outcome=outcome,
-            # M7B plan-validation provenance accumulated by ``_plan``; on the
+            # Plan-validation provenance accumulated by ``_plan``; on the
             # availability-gate path these stay at their safest defaults
             # (deterministic / planning failed / no repair).
             plan_source=self._plan_source,

@@ -185,7 +185,7 @@ AI_THINKING_MODE = os.getenv("AI_THINKING_MODE", "disabled").strip() or "disable
 # min(stage_cap, global AI_MAX_OUTPUT_TOKENS, remaining budget) so a stage can
 # never exceed the global ceiling, and each stage has its own bound that keeps
 # planner/report/repair answers tight (low-token acceptance).
-# M7B Phase B (real-device measurement, deepseek-v4-flash): the ai-plan-v1
+# Real-device measurement (deepseek-v4-flash): the ai-plan-v1
 # object truncated at 500 (round finished length with no usable steps) and the
 # ai-report-v1 object truncated at 1000; a full repair must re-emit the whole
 # plan, so the old 300-token repair cap was structurally doomed. 800/1500/800
@@ -245,7 +245,7 @@ def _env_int_with_alias(
 DEVICE_LEASE_STALE_SECONDS = _env_int_with_alias(
     "DEVICE_LEASE_STALE_SECONDS", "M7A_LEASE_STALE_SECONDS", 600, 30, 86400
 )
-M7A_LEASE_STALE_SECONDS = DEVICE_LEASE_STALE_SECONDS
+M7A_LEASE_STALE_SECONDS = DEVICE_LEASE_STALE_SECONDS  # deprecated alias, remove in v0.4
 
 # Upper bound on how long the orchestrator waits for the operator to resolve a
 # consent checkpoint. Reaching it NEVER auto-confirms consent — the wait exits
@@ -253,4 +253,4 @@ M7A_LEASE_STALE_SECONDS = DEVICE_LEASE_STALE_SECONDS
 CONSENT_CHECKPOINT_WAIT_SECONDS = _env_int_with_alias(
     "CONSENT_CHECKPOINT_WAIT_SECONDS", "M7A_CONSENT_WAIT_SECONDS", 900, 30, 86400
 )
-M7A_CONSENT_WAIT_SECONDS = CONSENT_CHECKPOINT_WAIT_SECONDS
+M7A_CONSENT_WAIT_SECONDS = CONSENT_CHECKPOINT_WAIT_SECONDS  # deprecated alias, remove in v0.4

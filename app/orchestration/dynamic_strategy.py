@@ -12,7 +12,7 @@ record ``effective_strategy`` next to it.
 
 Why deterministic ownership matters
 -----------------------------------
-The M7A run that motivated this layer ended up with ``plan_source=ai`` but
+The historical run that motivated this layer ended up with ``plan_source=ai`` but
 ``attach_only`` executing against a process that was never running — the model
 "chose" a strategy the operator's flags did not actually permit. Folding the
 clamp into a single, testable function means the AI's narration can describe
@@ -20,7 +20,7 @@ the requested strategy while the *execution* path is gated by the effective
 one, and the runtime validator (:mod:`app.orchestration.runtime_plan_validator`)
 reasons over the *effective* strategy, never the requested one.
 
-Rules (Section 十二, applied in order; first match wins)
+Rules (applied in order; first match wins)
 -------------------------------------------------------
 * **A — unknown requested strategy**: the requested value is not one of the
   four strategy literals. Effective becomes ``static_only``;

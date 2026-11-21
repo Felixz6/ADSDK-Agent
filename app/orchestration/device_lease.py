@@ -1,7 +1,7 @@
 """Reclaimable, heartbeat-aware device lease.
 
 The existing :class:`TaskService` uses a per-device ``threading.Lock`` which
-is lost on crash and cannot be reclaimed for a stale holding process. M7A
+is lost on crash and cannot be reclaimed for a stale holding process. The lease registry
 introduces a *process-wide* :class:`LeaseRegistry` that records, per masked
 device key:
 

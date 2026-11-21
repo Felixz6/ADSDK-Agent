@@ -210,8 +210,8 @@ def test_production_target_probe_detects_replacement_package_pid(monkeypatch):
         "expected_command_token": "com.phoenix.read",
     }
 
-    assert full_analysis_module._m7b_resource_present("app_process", detail) is True
-    assert full_analysis_module._m7b_resource_present("app_process", detail) is False
+    assert full_analysis_module._resource_present("app_process", detail) is True
+    assert full_analysis_module._resource_present("app_process", detail) is False
     assert commands == [
         ["adb", "-s", "DEVICE", "shell", "pidof", "com.phoenix.read"],
         ["adb", "-s", "DEVICE", "shell", "pidof", "com.phoenix.read"],

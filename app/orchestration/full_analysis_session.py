@@ -1,4 +1,4 @@
-"""``FullAnalysisSession`` — the M7A state machine and the constrained-plan
+"""``FullAnalysisSession`` — the state machine and the constrained-plan
 validator that wraps the existing deterministic tools and the M6A/M6C AI
 orchestrator.
 

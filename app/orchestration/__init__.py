@@ -1,4 +1,4 @@
-"""M7A — full AI-analysis orchestration for a single real device.
+"""Full AI-analysis orchestration for a single real device.
 
 This package layers the safety envelope around the existing deterministic
 analysis tools and the M6A/M6C AI orchestrator. It owns none of the facts

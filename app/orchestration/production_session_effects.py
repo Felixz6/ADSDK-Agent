@@ -1,4 +1,4 @@
-"""Production adapter for the M7B :class:`FullAnalysisSession` effect seam.
+"""Production adapter for the :class:`FullAnalysisSession` effect seam.
 
 The adapter contains no analysis implementation.  It binds one task-local set
 of injected production services to the state machine and keeps the effective
