@@ -35,7 +35,7 @@ def default_frida_session_factory(*args: Any, **kwargs: Any) -> Any:
     return FridaSession(*args, **kwargs)
 
 
-default_frida_session_factory.is_real = True  # type: ignore[attr-defined]
+setattr(default_frida_session_factory, "is_real", True)
 
 
 def default_mitm_session_factory(*args: Any, **kwargs: Any) -> Any:

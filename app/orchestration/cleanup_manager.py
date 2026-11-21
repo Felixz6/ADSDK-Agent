@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from hashlib import sha256
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +15,7 @@ from .device_session import DeviceSessionSnapshot
 Ownership = Literal["external", "owned_by_run", "shared_pre_existing"]
 CleanupStepStatus = Literal["success", "failed", "skipped", "not_applicable"]
 CleanupStatus = Literal["success", "partial", "failed"]
+VerificationResult = Literal["verified", "present", "unavailable", "not_owned", "identity_changed"]
 
 
 @dataclass(slots=True)
@@ -87,9 +88,7 @@ class CleanupDiagnostic(BaseModel):
     cleanup_attempted: bool = False
     cleanup_action_result: bool | None = None
     verification_attempted: bool = False
-    verification_result: Literal[
-        "verified", "present", "unavailable", "not_owned", "identity_changed"
-    ]
+    verification_result: VerificationResult
     retry_attempted: bool = False
     final_status: CleanupStatus
     reason_code: str
@@ -262,9 +261,9 @@ class CleanupManager:
             cleanup_attempted=True,
             cleanup_action_result=action,
             verification_attempted=True,
-            verification_result=verification,  # type: ignore[arg-type]  # bounded literal verified at runtime
+            verification_result=cast(VerificationResult, verification),
             retry_attempted=retry,
-            final_status=final,  # type: ignore[arg-type]  # bounded status literal
+            final_status=cast(CleanupStatus, final),
             reason_code=_reason_for(resource.kind, verification),
         )
         outcome.diagnostics.append(diagnostic)
@@ -351,8 +350,8 @@ class CleanupManager:
                 cleanup_attempted=True,
                 cleanup_action_result=action,
                 verification_attempted=True,
-                verification_result=verification,  # type: ignore[arg-type]  # bounded literal verified at runtime
-                final_status=final,  # type: ignore[arg-type]  # bounded status literal
+                verification_result=cast(VerificationResult, verification),
+                final_status=cast(CleanupStatus, final),
                 reason_code="proxy_restore_verified" if verified else "proxy_restore_mismatch",
                 expected_final_state="initial_proxy_semantics",
                 raw_expected_state=initial,
@@ -440,8 +439,8 @@ class CleanupManager:
                     rule=rule,
                     target_kind=kind,
                     target_identity=identity,
-                    ownership=ownership,  # type: ignore[arg-type]  # bounded ownership literal
-                    status=status,  # type: ignore[arg-type]  # bounded status literal
+                    ownership=cast(Ownership, ownership),
+                    status=cast(CleanupStepStatus, status),
                     safe_message=message,
                 )
             )

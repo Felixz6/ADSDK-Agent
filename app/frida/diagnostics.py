@@ -11,10 +11,9 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.core.device import DeviceContext
-from app.core.protocols import CommandRunner
 from app.tools.utils import run_cmd
 
 from .errors import DynamicErrorCode
@@ -49,7 +48,7 @@ class FridaDiagnosticsService:
         project_root: Path,
         server_remote_path: str,
         management_enabled: bool = False,
-        command_runner: CommandRunner = run_cmd,
+        command_runner: Any = run_cmd,
         module_loader: Callable[[str], Any] = importlib.import_module,
         which: Callable[[str], str | None] = shutil.which,
         monotonic: Callable[[], float] = time.monotonic,
@@ -66,7 +65,7 @@ class FridaDiagnosticsService:
         try:
             return self.command_runner(command, timeout=timeout)
         except TypeError:
-            return self.command_runner(command)  # type: ignore[call-arg]
+            return self.command_runner(command)
 
     @staticmethod
     def _check(
@@ -80,7 +79,7 @@ class FridaDiagnosticsService:
         evidence: dict[str, Any] | None = None,
     ) -> DiagnosticCheck:
         return DiagnosticCheck(
-            status=status,  # type: ignore[arg-type]
+            status=cast(Any, status),
             detected_value=detected,
             expected_value=expected,
             error_code=error_code,
@@ -100,7 +99,7 @@ class FridaDiagnosticsService:
             status = "not_configured"
         else:
             status = "pass"
-        return DiagnosticSection(status=status, checks=checks)  # type: ignore[arg-type]
+        return DiagnosticSection(status=cast(Any, status), checks=checks)
 
     def _host(self) -> tuple[DiagnosticSection, str | None, list[DiagnosticIssue]]:
         checks: dict[str, DiagnosticCheck] = {}
@@ -211,16 +210,17 @@ class FridaDiagnosticsService:
                 versions[name] = None
                 continue
             result = self._run([str(path), "--version"], timeout=10)
-            version = (
-                str(result.get("stdout") or "").strip() if result.get("returncode") == 0 else None
-            )
-            versions[name] = version
+            stdout_text = str(result.get("stdout") or "").strip()
+            detected_version: str | None = stdout_text if result.get("returncode") == 0 else None
+            versions[name] = detected_version
             checks[name] = self._check(
-                status="pass" if version else "warning",
-                detected={"path": str(path), "version": version},
+                status="pass" if detected_version else "warning",
+                detected={"path": str(path), "version": detected_version},
                 expected="project .venv executable",
-                error_code=(None if version else DynamicErrorCode.HOST_FRIDA_VERSION_UNKNOWN.value),
-                message=f"{filename} 已检测" if version else f"{filename} 版本读取失败",
+                error_code=(
+                    None if detected_version else DynamicErrorCode.HOST_FRIDA_VERSION_UNKNOWN.value
+                ),
+                message=f"{filename} 已检测" if detected_version else f"{filename} 版本读取失败",
                 evidence={
                     "returncode": result.get("returncode"),
                     "timed_out": bool(result.get("timed_out")),
@@ -538,7 +538,7 @@ class FridaDiagnosticsService:
             issues.append(
                 DiagnosticIssue(
                     code=check.error_code,
-                    severity=severity,
+                    severity=cast(Any, severity),
                     summary=check.message,
                     detail=check.message,
                     remediation=check.remediation or "查看诊断详情并按层排查",
@@ -582,8 +582,8 @@ class FridaDiagnosticsService:
         if not self.management_enabled:
             remediations.insert(0, "自动管理未启用；诊断保持只读")
         return FridaDiagnosticsResponse(
-            overall_status=overall,  # type: ignore[arg-type]
-            recommended_mode=recommended,  # type: ignore[arg-type]
+            overall_status=cast(Any, overall),
+            recommended_mode=cast(Any, recommended),
             host=host,
             device=device_section,
             server=server,

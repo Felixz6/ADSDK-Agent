@@ -71,7 +71,16 @@ known-first-party = ["app"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["app/core", "app/orchestration", "app/traffic", "app/pipelines", "app/api"]
+files = [
+    "app/core",
+    "app/orchestration",
+    "app/traffic",
+    "app/pipelines",
+    "app/api",
+    "app/frida/diagnostics.py",
+    "app/frida/server_manager.py",
+    "app/frida/execution_session.py",
+]
 ignore_missing_imports = true
 follow_imports = "silent"
 warn_unused_configs = true
@@ -85,6 +94,9 @@ module = [
     "app.traffic.*",
     "app.pipelines.*",
     "app.api.*",
+    "app.frida.diagnostics",
+    "app.frida.server_manager",
+    "app.frida.execution_session",
 ]
 check_untyped_defs = true
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -221,8 +221,8 @@ def diagnose_traffic(
         limitations.append("观察到 socket 活动，但未被 HTTP 代理采集到；不推断具体传输协议")
     return TrafficDiagnostics(
         collector_status=collector_outcome,
-        proxy_status=proxy_status,  # type: ignore[arg-type]
-        host_listener=listener,  # type: ignore[arg-type]
+        proxy_status=cast(Any, proxy_status),
+        host_listener=cast(Any, listener),
         device_reachability=(
             "reachable"
             if proxy_reachable is True

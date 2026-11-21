@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi.responses import JSONResponse
 
@@ -87,7 +87,7 @@ def _capture_device_snapshot(
         device_ref=mask_device_ref(device_id),
         captured_at=task_utc_now(),
         initial_state=state,
-        capture_kind=capture_kind,  # type: ignore[arg-type]  # runtime capture kind literal
+        capture_kind=cast(Any, capture_kind),
     )
 
 
@@ -339,7 +339,7 @@ def run_full_analysis_session(
         package_name=payload.get("package_name"),
         objective=str(payload.get("objective") or "分析本次 APK 的隐私风险"),
         strategy="full_analysis",
-        dynamic_mode_policy=str(payload.get("dynamic_mode_policy") or "balanced"),  # type: ignore[arg-type]  # validated policy literal
+        dynamic_mode_policy=cast(Any, str(payload.get("dynamic_mode_policy") or "balanced")),
         application_launch_allowed=True,
         allow_dynamic=bool(payload.get("allow_dynamic")),
         allow_network=bool(payload.get("allow_network")),
@@ -349,7 +349,7 @@ def run_full_analysis_session(
         lease=device_lease_reg,
         consent=consent_svc,
         registry=registry,
-        effects=effects,  # type: ignore[arg-type]  # concrete ProductionSessionEffects implements protocol
+        effects=cast(Any, effects),
         run_dir=run_dir,
     )
     transition = session.run()

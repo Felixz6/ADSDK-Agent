@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -271,7 +271,7 @@ def classify_process_exit(
         status = "unknown_exit"
         cause = "目标进程退出，现有证据不足以确定原因"
     return ProcessExitDiagnostics(
-        status=status,  # type: ignore[arg-type]
+        status=cast(Any, status),
         pid=pid,
         duration_ms=duration_ms,
         hook_ready=hook_ready,
