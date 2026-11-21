@@ -45,6 +45,8 @@ jobs:
         run: mypy
 
       - name: Run Pytest
+        env:
+          REQUIRE_FRIDA_BUNDLE: "1"
         run: pytest -q
 
       - name: Check OpenAPI Schema Drift

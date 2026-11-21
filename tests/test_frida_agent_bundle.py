@@ -25,10 +25,7 @@ ARTIFACT = HOOKS_DIR / "agent.compiled.js"
 
 def _require_artifact_or_skip(msg: str) -> None:
     if not _ensure_artifact():
-        if (
-            os.getenv("CI", "").strip().lower() in {"true", "1", "yes"}
-            or os.getenv("REQUIRE_FRIDA_BUNDLE") == "1"
-        ):
+        if os.getenv("REQUIRE_FRIDA_BUNDLE") == "1":
             pytest.fail(f"CI requirement failed: {msg}")
         pytest.skip(msg)
 
