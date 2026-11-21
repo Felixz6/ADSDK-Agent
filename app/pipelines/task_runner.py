@@ -203,7 +203,7 @@ def run_persisted_task(task: TaskRecord, *, container: Container | None = None):
     raise ValueError(f"unsupported executable task type: {task.task_type}")
 
 
-# deprecated alias
+# compatibility alias
 _run_persisted_task = run_persisted_task
 
 

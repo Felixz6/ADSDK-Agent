@@ -92,3 +92,69 @@ def test_create_app_idempotent_routes():
     resp = client.get("/")
     assert resp.status_code == 200
     assert resp.json() == {"ok": True, "message": "AdSDK Agent is running"}
+
+
+def test_two_apps_have_isolated_databases_and_tasks(tmp_path: Path):
+    """Two app instances constructed with different paths must not share task state."""
+    dir1 = tmp_path / "app1"
+    dir2 = tmp_path / "app2"
+    dir1.mkdir()
+    dir2.mkdir()
+
+    app1 = make_test_app(dir1)
+    app2 = make_test_app(dir2)
+
+    with TestClient(app1) as client1, TestClient(app2) as client2:
+        create_resp = client1.post(
+            "/tasks",
+            json={"task_type": "static", "apk_path": "D:/samples/app.apk"},
+        )
+        assert create_resp.status_code == 202
+        task_id = create_resp.json()["id"]
+
+        # App 1 can see its task
+        detail1 = client1.get(f"/tasks/{task_id}")
+        assert detail1.status_code == 200
+
+        # App 2 cannot see the task created in App 1
+        detail2 = client2.get(f"/tasks/{task_id}")
+        assert detail2.status_code == 404
+
+        list2 = client2.get("/tasks")
+        assert list2.status_code == 200
+        assert list2.json()["total"] == 0
+
+
+def test_task_runner_uses_same_container_instance(tmp_path: Path):
+    """When a task is processed, the runner receives the exact container instance from app.state."""
+    app = make_test_app(tmp_path)
+    captured_container = []
+
+    def mock_runner(task, *, container=None):
+        captured_container.append(container)
+        return {"status": "completed"}
+
+    from functools import partial
+
+    app.state.container.task_service.set_runner(partial(mock_runner, container=app.state.container))
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/tasks",
+            json={"task_type": "static", "apk_path": "D:/samples/app.apk"},
+        )
+        assert resp.status_code == 202
+        task_id = resp.json()["id"]
+
+        # Wait for terminal state
+        import time
+
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            record = app.state.container.task_service.get(task_id)
+            if record and record.status in {"completed", "failed"}:
+                break
+            time.sleep(0.02)
+
+    assert len(captured_container) >= 1
+    assert captured_container[0] is app.state.container

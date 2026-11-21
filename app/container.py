@@ -123,35 +123,9 @@ def build_container(settings: Any = None) -> Container:
     return container
 
 
-# deprecated: Module-level singletons will be removed in v0.4. Use app.state.container instead.
-_default_container = build_container()
-
-task_repository = _default_container.task_repository  # deprecated
-task_service = _default_container.task_service  # deprecated
-comparison_service = _default_container.comparison_service  # deprecated
-ai_settings_store = _default_container.ai_settings_store  # deprecated
-ai_settings_service = _default_container.ai_settings_service  # deprecated
-consent_checkpoint_service = _default_container.consent_checkpoint_service  # deprecated
-device_lease_registry = _default_container.device_lease_registry  # deprecated
-frida_diagnostics_service = _default_container.frida_diagnostics_service  # deprecated
-frida_server_manager = _default_container.frida_server_manager  # deprecated
-frida_session_factory = _default_container.frida_session_factory  # deprecated
-mitm_session_factory = _default_container.mitm_session_factory  # deprecated
-
 __all__ = [
     "Container",
-    "ai_settings_service",
-    "ai_settings_store",
     "build_container",
-    "comparison_service",
-    "consent_checkpoint_service",
     "default_frida_session_factory",
     "default_mitm_session_factory",
-    "device_lease_registry",
-    "frida_diagnostics_service",
-    "frida_server_manager",
-    "frida_session_factory",
-    "mitm_session_factory",
-    "task_repository",
-    "task_service",
 ]

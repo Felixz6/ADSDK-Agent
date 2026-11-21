@@ -245,7 +245,7 @@ def _env_int_with_alias(
 DEVICE_LEASE_STALE_SECONDS = _env_int_with_alias(
     "DEVICE_LEASE_STALE_SECONDS", "M7A_LEASE_STALE_SECONDS", 600, 30, 86400
 )
-M7A_LEASE_STALE_SECONDS = DEVICE_LEASE_STALE_SECONDS  # deprecated alias, remove in v0.4
+M7A_LEASE_STALE_SECONDS = DEVICE_LEASE_STALE_SECONDS  # compatibility alias, remove in v0.4
 
 # Upper bound on how long the orchestrator waits for the operator to resolve a
 # consent checkpoint. Reaching it NEVER auto-confirms consent — the wait exits
@@ -253,4 +253,4 @@ M7A_LEASE_STALE_SECONDS = DEVICE_LEASE_STALE_SECONDS  # deprecated alias, remove
 CONSENT_CHECKPOINT_WAIT_SECONDS = _env_int_with_alias(
     "CONSENT_CHECKPOINT_WAIT_SECONDS", "M7A_CONSENT_WAIT_SECONDS", 900, 30, 86400
 )
-M7A_CONSENT_WAIT_SECONDS = CONSENT_CHECKPOINT_WAIT_SECONDS  # deprecated alias, remove in v0.4
+M7A_CONSENT_WAIT_SECONDS = CONSENT_CHECKPOINT_WAIT_SECONDS  # compatibility alias, remove in v0.4

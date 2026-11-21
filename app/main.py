@@ -19,7 +19,7 @@ from app.api.middleware import AILocalOnlyMiddleware
 from app.api.system import root, router as system_router
 from app.api.tasks import router as tasks_router
 from app.config import STATIC_UNPACK_CACHE_DIR
-from app.container import Container, _default_container, build_container
+from app.container import Container, build_container
 from app.pipelines.dynamic import dynamic_analyze
 from app.pipelines.static import analyze
 from app.pipelines.task_runner import run_persisted_task
@@ -32,7 +32,10 @@ async def lifespan(app: FastAPI):
     if container is None:
         container = build_container()
         app.state.container = container
-    container.task_service.set_runner(run_persisted_task)
+    if container.task_service._runner is None:
+        from functools import partial
+
+        container.task_service.set_runner(partial(run_persisted_task, container=container))
     container.task_repository.initialize()
     repair_historical_application_names(
         container.task_repository,
@@ -71,7 +74,7 @@ def create_app(container: Container | None = None) -> FastAPI:
     return app_instance
 
 
-app = create_app(_default_container)
+app = create_app()
 
 __all__ = [
     "analyze",
