@@ -251,6 +251,7 @@ def _validate_session_plan_constraints(
             )
 
 
+# compatibility alias, remove in v0.4
 _validate_plan = _validate_session_plan_constraints
 
 
@@ -337,7 +338,7 @@ def build_full_analysis_plan(
 
     def _try(plan: AIPlan) -> bool:
         try:
-            _validate_plan(
+            _validate_session_plan_constraints(
                 plan,
                 strategy=strategy,
                 allow_dynamic=allow_dynamic,

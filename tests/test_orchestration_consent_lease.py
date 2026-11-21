@@ -914,7 +914,7 @@ def test_validator_six_step_cap_enforced():
     # The schema already caps AIPlan.steps at 6; assert the validator also
     # rejects a synthetic plan boundary using a 6-valid-step plan (max ok)
     # and confirms the cap rule exists in the source.
-    from app.orchestration.full_analysis_session import _validate_plan
+    from app.orchestration.full_analysis_session import _validate_session_plan_constraints
 
     plan = _ai_plan(
         [
@@ -926,7 +926,7 @@ def test_validator_six_step_cap_enforced():
             ("s6", "privacy_findings"),
         ]
     )
-    _validate_plan(
+    _validate_session_plan_constraints(
         plan,
         strategy="full_analysis",
         allow_dynamic=True,

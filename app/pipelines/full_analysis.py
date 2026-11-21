@@ -492,6 +492,7 @@ def run_full_analysis_session(
     return report
 
 
+# compatibility aliases, remove in v0.4
 capture_device_session_snapshot = _capture_device_snapshot
 find_target_process_pid = _target_pid
 check_owned_resource_present = _resource_present
