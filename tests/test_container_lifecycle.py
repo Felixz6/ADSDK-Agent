@@ -59,3 +59,36 @@ def test_recover_called_only_once_during_lifespan(tmp_path: Path):
 
     # On shutdown, recover is not called again
     assert recover_mock.call_count == 1
+
+
+def test_create_app_idempotent_routes():
+    """Consecutive calls to create_app() must produce identical route definitions."""
+    from app.main import create_app
+
+    app1 = create_app()
+    app2 = create_app()
+
+    def _extract_routes(app) -> set[tuple[str, tuple[str, ...]]]:
+        routes = set()
+        for r in app.routes:
+            if hasattr(r, "path") and r.path:
+                routes.add((r.path, tuple(sorted(getattr(r, "methods", [])))))
+            elif hasattr(r, "original_router"):
+                for sub in r.original_router.routes:
+                    if hasattr(sub, "path") and sub.path:
+                        routes.add((sub.path, tuple(sorted(getattr(sub, "methods", [])))))
+        return routes
+
+    routes1 = _extract_routes(app1)
+    routes2 = _extract_routes(app2)
+
+    assert routes1 == routes2
+    paths = {path for path, _ in routes1}
+    assert "/" in paths
+    assert "/analyze" in paths
+    assert "/dynamic/analyze" in paths
+
+    client = TestClient(app1)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "message": "AdSDK Agent is running"}

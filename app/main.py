@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Any
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.deps import get_frida_session_factory, get_mitm_session_factory
+from app.api.ai import router as ai_router
+from app.api.analysis import (
+    analyze_endpoint,
+    dynamic_analyze_endpoint,
+    router as analysis_router,
+)
+from app.api.comparisons import router as comparisons_router
+from app.api.env import router as env_router
 from app.api.middleware import AILocalOnlyMiddleware
+from app.api.system import root, router as system_router
+from app.api.tasks import router as tasks_router
 from app.config import STATIC_UNPACK_CACHE_DIR
 from app.container import Container, _default_container, build_container
-from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
 from app.pipelines.dynamic import dynamic_analyze
 from app.pipelines.static import analyze
 from app.pipelines.task_runner import run_persisted_task
@@ -54,11 +61,8 @@ def create_app(container: Container | None = None) -> FastAPI:
     )
     app_instance.add_middleware(AILocalOnlyMiddleware)
 
-    from app.api.ai import router as ai_router
-    from app.api.comparisons import router as comparisons_router
-    from app.api.env import router as env_router
-    from app.api.tasks import router as tasks_router
-
+    app_instance.include_router(system_router)
+    app_instance.include_router(analysis_router)
     app_instance.include_router(env_router)
     app_instance.include_router(tasks_router)
     app_instance.include_router(ai_router)
@@ -69,28 +73,13 @@ def create_app(container: Container | None = None) -> FastAPI:
 
 app = create_app(_default_container)
 
-
-@app.get("/")
-def root():
-    return {"ok": True, "message": "AdSDK Agent is running"}
-
-
-@app.post("/analyze", response_model=AnalyzeResponse)
-def analyze_endpoint(req: AnalyzeRequest):
-    return analyze(req)
-
-
-@app.post("/dynamic/analyze", response_model=AnalyzeResponse)
-def dynamic_analyze_endpoint(
-    req: DynamicAnalyzeRequest,
-    frida_session_factory: Any = Depends(get_frida_session_factory),
-    mitm_session_factory: Any = Depends(get_mitm_session_factory),
-):
-    return dynamic_analyze(
-        req,
-        frida_session_factory=frida_session_factory,
-        mitm_session_factory=mitm_session_factory,
-    )
-
-
-__all__ = ["analyze", "app", "create_app", "dynamic_analyze", "lifespan", "root"]
+__all__ = [
+    "analyze",
+    "analyze_endpoint",
+    "app",
+    "create_app",
+    "dynamic_analyze",
+    "dynamic_analyze_endpoint",
+    "lifespan",
+    "root",
+]
