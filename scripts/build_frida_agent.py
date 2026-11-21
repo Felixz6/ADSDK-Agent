@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,9 +31,22 @@ _REQUIRED_MARKERS = ("globalThis.Java", "libart", "java_runtime_pending")
 
 
 def _resolve_frida_compile() -> str:
-    venv_candidate = PROJECT_ROOT / ".venv" / "Scripts" / "frida-compile.exe"
+    # Check next to python executable (works in Windows Scripts/ and POSIX bin/)
+    candidate = Path(sys.executable).parent / (
+        "frida-compile.exe" if os.name == "nt" else "frida-compile"
+    )
+    if candidate.is_file():
+        return str(candidate)
+    venv_candidate = (
+        PROJECT_ROOT
+        / ".venv"
+        / ("Scripts/frida-compile.exe" if os.name == "nt" else "bin/frida-compile")
+    )
     if venv_candidate.is_file():
         return str(venv_candidate)
+    which = shutil.which("frida-compile")
+    if which:
+        return which
     return "frida-compile"
 
 

@@ -8,6 +8,7 @@ build contract without executing Frida or touching a device.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = PROJECT_ROOT / "app" / "frida_hooks"
 RAW_SCRIPT = HOOKS_DIR / "sensitive_apis.js"
 ARTIFACT = HOOKS_DIR / "agent.compiled.js"
+
+
+def _require_artifact_or_skip(msg: str) -> None:
+    if not _ensure_artifact():
+        if (
+            os.getenv("CI", "").strip().lower() in {"true", "1", "yes"}
+            or os.getenv("REQUIRE_FRIDA_BUNDLE") == "1"
+        ):
+            pytest.fail(f"CI requirement failed: {msg}")
+        pytest.skip(msg)
 
 
 def _ensure_artifact() -> bool:
@@ -43,11 +54,10 @@ def _ensure_artifact() -> bool:
 
 def test_bundled_hook_agent_artifact_exists():
     """The fixed artifact exists or test explicitly reports build requirements."""
-    if not _ensure_artifact():
-        pytest.skip(
-            "agent.compiled.js missing and environment lacks frida-compile dependencies; "
-            "run `npm install` in scripts/frida-agent and `python scripts/build_frida_agent.py`"
-        )
+    _require_artifact_or_skip(
+        "agent.compiled.js missing and environment lacks frida-compile dependencies; "
+        "run `npm install` in scripts/frida-agent and `python scripts/build_frida_agent.py`"
+    )
     assert ARTIFACT.is_file(), "agent.compiled.js missing; run scripts/build_frida_agent.py"
 
 
@@ -58,8 +68,7 @@ def test_artifact_is_frida_compile_bundle_not_raw_script():
     java bridge itself (``libart`` appears inside bridge sources), and be far
     larger than the raw hook script.
     """
-    if not _ensure_artifact():
-        pytest.skip("agent.compiled.js missing; build with scripts/build_frida_agent.py")
+    _require_artifact_or_skip("agent.compiled.js missing; build with scripts/build_frida_agent.py")
 
     artifact = ARTIFACT.read_text(encoding="utf-8", errors="replace")
     raw = RAW_SCRIPT.read_text(encoding="utf-8")
@@ -113,8 +122,7 @@ def test_resolver_prefers_bundle_and_falls_back_to_raw(tmp_path: Path):
 
 def test_session_context_prepend_wraps_bundle_intact(tmp_path: Path):
     """The per-run context prepend still lands above a loadable script."""
-    if not _ensure_artifact():
-        pytest.skip("agent.compiled.js missing; build with scripts/build_frida_agent.py")
+    _require_artifact_or_skip("agent.compiled.js missing; build with scripts/build_frida_agent.py")
 
     from app.core.device import DeviceContext
     from app.frida.frida_session import FridaSession
