@@ -71,11 +71,20 @@ known-first-party = ["app"]
 
 [tool.mypy]
 python_version = "3.12"
+files = ["app/core", "app/orchestration", "app/traffic", "app/pipelines", "app/api"]
 ignore_missing_imports = true
 follow_imports = "silent"
 warn_unused_configs = true
+warn_unused_ignores = true
+no_implicit_optional = true
 
 [[tool.mypy.overrides]]
-module = ["app.core.*", "app.orchestration.*"]
+module = [
+    "app.core.*",
+    "app.orchestration.*",
+    "app.traffic.*",
+    "app.pipelines.*",
+    "app.api.*",
+]
 check_untyped_defs = true
 

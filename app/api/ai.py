@@ -177,7 +177,7 @@ def delete_ai_api_key(
     source = ai_settings_service.store.api_key_source()
     return AISettingsDeleteKeyResponse(
         deleted=deleted,
-        api_key_source=source,
+        api_key_source=source,  # type: ignore[arg-type]  # runtime source is one of 'none', 'environment', 'local_store'
         api_key_configured=source != "none",
     )
 

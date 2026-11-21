@@ -155,7 +155,7 @@ def check_frida_python_package() -> dict[str, Any]:
     ``available=False`` rather than crashing env-check.
     """
     try:
-        import frida  # type: ignore[import-not-found]
+        import frida
     except ImportError as exc:
         return {
             "frida_python_available": False,

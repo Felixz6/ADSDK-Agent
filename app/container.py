@@ -35,8 +35,8 @@ def default_frida_session_factory(*args: Any, **kwargs: Any) -> Any:
     return FridaSession(*args, **kwargs)
 
 
-default_frida_session_factory._is_real_frida = True  # type: ignore[attr-defined]
-FridaSession._is_real_frida = True  # type: ignore[attr-defined]
+setattr(default_frida_session_factory, "_is_real_frida", True)
+setattr(FridaSession, "_is_real_frida", True)
 
 
 def default_mitm_session_factory(*args: Any, **kwargs: Any) -> Any:

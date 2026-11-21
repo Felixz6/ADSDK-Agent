@@ -199,14 +199,13 @@ def run_static_stage(
             "error_code": "analysis_failed",
         }
     unpack_ok = unpack_result.get("returncode") == 0
+    err_code = unpack_result.get("error_code")
     steps.append(
         _step_result(
             "apk_unpack",
             StepStatus.SUCCESS if unpack_ok else StepStatus.FAILED,
             unpack_started,
-            error_code=None
-            if unpack_ok
-            else unpack_result.get("error_code") or "apk_unpack_failed",
+            error_code=None if unpack_ok else (str(err_code) if err_code else "apk_unpack_failed"),
             error_message=(
                 None
                 if unpack_ok
@@ -233,7 +232,7 @@ def run_static_stage(
         try:
             parsed_app_info = _parse_manifest_application(
                 str(analysis_dir),
-                apk_filename=context.source_apk_display,
+                apk_filename=str(context.source_apk_display or ""),
             )
             app_info = {
                 **_manifest_application_fallback(package_name_input),
@@ -703,7 +702,7 @@ def _finalize_report(
     ).model_dump()
     report_started = _utc_now()
     report_write_started = time.perf_counter()
-    candidate_status = _overall_status([*steps, StepStatus.SUCCESS])
+    candidate_status = _overall_status(steps)
     report.update(
         {
             "status": candidate_status,
@@ -899,7 +898,8 @@ def task_service_response_payload(
 ) -> dict[str, Any]:
     """Normalise a runner result to a plain dict without losing failure state."""
     if isinstance(result, JSONResponse):
-        return json.loads(result.body.decode("utf-8"))
+        body_bytes = bytes(result.body)
+        return json.loads(body_bytes.decode("utf-8"))
     return dict(result)
 
 

@@ -23,8 +23,8 @@ from urllib.parse import unquote, unquote_plus, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-PROTOCOL_VERSION = "1.0"
-SCHEMA_VERSION = "1.0"
+PROTOCOL_VERSION: Literal["1.0"] = "1.0"
+SCHEMA_VERSION: Literal["1.0"] = "1.0"
 MAX_JSONL_LINE_BYTES = 1024 * 1024
 MAX_PATH_LENGTH = 512
 MAX_QUERY_KEY_LENGTH = 128
@@ -359,9 +359,9 @@ def build_http_request_record(
         flow_id=flow_id,
         run_id=run_id,
         session_id=session_id,
-        timestamp_utc=timestamp_utc,
+        timestamp_utc=normalize_timestamp_utc(timestamp_utc),
         method=method,
-        scheme=selected_scheme,
+        scheme=selected_scheme,  # type: ignore[arg-type]  # validated as http or https
         hostname=selected_hostname,
         port=selected_port,
         path=selected_path or "/",
@@ -370,7 +370,7 @@ def build_http_request_record(
         request_size=request_size,
         response_size=response_size,
         tls=selected_scheme == "https",
-        error=sanitize_flow_error(error),
+        error=sanitize_flow_error(error),  # type: ignore[arg-type]  # validated error literal
     )
 
 
@@ -404,7 +404,7 @@ class TrafficJSONLWriter:
             event=event,
             run_id=run_id,
             session_id=session_id,
-            timestamp_utc=timestamp_utc,
+            timestamp_utc=normalize_timestamp_utc(timestamp_utc),
         )
         self._write_model(control)
         return control

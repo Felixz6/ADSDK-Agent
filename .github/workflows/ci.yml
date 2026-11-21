@@ -42,7 +42,7 @@ jobs:
         run: ruff format --check app tests scripts
 
       - name: Run Mypy Typecheck
-        run: mypy app/core app/orchestration
+        run: mypy
 
       - name: Run Pytest
         run: pytest -q
@@ -74,9 +74,6 @@ jobs:
         run: |
           ruff check app tests scripts
           ruff format --check app tests scripts
-
-      - name: Run Mypy
-        run: mypy app/core app/orchestration
 
       - name: Run Pytest
         run: pytest -q

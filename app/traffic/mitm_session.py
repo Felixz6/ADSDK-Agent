@@ -227,11 +227,15 @@ def terminate_process_tree(
         except (OSError, subprocess.SubprocessError):
             pass
     else:
-        selected_signal = signal.SIGKILL if force else signal.SIGTERM
+        sig_kill = getattr(signal, "SIGKILL", signal.SIGTERM)
+        selected_signal = sig_kill if force else signal.SIGTERM
         try:
-            process_group = os.getpgid(process.pid)
-            os.killpg(process_group, selected_signal)
-            return
+            getpgid = getattr(os, "getpgid", None)
+            killpg = getattr(os, "killpg", None)
+            if callable(getpgid) and callable(killpg):
+                process_group = getpgid(process.pid)
+                killpg(process_group, selected_signal)
+                return
         except (OSError, AttributeError):
             pass
 

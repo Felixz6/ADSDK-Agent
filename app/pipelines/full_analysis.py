@@ -86,7 +86,7 @@ def _capture_device_snapshot(
         device_ref=mask_device_ref(device_id),
         captured_at=task_utc_now(),
         initial_state=state,
-        capture_kind=capture_kind,
+        capture_kind=capture_kind,  # type: ignore[arg-type]  # runtime capture kind literal
     )
 
 
@@ -304,6 +304,10 @@ def run_full_analysis_session(
         unified_runner_with_strategy=run_execution,
         environment_probe=lambda: env_check(payload.get("device_id")),
     )
+
+    def _safe_report_step(key: str, status: str, message: str | None = None) -> None:
+        report_step(key, status, message)
+
     effects = ProductionSessionEffects(
         task_id=task.id,
         run_id=task.id,
@@ -312,7 +316,7 @@ def run_full_analysis_session(
         snapshot_factory=snapshot_factory,
         clock=task_utc_now,
         is_cancelled=_ai_cancelled,
-        report_step=lambda key, status, message=None: report_step(key, status, message),
+        report_step=_safe_report_step,
         set_proxy_action=lambda device, value: _adb_cleanup_action(
             device, ["shell", "settings", "put", "global", "http_proxy", value]
         ),
@@ -339,7 +343,7 @@ def run_full_analysis_session(
         package_name=payload.get("package_name"),
         objective=str(payload.get("objective") or "分析本次 APK 的隐私风险"),
         strategy="full_analysis",
-        dynamic_mode_policy=str(payload.get("dynamic_mode_policy") or "balanced"),
+        dynamic_mode_policy=str(payload.get("dynamic_mode_policy") or "balanced"),  # type: ignore[arg-type]  # validated policy literal
         application_launch_allowed=True,
         allow_dynamic=bool(payload.get("allow_dynamic")),
         allow_network=bool(payload.get("allow_network")),
@@ -349,7 +353,7 @@ def run_full_analysis_session(
         lease=device_lease_reg,
         consent=consent_svc,
         registry=registry,
-        effects=effects,
+        effects=effects,  # type: ignore[arg-type]  # concrete ProductionSessionEffects implements protocol
         run_dir=run_dir,
     )
     transition = session.run()
@@ -451,7 +455,7 @@ def run_full_analysis_session(
         else set()
     )
     owned_helpers = {
-        int(item.detail.get("pid"))
+        int(item.detail["pid"])
         for item in registry.owned()
         if item.kind == "frida_helper" and isinstance(item.detail.get("pid"), int)
     }
