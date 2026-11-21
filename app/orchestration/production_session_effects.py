@@ -96,7 +96,9 @@ class ProductionSessionEffects:
             )
             self.last_result.diagnostic.orchestration_entrypoint = "tasks_ai_orchestrated"
             self.last_result.diagnostic.session_engine = "FullAnalysisSession"
-            self.last_result.diagnostic.execution_pipeline_version = "m7b"
+            self.last_result.diagnostic.execution_pipeline_version = (
+                "m7b"  # 历史契约值，勿随命名清理而修改
+            )
         receipt = getattr(self.ai_service, "executor_strategy_receipt", None)
         self.last_executor_strategy_receipt = dict(receipt) if isinstance(receipt, dict) else None
         return self.last_result

@@ -100,9 +100,10 @@ ADSDK-Agent 是一个面向 Android APK 的本地隐私合规审计与取证分�
      ```
    - 全局 autouse fixture 会在每个用例结束后自动执行 `app.dependency_overrides.clear()`，杜绝跨用例污染。
 
-4. **报告 Provenance 溯源契约**：
-   - 动态执行报告中的 `executor_strategy_receipt.executor_provenance_source` 用于记录执行策略决策归属。
-   - 历史版本（v0.1）曾记录为 `app.main._dynamic_analyze_v2.execution_decision`，现版本统一标准化为 `app.pipelines.dynamic.execution_decision`，两者代表相同的执行语义。
+4. **报告与诊断持久化契约字面量说明**：
+   - 动态执行报告中的 `executor_strategy_receipt.executor_provenance_source` 用于记录执行策略决策归属。历史版本曾记录为 `app.main._dynamic_analyze_v2.execution_decision`，现版本统一标准化为 `app.pipelines.dynamic.execution_decision`，两者代表相同的执行语义。
+   - `FullAnalysisAcceptance.schema_version` 固定为 `"m7a-acceptance-v1"`（历史契约字面量，锁定已落盘产物兼容性）。
+   - `AIRuntimeDiagnostic.execution_pipeline_version` 固定为 `"m7b"`（历史契约字面量，供前端与下游分析套件比对流水线版本，勿随重构重命名）。
 
 ---
 

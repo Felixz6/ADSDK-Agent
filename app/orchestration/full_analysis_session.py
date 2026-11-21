@@ -412,6 +412,7 @@ class FullAnalysisAcceptance(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # 历史契约值，勿随命名清理而修改
     schema_version: Literal["m7a-acceptance-v1"] = "m7a-acceptance-v1"
     run_id: str
     task_id: str
@@ -567,7 +568,7 @@ class FullAnalysisSession:
             run_dir=self.run_dir,
             orchestration_entrypoint="tasks_ai_orchestrated",
             session_engine="FullAnalysisSession",
-            execution_pipeline_version="m7b",
+            execution_pipeline_version="m7b",  # 历史契约值，勿随命名清理而修改
         )
 
         prepare = getattr(self.effects, "prepare_orchestration", None)
