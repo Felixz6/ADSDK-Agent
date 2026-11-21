@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import time
@@ -65,6 +66,8 @@ from app.reporting.report_writer import write_json_report, write_markdown_report
 from app.tasks.runtime import TaskCancelled, checkpoint, current_task_id, report_step
 from app.tools.utils import ensure_dir
 
+logger = logging.getLogger(__name__)
+
 _CRITICAL_STEPS = {
     "apk_validation",
     "apk_hash",
@@ -80,6 +83,7 @@ def resolve_frida_hook_script(hooks_dir: Path | None = None) -> Path:
     bundled = directory / "agent.compiled.js"
     if bundled.is_file():
         return bundled
+    logger.warning("回退到未打包脚本，Java bridge 不可用")
     return directory / "sensitive_apis.js"
 
 

@@ -305,9 +305,9 @@ npm run build
 
 ### 已知限制与运行提示
 
-1. **预编译 Frida Agent (`app/frida_hooks/agent.compiled.js`)**：
-   - 仓库内已内置预编译好的独立 bundle，开箱即用，无需在宿主机额外安装 Node 依赖即可执行动态分析。
-   - 如需自定义修改 `app/frida_hooks/sensitive_apis.js` 或更新底层 Java Bridge，可在 `scripts/frida-agent` 安装 npm 依赖并通过 `python scripts/build_frida_agent.py` 重新构建。
+1. **Frida Agent 编译产物 (`app/frida_hooks/agent.compiled.js`)**：
+   - 该产物为构建生成的衍生文件，不纳入 Git 版本控制。一键启动脚本 (`start-adsdk-agent.ps1` / `start.sh`) 会在检测到产物缺失时尝试自动构建。
+   - 本地构建依赖 Node.js 与 npm 环境：首次请在 `scripts/frida-agent` 目录下执行 `npm install`，然后运行 `python scripts/build_frida_agent.py` 编译产物。若环境缺失或构建失败，系统会记录日志并安全回退至未打包脚本（但无法使用 Java Bridge）。
 2. **Native Bridge (libndk_translation / houdini) 模拟器兼容性**：
    - 在 x86_64 架构模拟器上运行纯 ARM64 APK 时，底层翻译器可能与 Frida GumJS 产生指令竞争。系统已集成 `native_bridge_compatibility_suspected` 自动识别与 `balanced` 自愈降级策略。
 3. **证书 Pinning 应对边界**：

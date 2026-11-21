@@ -82,6 +82,7 @@ traffic/requests.jsonl
 # Local analysis tool binaries
 /tools/
 .run/
+app/frida_hooks/agent.compiled.js
 
 # Backup files
 *.bak*
