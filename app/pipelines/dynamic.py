@@ -10,7 +10,6 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 
-from app import container
 from app.config import (
     FRIDA_READY_TIMEOUT_SECONDS,
     FRIDA_SPAWN_STABILITY_SECONDS,
@@ -21,7 +20,6 @@ from app.config import (
     MITM_STOP_TIMEOUT_SECONDS,
     SCHEMA_VERSION,
 )
-from app.container import frida_diagnostics_service
 from app.core.artifacts import atomic_write_json, atomic_write_text
 from app.core.clock import utc_now as _utc_now
 from app.core.device import DeviceContext
@@ -372,6 +370,7 @@ class _DynamicEnvironment:
     frida_diagnostic_payload: dict[str, Any] | None
     stimulate_ui: Any
     register_frida_started: Any
+    frida_session_factory: Any = None
 
 
 @dataclass(slots=True)
@@ -514,15 +513,39 @@ def _noop_register_runtime_target(pid: int, *, ownership_source: str, created_by
     del pid, ownership_source, created_by_run
 
 
+def _is_real_frida_factory(factory: Any) -> bool:
+    if factory is None:
+        return True
+    if getattr(factory, "_is_real_frida", False):
+        return True
+    if factory is FridaSession:
+        return True
+    name = getattr(factory, "__name__", "")
+    return name in ("FridaSession", "default_frida_session_factory")
+
+
 def _report_frida_diagnostics(
     req: DynamicAnalyzeRequest,
     steps: list[StepResult],
     device_context: DeviceContext,
     package_name: str,
+    diagnostics_service: Any = None,
 ) -> dict[str, Any]:
     """Run the layered Frida diagnostics and record its step."""
     report_step("frida_diagnostics", "running", "正在执行 Frida 分层诊断")
-    diagnostic_result = frida_diagnostics_service.diagnose(
+    if diagnostics_service is None:
+        from app.config import (
+            FRIDA_SERVER_MANAGEMENT_ENABLED,
+            FRIDA_SERVER_REMOTE_PATH,
+        )
+        from app.frida import FridaDiagnosticsService
+
+        diagnostics_service = FridaDiagnosticsService(
+            project_root=Path(__file__).resolve().parent.parent.parent,
+            server_remote_path=FRIDA_SERVER_REMOTE_PATH,
+            management_enabled=FRIDA_SERVER_MANAGEMENT_ENABLED,
+        )
+    diagnostic_result = diagnostics_service.diagnose(
         FridaDiagnosticsRequest(
             device_id=device_context.serial,
             package_name=package_name,
@@ -629,15 +652,16 @@ def _build_real_frida_session(
     ownership_registry: ResourceOwnershipRegistry | None,
     register_runtime_target: Any,
     frida_session_factory: Any = None,
+    diagnostics_service: Any = None,
 ) -> tuple[Any, dict[str, Any] | None, Any]:
     """Build the real Frida session (policy or single-mode) and its diagnostics."""
-    factory = frida_session_factory or container.frida_session_factory
-    is_real_frida = factory is container.default_frida_session_factory or factory is FridaSession
+    factory = frida_session_factory or FridaSession
+    is_real_frida = _is_real_frida_factory(factory)
     frida_session: Any = None
     frida_diagnostic_payload: dict[str, Any] | None = None
     if is_real_frida:
         frida_diagnostic_payload = _report_frida_diagnostics(
-            req, steps, device_context, package_name
+            req, steps, device_context, package_name, diagnostics_service=diagnostics_service
         )
         # Mirrors the original late binding: only the diagnostics branch
         # replaces the no-op registrar with the ownership-tracking one.
@@ -782,6 +806,7 @@ def _build_dynamic_sessions(
     ownership_registry: ResourceOwnershipRegistry | None,
     frida_session_factory: Any = None,
     mitm_session_factory: Any = None,
+    diagnostics_service: Any = None,
 ) -> tuple[
     Any,
     Any,
@@ -804,10 +829,13 @@ def _build_dynamic_sessions(
         ownership_registry,
         _noop_register_runtime_target,
         frida_session_factory=frida_session_factory,
+        diagnostics_service=diagnostics_service,
     )
     mitm_session: Any = None
     if req.enable_traffic:
-        mitm_factory = mitm_session_factory or container.mitm_session_factory
+        from app.traffic.mitm_session import MitmSession
+
+        mitm_factory = mitm_session_factory or MitmSession
         mitm_session = mitm_factory(
             run_id=context.run_id,
             device=device_context,
@@ -1204,10 +1232,7 @@ def _process_diagnostics_stage(
     if (
         device_context is not None
         and frida_session is not None
-        and (
-            container.frida_session_factory is container.default_frida_session_factory
-            or container.frida_session_factory is FridaSession
-        )
+        and _is_real_frida_factory(getattr(environment, "frida_session_factory", None))
     ):
         runtime_failure_sessions = list(getattr(frida_session, "runtime_failure_sessions", []))
         diagnostic_session = (
@@ -1712,10 +1737,19 @@ def _assemble_dynamic_report(
 def _dynamic_analyze_v2(
     req: DynamicAnalyzeRequest,
     *,
+    container: Any = None,
     ownership_registry: ResourceOwnershipRegistry | None = None,
     frida_session_factory: Any = None,
     mitm_session_factory: Any = None,
+    diagnostics_service: Any = None,
 ):
+    if frida_session_factory is None and container is not None:
+        frida_session_factory = getattr(container, "frida_session_factory", None)
+    if mitm_session_factory is None and container is not None:
+        mitm_session_factory = getattr(container, "mitm_session_factory", None)
+    if diagnostics_service is None and container is not None:
+        diagnostics_service = getattr(container, "frida_diagnostics_service", None)
+
     context, steps, failure_response = _prepare_run(
         req.apk_path,
         device_id=req.device_id,
@@ -1747,6 +1781,7 @@ def _dynamic_analyze_v2(
         ownership_registry=ownership_registry,
         frida_session_factory=frida_session_factory,
         mitm_session_factory=mitm_session_factory,
+        diagnostics_service=diagnostics_service,
     )
     environment = _DynamicEnvironment(
         context=context,
@@ -1759,6 +1794,7 @@ def _dynamic_analyze_v2(
         frida_diagnostic_payload=frida_diagnostic_payload,
         stimulate_ui=stimulate_ui,
         register_frida_started=register_frida_started,
+        frida_session_factory=frida_session_factory,
     )
 
     collection_result = _run_collection_stage(req, steps, context, environment)
@@ -1837,13 +1873,17 @@ def _dynamic_analyze_v2(
 def dynamic_analyze(
     req: DynamicAnalyzeRequest,
     *,
+    container: Any = None,
     frida_session_factory: Any = None,
     mitm_session_factory: Any = None,
+    diagnostics_service: Any = None,
 ):
     return _dynamic_analyze_v2(
         req,
+        container=container,
         frida_session_factory=frida_session_factory,
         mitm_session_factory=mitm_session_factory,
+        diagnostics_service=diagnostics_service,
     )
 
 

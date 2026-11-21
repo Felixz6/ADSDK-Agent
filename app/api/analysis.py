@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
@@ -22,11 +22,14 @@ def analyze_endpoint(req: AnalyzeRequest) -> AnalyzeResponse:
 @router.post("/dynamic/analyze", response_model=AnalyzeResponse)
 def dynamic_analyze_endpoint(
     req: DynamicAnalyzeRequest,
+    request: Request,
     frida_session_factory: Any = Depends(get_frida_session_factory),
     mitm_session_factory: Any = Depends(get_mitm_session_factory),
 ) -> AnalyzeResponse:
+    container = getattr(request.app.state, "container", None)
     return dynamic_analyze(
         req,
+        container=container,
         frida_session_factory=frida_session_factory,
         mitm_session_factory=mitm_session_factory,
     )

@@ -35,6 +35,10 @@ def default_frida_session_factory(*args: Any, **kwargs: Any) -> Any:
     return FridaSession(*args, **kwargs)
 
 
+default_frida_session_factory._is_real_frida = True  # type: ignore[attr-defined]
+FridaSession._is_real_frida = True  # type: ignore[attr-defined]
+
+
 def default_mitm_session_factory(*args: Any, **kwargs: Any) -> Any:
     return MitmSession(*args, **kwargs)
 
@@ -97,7 +101,7 @@ def build_container(settings: Any = None) -> Container:
         handshake_timeout_seconds=FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS,
     )
 
-    return Container(
+    container = Container(
         task_repository=repository,
         task_service=service,
         comparison_service=comparison,
@@ -110,6 +114,13 @@ def build_container(settings: Any = None) -> Container:
         frida_session_factory=default_frida_session_factory,
         mitm_session_factory=default_mitm_session_factory,
     )
+
+    from functools import partial
+
+    from app.pipelines.task_runner import run_persisted_task
+
+    service.set_runner(partial(run_persisted_task, container=container))
+    return container
 
 
 # deprecated: Module-level singletons will be removed in v0.4. Use app.state.container instead.

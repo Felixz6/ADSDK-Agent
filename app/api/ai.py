@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
 from app import config as app_config
@@ -243,6 +243,8 @@ def get_task_ai_runtime_diagnostics(
 )
 def regenerate_task_ai_report(
     task_id: str,
+    request: Request,
     use_cache: bool | None = None,
 ):
-    return run_regenerate_task_ai_report(task_id, use_cache=use_cache)
+    container = getattr(request.app.state, "container", None)
+    return run_regenerate_task_ai_report(task_id, use_cache=use_cache, container=container)

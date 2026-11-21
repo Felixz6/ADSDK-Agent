@@ -16,11 +16,6 @@ from app.config import (
     CONSENT_CHECKPOINT_WAIT_SECONDS,
     SCHEMA_VERSION,
 )
-from app.container import (
-    ai_settings_service,
-    consent_checkpoint_service,
-    device_lease_registry,
-)
 from app.core.artifacts import atomic_write_json
 from app.models import DynamicAnalyzeRequest
 from app.orchestration.cleanup_manager import (
@@ -201,16 +196,28 @@ def _register_owned_resources(
 
 
 def run_full_analysis_session(
-    *, task: TaskRecord, payload: dict[str, Any]
+    *,
+    task: TaskRecord,
+    payload: dict[str, Any],
+    container: Any = None,
 ) -> dict[str, Any] | JSONResponse:
     """Single production entry for ai_orchestrated full_analysis tasks."""
     from app.pipelines.dynamic import _dynamic_analyze_v2
 
+    if container is None:
+        from app.container import build_container
+
+        container = build_container()
+
+    ai_settings_svc = container.ai_settings_service
+    device_lease_reg = container.device_lease_registry
+    consent_svc = container.consent_checkpoint_service
+
     output_dir = app_config.OUTPUT_DIR
     run_dir = Path(output_dir) / "runs" / task.id
-    effective = resolve_effective_ai_settings(ai_settings_service.store)
+    effective = resolve_effective_ai_settings(ai_settings_svc.store)
     ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
-    provider = ai_settings_service.factory.current() if ai_enabled else None
+    provider = ai_settings_svc.factory.current() if ai_enabled else None
     orchestrator = AIOrchestrator(
         provider=provider,
         registry=AIToolRegistry(allow_dynamic_tools=bool(effective["allow_dynamic_tools"])),
@@ -260,6 +267,7 @@ def run_full_analysis_session(
         deterministic = _dynamic_analyze_v2(
             DynamicAnalyzeRequest.model_validate(request_payload),
             ownership_registry=registry,
+            container=container,
         )
         report = task_service_response_payload(deterministic)
         report_holder["value"] = report
@@ -300,7 +308,7 @@ def run_full_analysis_session(
         task_id=task.id,
         run_id=task.id,
         ai_service=ai_service,
-        consent_service=consent_checkpoint_service,
+        consent_service=consent_svc,
         snapshot_factory=snapshot_factory,
         clock=task_utc_now,
         is_cancelled=_ai_cancelled,
@@ -338,8 +346,8 @@ def run_full_analysis_session(
         confirmed_tools=frozenset(str(x) for x in payload.get("confirmed_tools") or []),
         token_budget=int(payload.get("token_budget") or 6000),
         report_language=str(payload.get("report_language") or effective["report_language"]),
-        lease=device_lease_registry,
-        consent=consent_checkpoint_service,
+        lease=device_lease_reg,
+        consent=consent_svc,
         registry=registry,
         effects=effects,
         run_dir=run_dir,

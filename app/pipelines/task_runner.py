@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -20,7 +20,6 @@ from app.ai.tool_registry import AIToolRegistry
 from app.api.env import env_check
 from app.api.errors import _task_not_found
 from app.config import OUTPUT_DIR
-from app.container import ai_settings_service, task_service
 from app.core.artifacts import atomic_write_json
 from app.models import AnalyzeRequest, DynamicAnalyzeRequest
 from app.pipelines.common import (
@@ -42,6 +41,33 @@ from app.tasks.runtime import (
     report_step,
 )
 
+if TYPE_CHECKING:
+    from app.container import Container
+
+# Optional backward-compatible fallback seams for existing tests
+ai_settings_service: Any = None
+task_service: Any = None
+
+
+def _resolve_ai_settings_service(container: Container | None = None) -> Any:
+    if container is not None and getattr(container, "ai_settings_service", None) is not None:
+        return container.ai_settings_service
+    if ai_settings_service is not None:
+        return ai_settings_service
+    from app.container import build_container
+
+    return build_container().ai_settings_service
+
+
+def _resolve_task_service(container: Container | None = None) -> Any:
+    if container is not None and getattr(container, "task_service", None) is not None:
+        return container.task_service
+    if task_service is not None:
+        return task_service
+    from app.container import build_container
+
+    return build_container().task_service
+
 
 def _execute_ai_orchestration(
     *,
@@ -49,16 +75,18 @@ def _execute_ai_orchestration(
     payload: dict[str, Any],
     run_dir: Path | None,
     base_report: dict[str, Any],
+    container: Container | None = None,
 ) -> dict[str, Any]:
     """Build and run the orchestrator, returning the public AI section."""
+    ai_settings_svc = _resolve_ai_settings_service(container)
     report_step("ai_tool_execution", "running", "正在执行 AI 编排工具")
     scope = str(payload.get("analysis_scope") or "static_only")
     allow_dynamic = bool(payload.get("allow_dynamic"))
     confirmed = frozenset(str(item) for item in (payload.get("confirmed_tools") or []))
-    effective = resolve_effective_ai_settings(ai_settings_service.store)
+    effective = resolve_effective_ai_settings(ai_settings_svc.store)
     ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
 
-    provider = ai_settings_service.factory.current() if ai_enabled else None
+    provider = ai_settings_svc.factory.current() if ai_enabled else None
     orchestrator = AIOrchestrator(
         provider=provider,
         registry=AIToolRegistry(allow_dynamic_tools=bool(effective["allow_dynamic_tools"])),
@@ -96,6 +124,8 @@ def _execute_ai_orchestration(
 def _run_ai_orchestrated_task(
     task: TaskRecord,
     payload: dict[str, Any],
+    *,
+    container: Container | None = None,
 ) -> dict[str, Any] | JSONResponse:
     """Run one ``ai_orchestrated`` task."""
     from app.pipelines.dynamic import dynamic_analyze
@@ -106,7 +136,7 @@ def _run_ai_orchestrated_task(
     apk_path = str(payload["apk_path"])
 
     if scope == "full_analysis":
-        return run_full_analysis_session(task=task, payload=payload)
+        return run_full_analysis_session(task=task, payload=payload, container=container)
 
     report_step("ai_planning", "running", "正在准备确定性证据")
     deterministic: dict[str, Any] | JSONResponse
@@ -118,7 +148,7 @@ def _run_ai_orchestrated_task(
                 if key in DynamicAnalyzeRequest.model_fields
             }
         )
-        deterministic = dynamic_analyze(dynamic_request)
+        deterministic = dynamic_analyze(dynamic_request, container=container)
     else:
         deterministic = analyze(AnalyzeRequest(apk_path=apk_path))
 
@@ -132,6 +162,7 @@ def _run_ai_orchestrated_task(
             payload=payload,
             run_dir=run_dir,
             base_report=base_report,
+            container=container,
         )
     except TaskCancelled:
         raise
@@ -158,7 +189,7 @@ def _run_ai_orchestrated_task(
     return base_report
 
 
-def run_persisted_task(task: TaskRecord):
+def run_persisted_task(task: TaskRecord, *, container: Container | None = None):
     from app.pipelines.dynamic import dynamic_analyze
     from app.pipelines.static import analyze
 
@@ -166,9 +197,9 @@ def run_persisted_task(task: TaskRecord):
     if task.task_type == "static":
         return analyze(AnalyzeRequest(apk_path=str(payload["apk_path"])))
     if task.task_type == "dynamic":
-        return dynamic_analyze(DynamicAnalyzeRequest.model_validate(payload))
+        return dynamic_analyze(DynamicAnalyzeRequest.model_validate(payload), container=container)
     if task.task_type == "ai_orchestrated":
-        return _run_ai_orchestrated_task(task, payload)
+        return _run_ai_orchestrated_task(task, payload, container=container)
     raise ValueError(f"unsupported executable task type: {task.task_type}")
 
 
@@ -178,10 +209,14 @@ _run_persisted_task = run_persisted_task
 
 def regenerate_task_ai_report(
     task_id: str,
+    *,
     use_cache: bool | None = None,
+    container: Container | None = None,
 ):
     """Re-run only the AI orchestration against existing deterministic artifacts."""
-    task = task_service.get(task_id)
+    task_svc = _resolve_task_service(container)
+    ai_settings_svc = _resolve_ai_settings_service(container)
+    task = task_svc.get(task_id)
     if task is None:
         raise _task_not_found(task_id)
 
@@ -229,13 +264,13 @@ def regenerate_task_ai_report(
     scope = str(payload.get("analysis_scope") or "static_only")
     allow_dynamic = bool(payload.get("allow_dynamic"))
     confirmed = frozenset(str(item) for item in (payload.get("confirmed_tools") or []))
-    effective = resolve_effective_ai_settings(ai_settings_service.store)
+    effective = resolve_effective_ai_settings(ai_settings_svc.store)
     ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
 
     cache_enabled_default = bool(effective["cache_enabled"])
     cache_enabled = cache_enabled_default if use_cache is None else bool(use_cache)
 
-    provider = ai_settings_service.factory.current() if ai_enabled else None
+    provider = ai_settings_svc.factory.current() if ai_enabled else None
     orchestrator = AIOrchestrator(
         provider=provider,
         registry=AIToolRegistry(allow_dynamic_tools=bool(effective["allow_dynamic_tools"])),
