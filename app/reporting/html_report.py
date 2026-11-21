@@ -53,6 +53,414 @@ def _table(headers: list[str], rows: Iterable[Iterable[Any]], empty: str) -> str
     return f'<div class="table-wrap"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
+def _render_summary_section(
+    report: dict[str, Any], risk: dict[str, Any], traffic: dict[str, Any], notice: str
+) -> str:
+    return _section(
+        "summary",
+        "执行摘要",
+        notice
+        + _kv(
+            [
+                ("分析状态", report.get("status")),
+                ("风险评分", risk.get("score")),
+                ("风险等级", _risk_label(risk.get("level"))),
+                ("证据置信度", risk.get("confidence")),
+                ("识别 SDK", report.get("sdk_count")),
+                ("网络请求", traffic.get("total_requests")),
+            ]
+        ),
+    )
+
+
+def _render_application_section(
+    app: dict[str, Any], report: dict[str, Any], snapshot: dict[str, Any]
+) -> str:
+    return _section(
+        "application",
+        "应用基本信息",
+        _kv(
+            [
+                ("应用名称", app.get("application_label")),
+                ("包名", app.get("package_name")),
+                ("版本名称", app.get("version_name")),
+                ("版本代码", app.get("version_code")),
+                ("APK SHA-256", report.get("apk_sha256")),
+                ("APK 文件大小", snapshot.get("snapshot_size_bytes")),
+            ]
+        ),
+    )
+
+
+def _render_scope_section(limitations: list[str], notice: str) -> str:
+    return _section(
+        "scope",
+        "分析范围与证据限制",
+        _items(limitations, "报告未记录额外限制。") + notice,
+    )
+
+
+def _render_risk_section(risk: dict[str, Any], category_html: str) -> str:
+    return _section(
+        "risk",
+        "总体风险评分与维度分布",
+        f'<div class="score">{_text(risk.get("score"))}<small>/ 100</small></div>{category_html}',
+    )
+
+
+def _render_permissions_section(permissions: list[Any], sensitive: set[Any]) -> str:
+    return _section(
+        "permissions",
+        "权限分析",
+        _table(
+            ["权限", "关注度"],
+            (
+                (permission, "高关注" if permission in sensitive else "普通")
+                for permission in permissions
+            ),
+            "未解析到权限。",
+        ),
+    )
+
+
+def _render_sdks_section(sdks: list[dict[str, Any]]) -> str:
+    return _section(
+        "sdks",
+        "第三方 SDK 分析",
+        _table(
+            ["SDK", "厂商", "分类", "风险"],
+            (
+                (
+                    item.get("sdk_name"),
+                    item.get("vendor"),
+                    item.get("category"),
+                    _risk_label(item.get("risk_level")),
+                )
+                for item in sdks
+            ),
+            "未识别到 SDK。",
+        ),
+    )
+
+
+def _render_dynamic_quality_section(
+    environment_capabilities: dict[str, Any],
+    execution: dict[str, Any],
+    evidence_quality: dict[str, Any],
+    task_result: dict[str, Any],
+    process_diagnostics: dict[str, Any],
+    traffic_diagnostics: dict[str, Any],
+) -> str:
+    return _section(
+        "dynamic-quality",
+        "动态可靠性：环境能力与本次采集结果",
+        "<h3>环境能力</h3>"
+        + _kv(
+            [
+                ("Frida 通信", environment_capabilities.get("transport_available")),
+                ("进程枚举", environment_capabilities.get("process_enumeration_available")),
+                ("Attach", environment_capabilities.get("attach_available")),
+                (
+                    "Suspended spawn 创建",
+                    environment_capabilities.get("spawn_creation_available"),
+                ),
+                ("恢复稳定性", environment_capabilities.get("spawn_resume_stable")),
+            ]
+        )
+        + "<h3>本次采集结果</h3>"
+        + _kv(
+            [
+                (
+                    "最终执行模式",
+                    execution.get("selected_mode")
+                    or evidence_quality.get("mode")
+                    or "旧版报告未记录",
+                ),
+                ("执行策略", execution.get("policy") or "旧版报告未记录"),
+                (
+                    "进程结果",
+                    task_result.get("process_result") or process_diagnostics.get("status"),
+                ),
+                ("证据等级", evidence_quality.get("level") or "待评定"),
+                ("崩溃信号", process_diagnostics.get("signal")),
+                ("崩溃码", process_diagnostics.get("signal_code")),
+                ("崩溃摘要", process_diagnostics.get("summary")),
+                ("关键组件", ", ".join(process_diagnostics.get("suspected_components") or [])),
+                ("诊断提示", process_diagnostics.get("reason_code")),
+                ("网络结局", traffic_diagnostics.get("outcome")),
+            ]
+        )
+        + _table(
+            ["执行尝试", "状态", "阶段", "进程结果", "恢复后存活(ms)"],
+            (
+                (
+                    item.get("mode"),
+                    item.get("status"),
+                    item.get("phase"),
+                    item.get("process_result"),
+                    item.get("post_resume_survival_ms"),
+                )
+                for item in execution.get("attempts") or []
+            ),
+            "旧版报告未记录尝试链。",
+        )
+        + _items(
+            evidence_quality.get("limitations") or ["旧版报告未记录动态证据限制。"],
+            "旧版报告未记录动态证据限制。",
+        )
+        + (
+            "<details><summary>技术详情 · 完整 Native backtrace</summary><pre>"
+            + _text("\n".join(process_diagnostics.get("native_frames") or []))
+            + "</pre></details>"
+            if process_diagnostics.get("native_frames")
+            else ""
+        )
+        + '<div class="notice warning"><strong>证据边界</strong>'
+        "<p>环境能力与单次任务结果独立；零请求仅表示本次未观察到请求；"
+        "attach 与 launch_then_attach 存在启动覆盖边界；兼容性提示不等同于单一根因证明。</p></div>",
+    )
+
+
+def _render_dynamic_section(events: list[dict[str, Any]] | None, notice: str) -> str:
+    return _section(
+        "dynamic",
+        "动态行为与 Consent 前后对比",
+        notice
+        + _table(
+            ["时间", "行为", "Consent"],
+            (
+                (
+                    item.get("timestamp_utc"),
+                    item.get("api") or item.get("title"),
+                    item.get("consent_state"),
+                )
+                for item in (events or [])[:200]
+            ),
+            "没有可信动态事件。",
+        ),
+    )
+
+
+def _render_network_section(traffic: dict[str, Any], hosts: list[dict[str, Any]]) -> str:
+    return _section(
+        "network",
+        "网络请求分析与访问域名摘要",
+        _kv(
+            [
+                ("采集状态", traffic.get("status")),
+                ("采集结局", traffic.get("collector_outcome")),
+                ("覆盖度", traffic.get("coverage")),
+                ("请求总数", traffic.get("total_requests")),
+            ]
+        )
+        + _table(
+            ["域名", "次数"],
+            ((item.get("host"), item.get("count")) for item in hosts),
+            "没有可展示的访问域名。",
+        ),
+    )
+
+
+def _render_correlation_section(correlation: dict[str, Any]) -> str:
+    summary = correlation.get("summary") or {}
+    confidence_text = " / ".join(
+        str(summary.get(key, 0))
+        for key in (
+            "high_confidence_count",
+            "medium_confidence_count",
+            "low_confidence_count",
+        )
+    )
+    return _section(
+        "correlation",
+        "动态事件与网络请求关联",
+        _kv(
+            [
+                ("状态", correlation.get("status")),
+                ("动态事件", summary.get("dynamic_event_count")),
+                ("网络请求", summary.get("network_request_count")),
+                ("关联数量", summary.get("correlated_pair_count")),
+                ("时间窗口(ms)", correlation.get("window_ms")),
+                ("高/中/低置信", confidence_text),
+            ]
+        )
+        + _table(
+            ["事件", "请求", "时间差(ms)", "Consent", "置信度", "说明"],
+            (
+                (
+                    item.get("event_type"),
+                    f"{item.get('request_method')} {item.get('request_host')}",
+                    item.get("delta_ms"),
+                    item.get("consent_state"),
+                    item.get("confidence"),
+                    item.get("summary"),
+                )
+                for item in correlation.get("items") or []
+            ),
+            "未观察到可关联证据。",
+        )
+        + _items(
+            correlation.get("limitations") or [],
+            "未记录额外证据限制。",
+        ),
+    )
+
+
+def _render_privacy_findings_section(privacy_findings: dict[str, Any]) -> str:
+    summary = privacy_findings.get("summary") or {}
+    return _section(
+        "privacy-findings",
+        "可解释隐私发现",
+        '<div class="notice warning"><strong>结果边界</strong>'
+        "<p>本结果是基于当前观察窗口和技术证据形成的风险提示，"
+        "不构成法律合规结论。未观察到某项行为不代表该行为不会在其他设备、"
+        "时间、账号或操作路径下发生。</p></div>"
+        + _kv(
+            [
+                ("状态", privacy_findings.get("status")),
+                ("发现数量", summary.get("finding_count")),
+                ("已观察事实", summary.get("confirmed_observation_count")),
+                ("疑似风险提示", summary.get("suspected_risk_count")),
+                ("证据缺口", summary.get("evidence_gap_count")),
+                ("未评估规则", summary.get("not_evaluated_rule_count")),
+            ]
+        )
+        + _table(
+            [
+                "发现",
+                "类型",
+                "严重性",
+                "置信度",
+                "Consent",
+                "证据数",
+                "说明",
+            ],
+            (
+                (
+                    item.get("title"),
+                    item.get("finding_type"),
+                    item.get("severity"),
+                    item.get("confidence"),
+                    item.get("consent_state"),
+                    len(item.get("evidence_refs") or []),
+                    item.get("summary"),
+                )
+                for item in privacy_findings.get("findings") or []
+            ),
+            "本次观察中没有形成可展示的隐私发现。",
+        )
+        + _table(
+            ["规则", "状态", "原因码"],
+            (
+                (
+                    rule.get("rule_id"),
+                    rule.get("status"),
+                    ", ".join(rule.get("reason_codes") or []),
+                )
+                for rule in privacy_findings.get("rule_results") or []
+            ),
+            "没有可展示的规则评估结果。",
+        )
+        + _items(
+            privacy_findings.get("limitations") or [],
+            "未记录额外证据限制。",
+        ),
+    )
+
+
+def _render_rules_section(rules: list[dict[str, Any]]) -> str:
+    return _section(
+        "rules",
+        "规则评估结果",
+        _table(
+            ["规则", "状态", "说明"],
+            (
+                (
+                    rule.get("rule_id"),
+                    rule.get("status"),
+                    rule.get("reason") or rule.get("message"),
+                )
+                for rule in rules
+            ),
+            "没有可评估的规则结果。",
+        ),
+    )
+
+
+def _render_evidence_section(risk: dict[str, Any]) -> str:
+    return _section(
+        "evidence",
+        "重点风险证据",
+        _items(
+            (
+                f"{item.get('title')}: {', '.join(item.get('evidence_refs') or [])}"
+                for item in risk.get("top_risks") or []
+            ),
+            "暂无重点风险证据。",
+        ),
+    )
+
+
+def _render_actions_section(actions: list[dict[str, Any]]) -> str:
+    return _section(
+        "actions",
+        "P0 / P1 整改建议",
+        _items(
+            (
+                f"{item.get('priority')} · {item.get('action')}（{item.get('reason')}）"
+                for item in actions
+                if item.get("priority") in {"P0", "P1"}
+            ),
+            "暂无 P0/P1 整改建议。",
+        ),
+    )
+
+
+def _render_pipeline_section(steps: list[dict[str, Any]]) -> str:
+    return _section(
+        "pipeline",
+        "分析步骤与完整性",
+        _table(
+            ["步骤", "状态", "耗时(ms)", "诊断"],
+            (
+                (
+                    step.get("name"),
+                    step.get("status"),
+                    step.get("duration_ms"),
+                    step.get("error_message"),
+                )
+                for step in steps
+            ),
+            "没有步骤记录。",
+        ),
+    )
+
+
+def _render_environment_section(report: dict[str, Any], diagnostics: dict[str, Any]) -> str:
+    return _section(
+        "environment",
+        "环境信息",
+        _kv(
+            [
+                ("报告版本", report.get("schema_version")),
+                ("Run ID", report.get("run_id")),
+                ("开始时间", report.get("analysis_started_at")),
+                ("总耗时(ms)", diagnostics.get("total_duration_ms")),
+                ("动态验收等级", report.get("dynamic_validation_level")),
+            ]
+        ),
+    )
+
+
+def _render_disclaimer_section() -> str:
+    return _section(
+        "disclaimer",
+        "免责声明",
+        "<p>本报告反映指定样本、配置与采集窗口内获得的证据。"
+        "缺少观测不等同于行为不存在；结论应结合人工复核与业务场景使用。</p>",
+    )
+
+
 def render_html_report(report: dict[str, Any]) -> str:
     app = report.get("app_info") or {}
     risk = report.get("risk_summary") or {}
@@ -79,13 +487,15 @@ def render_html_report(report: dict[str, Any]) -> str:
             for step in steps
         )
     )
-    evidence_notice = ""
-    if not dynamic_trusted:
-        evidence_notice = (
+    evidence_notice = (
+        ""
+        if dynamic_trusted
+        else (
             '<div class="notice warning"><strong>动态证据限制</strong>'
             "<p>未获得可信动态证据；相关规则无法评估；"
             "这不代表应用不存在对应行为。</p></div>"
         )
+    )
 
     categories = risk.get("category_scores") or []
     category_html = (
@@ -109,397 +519,34 @@ def render_html_report(report: dict[str, Any]) -> str:
     actions = insight.get("priority_actions") or []
 
     sections = [
-        _section(
-            "summary",
-            "执行摘要",
-            evidence_notice
-            + _kv(
-                [
-                    ("分析状态", report.get("status")),
-                    ("风险评分", risk.get("score")),
-                    ("风险等级", _risk_label(risk.get("level"))),
-                    ("证据置信度", risk.get("confidence")),
-                    ("识别 SDK", report.get("sdk_count")),
-                    ("网络请求", traffic.get("total_requests")),
-                ]
-            ),
+        _render_summary_section(report, risk, traffic, evidence_notice),
+        _render_application_section(app, report, snapshot),
+        _render_scope_section(limitations, evidence_notice),
+        _render_risk_section(risk, category_html),
+        _render_permissions_section(permissions, sensitive),
+        _render_sdks_section(sdks),
+        _render_dynamic_quality_section(
+            environment_capabilities,
+            execution,
+            evidence_quality,
+            task_result,
+            process_diagnostics,
+            traffic_diagnostics,
         ),
-        _section(
-            "application",
-            "应用基本信息",
-            _kv(
-                [
-                    ("应用名称", app.get("application_label")),
-                    ("包名", app.get("package_name")),
-                    ("版本名称", app.get("version_name")),
-                    ("版本代码", app.get("version_code")),
-                    ("APK SHA-256", report.get("apk_sha256")),
-                    ("APK 文件大小", snapshot.get("snapshot_size_bytes")),
-                ]
-            ),
-        ),
-        _section(
-            "scope",
-            "分析范围与证据限制",
-            _items(limitations, "报告未记录额外限制。") + evidence_notice,
-        ),
-        _section(
-            "risk",
-            "总体风险评分与维度分布",
-            f'<div class="score">{_text(risk.get("score"))}<small>/ 100</small></div>{category_html}',
-        ),
-        _section(
-            "permissions",
-            "权限分析",
-            _table(
-                ["权限", "关注度"],
-                (
-                    (permission, "高关注" if permission in sensitive else "普通")
-                    for permission in permissions
-                ),
-                "未解析到权限。",
-            ),
-        ),
-        _section(
-            "sdks",
-            "第三方 SDK 分析",
-            _table(
-                ["SDK", "厂商", "分类", "风险"],
-                (
-                    (
-                        item.get("sdk_name"),
-                        item.get("vendor"),
-                        item.get("category"),
-                        _risk_label(item.get("risk_level")),
-                    )
-                    for item in sdks
-                ),
-                "未识别到 SDK。",
-            ),
-        ),
-        _section(
-            "dynamic-quality",
-            "动态可靠性：环境能力与本次采集结果",
-            "<h3>环境能力</h3>"
-            + _kv(
-                [
-                    ("Frida 通信", environment_capabilities.get("transport_available")),
-                    ("进程枚举", environment_capabilities.get("process_enumeration_available")),
-                    ("Attach", environment_capabilities.get("attach_available")),
-                    (
-                        "Suspended spawn 创建",
-                        environment_capabilities.get("spawn_creation_available"),
-                    ),
-                    ("恢复稳定性", environment_capabilities.get("spawn_resume_stable")),
-                ]
-            )
-            + "<h3>本次采集结果</h3>"
-            + _kv(
-                [
-                    (
-                        "最终执行模式",
-                        execution.get("selected_mode")
-                        or evidence_quality.get("mode")
-                        or "旧版报告未记录",
-                    ),
-                    ("执行策略", execution.get("policy") or "旧版报告未记录"),
-                    (
-                        "进程结果",
-                        task_result.get("process_result") or process_diagnostics.get("status"),
-                    ),
-                    ("证据等级", evidence_quality.get("level") or "待评定"),
-                    ("崩溃信号", process_diagnostics.get("signal")),
-                    ("崩溃码", process_diagnostics.get("signal_code")),
-                    ("崩溃摘要", process_diagnostics.get("summary")),
-                    ("关键组件", ", ".join(process_diagnostics.get("suspected_components") or [])),
-                    ("诊断提示", process_diagnostics.get("reason_code")),
-                    ("网络结局", traffic_diagnostics.get("outcome")),
-                ]
-            )
-            + _table(
-                ["执行尝试", "状态", "阶段", "进程结果", "恢复后存活(ms)"],
-                (
-                    (
-                        item.get("mode"),
-                        item.get("status"),
-                        item.get("phase"),
-                        item.get("process_result"),
-                        item.get("post_resume_survival_ms"),
-                    )
-                    for item in execution.get("attempts") or []
-                ),
-                "旧版报告未记录尝试链。",
-            )
-            + _items(
-                evidence_quality.get("limitations") or ["旧版报告未记录动态证据限制。"],
-                "旧版报告未记录动态证据限制。",
-            )
-            + (
-                "<details><summary>技术详情 · 完整 Native backtrace</summary><pre>"
-                + _text("\n".join(process_diagnostics.get("native_frames") or []))
-                + "</pre></details>"
-                if process_diagnostics.get("native_frames")
-                else ""
-            )
-            + '<div class="notice warning"><strong>证据边界</strong>'
-            "<p>环境能力与单次任务结果独立；零请求仅表示本次未观察到请求；"
-            "attach 与 launch_then_attach 存在启动覆盖边界；兼容性提示不等同于单一根因证明。</p></div>",
-        ),
-        _section(
-            "dynamic",
-            "动态行为与 Consent 前后对比",
-            evidence_notice
-            + _table(
-                ["时间", "行为", "Consent"],
-                (
-                    (
-                        item.get("timestamp_utc"),
-                        item.get("api") or item.get("title"),
-                        item.get("consent_state"),
-                    )
-                    for item in (events or [])[:200]
-                ),
-                "没有可信动态事件。",
-            ),
-        ),
-        _section(
-            "network",
-            "网络请求分析与访问域名摘要",
-            _kv(
-                [
-                    ("采集状态", traffic.get("status")),
-                    ("采集结局", traffic.get("collector_outcome")),
-                    ("覆盖度", traffic.get("coverage")),
-                    ("请求总数", traffic.get("total_requests")),
-                ]
-            )
-            + _table(
-                ["域名", "次数"],
-                ((item.get("host"), item.get("count")) for item in hosts),
-                "没有可展示的访问域名。",
-            ),
-        ),
+        _render_dynamic_section(events, evidence_notice),
+        _render_network_section(traffic, hosts),
+        *([_render_correlation_section(correlation)] if isinstance(correlation, dict) else []),
         *(
-            [
-                _section(
-                    "correlation",
-                    "动态事件与网络请求关联",
-                    _kv(
-                        [
-                            ("状态", correlation.get("status")),
-                            (
-                                "动态事件",
-                                (correlation.get("summary") or {}).get("dynamic_event_count"),
-                            ),
-                            (
-                                "网络请求",
-                                (correlation.get("summary") or {}).get("network_request_count"),
-                            ),
-                            (
-                                "关联数量",
-                                (correlation.get("summary") or {}).get("correlated_pair_count"),
-                            ),
-                            ("时间窗口(ms)", correlation.get("window_ms")),
-                            (
-                                "高/中/低置信",
-                                " / ".join(
-                                    str(
-                                        (correlation.get("summary") or {}).get(
-                                            key,
-                                            0,
-                                        )
-                                    )
-                                    for key in (
-                                        "high_confidence_count",
-                                        "medium_confidence_count",
-                                        "low_confidence_count",
-                                    )
-                                ),
-                            ),
-                        ]
-                    )
-                    + _table(
-                        ["事件", "请求", "时间差(ms)", "Consent", "置信度", "说明"],
-                        (
-                            (
-                                item.get("event_type"),
-                                f"{item.get('request_method')} {item.get('request_host')}",
-                                item.get("delta_ms"),
-                                item.get("consent_state"),
-                                item.get("confidence"),
-                                item.get("summary"),
-                            )
-                            for item in correlation.get("items") or []
-                        ),
-                        "未观察到可关联证据。",
-                    )
-                    + _items(
-                        correlation.get("limitations") or [],
-                        "未记录额外证据限制。",
-                    ),
-                )
-            ]
-            if isinstance(correlation, dict)
-            else []
-        ),
-        *(
-            [
-                _section(
-                    "privacy-findings",
-                    "可解释隐私发现",
-                    '<div class="notice warning"><strong>结果边界</strong>'
-                    "<p>本结果是基于当前观察窗口和技术证据形成的风险提示，"
-                    "不构成法律合规结论。未观察到某项行为不代表该行为不会在其他设备、"
-                    "时间、账号或操作路径下发生。</p></div>"
-                    + _kv(
-                        [
-                            ("状态", privacy_findings.get("status")),
-                            (
-                                "发现数量",
-                                (privacy_findings.get("summary") or {}).get("finding_count"),
-                            ),
-                            (
-                                "已观察事实",
-                                (privacy_findings.get("summary") or {}).get(
-                                    "confirmed_observation_count"
-                                ),
-                            ),
-                            (
-                                "疑似风险提示",
-                                (privacy_findings.get("summary") or {}).get("suspected_risk_count"),
-                            ),
-                            (
-                                "证据缺口",
-                                (privacy_findings.get("summary") or {}).get("evidence_gap_count"),
-                            ),
-                            (
-                                "未评估规则",
-                                (privacy_findings.get("summary") or {}).get(
-                                    "not_evaluated_rule_count"
-                                ),
-                            ),
-                        ]
-                    )
-                    + _table(
-                        [
-                            "发现",
-                            "类型",
-                            "严重性",
-                            "置信度",
-                            "Consent",
-                            "证据数",
-                            "说明",
-                        ],
-                        (
-                            (
-                                item.get("title"),
-                                item.get("finding_type"),
-                                item.get("severity"),
-                                item.get("confidence"),
-                                item.get("consent_state"),
-                                len(item.get("evidence_refs") or []),
-                                item.get("summary"),
-                            )
-                            for item in privacy_findings.get("findings") or []
-                        ),
-                        "本次观察中没有形成可展示的隐私发现。",
-                    )
-                    + _table(
-                        ["规则", "状态", "原因码"],
-                        (
-                            (
-                                rule.get("rule_id"),
-                                rule.get("status"),
-                                ", ".join(rule.get("reason_codes") or []),
-                            )
-                            for rule in privacy_findings.get("rule_results") or []
-                        ),
-                        "没有可展示的规则评估结果。",
-                    )
-                    + _items(
-                        privacy_findings.get("limitations") or [],
-                        "未记录额外证据限制。",
-                    ),
-                )
-            ]
+            [_render_privacy_findings_section(privacy_findings)]
             if isinstance(privacy_findings, dict)
             else []
         ),
-        _section(
-            "rules",
-            "规则评估结果",
-            _table(
-                ["规则", "状态", "说明"],
-                (
-                    (
-                        rule.get("rule_id"),
-                        rule.get("status"),
-                        rule.get("reason") or rule.get("message"),
-                    )
-                    for rule in rules
-                ),
-                "没有可评估的规则结果。",
-            ),
-        ),
-        _section(
-            "evidence",
-            "重点风险证据",
-            _items(
-                (
-                    f"{item.get('title')}: {', '.join(item.get('evidence_refs') or [])}"
-                    for item in risk.get("top_risks") or []
-                ),
-                "暂无重点风险证据。",
-            ),
-        ),
-        _section(
-            "actions",
-            "P0 / P1 整改建议",
-            _items(
-                (
-                    f"{item.get('priority')} · {item.get('action')}（{item.get('reason')}）"
-                    for item in actions
-                    if item.get("priority") in {"P0", "P1"}
-                ),
-                "暂无 P0/P1 整改建议。",
-            ),
-        ),
-        _section(
-            "pipeline",
-            "分析步骤与完整性",
-            _table(
-                ["步骤", "状态", "耗时(ms)", "诊断"],
-                (
-                    (
-                        step.get("name"),
-                        step.get("status"),
-                        step.get("duration_ms"),
-                        step.get("error_message"),
-                    )
-                    for step in steps
-                ),
-                "没有步骤记录。",
-            ),
-        ),
-        _section(
-            "environment",
-            "环境信息",
-            _kv(
-                [
-                    ("报告版本", report.get("schema_version")),
-                    ("Run ID", report.get("run_id")),
-                    ("开始时间", report.get("analysis_started_at")),
-                    ("总耗时(ms)", diagnostics.get("total_duration_ms")),
-                    ("动态验收等级", report.get("dynamic_validation_level")),
-                ]
-            ),
-        ),
-        _section(
-            "disclaimer",
-            "免责声明",
-            "<p>本报告反映指定样本、配置与采集窗口内获得的证据。"
-            "缺少观测不等同于行为不存在；结论应结合人工复核与业务场景使用。</p>",
-        ),
+        _render_rules_section(rules),
+        _render_evidence_section(risk),
+        _render_actions_section(actions),
+        _render_pipeline_section(steps),
+        _render_environment_section(report, diagnostics),
+        _render_disclaimer_section(),
     ]
     nav = "".join(
         f'<a href="#{section_id}">{label}</a>'
