@@ -288,12 +288,7 @@ def build_default_plan(
     # ``prioritize_steps``) so the default plan always fits the schema — the
     # read-only ``traffic_analysis`` is the first to drop when only one step
     # must go, since its summary is already present in the deterministic report.
-    try:
-        from app.ai.tool_registry import prioritize_steps
-    except ImportError:  # pragma: no cover - registry always importable
-
-        def prioritize_steps(names, limit):
-            return names[:limit]
+    from app.ai.tool_registry import prioritize_steps
 
     trimmed_order = prioritize_steps([s for s in order if s not in drops_for_no_dynamic], 6)
     steps: list[PlanStep] = []
@@ -850,8 +845,8 @@ class FullAnalysisSession:
                 cleanup_attempted=True,
                 cleanup_action_result=action_result,
                 verification_attempted=True,
-                verification_result=verification,
-                final_status=final,
+                verification_result=verification,  # type: ignore[arg-type]  # bounded literal verified at runtime
+                final_status=final,  # type: ignore[arg-type]  # bounded status literal
                 reason_code=reason,
             )
         )

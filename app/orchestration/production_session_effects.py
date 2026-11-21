@@ -109,7 +109,7 @@ class ProductionSessionEffects:
             task_id=task_id,
             sleep=self.consent_sleep,
             is_cancelled=self.is_cancelled,
-            heartbeat=lambda: self.consent_service.heartbeat(task_id=task_id),
+            heartbeat=lambda: None if self.consent_service.heartbeat(task_id=task_id) else None,
             timeout_seconds=self.consent_wait_seconds,
             monotonic=self.consent_monotonic,
         )

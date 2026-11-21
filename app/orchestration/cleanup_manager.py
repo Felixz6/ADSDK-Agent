@@ -262,9 +262,9 @@ class CleanupManager:
             cleanup_attempted=True,
             cleanup_action_result=action,
             verification_attempted=True,
-            verification_result=verification,
+            verification_result=verification,  # type: ignore[arg-type]  # bounded literal verified at runtime
             retry_attempted=retry,
-            final_status=final,
+            final_status=final,  # type: ignore[arg-type]  # bounded status literal
             reason_code=_reason_for(resource.kind, verification),
         )
         outcome.diagnostics.append(diagnostic)
@@ -351,8 +351,8 @@ class CleanupManager:
                 cleanup_attempted=True,
                 cleanup_action_result=action,
                 verification_attempted=True,
-                verification_result=verification,
-                final_status=final,
+                verification_result=verification,  # type: ignore[arg-type]  # bounded literal verified at runtime
+                final_status=final,  # type: ignore[arg-type]  # bounded status literal
                 reason_code="proxy_restore_verified" if verified else "proxy_restore_mismatch",
                 expected_final_state="initial_proxy_semantics",
                 raw_expected_state=initial,
@@ -440,8 +440,8 @@ class CleanupManager:
                     rule=rule,
                     target_kind=kind,
                     target_identity=identity,
-                    ownership=ownership,
-                    status=status,
+                    ownership=ownership,  # type: ignore[arg-type]  # bounded ownership literal
+                    status=status,  # type: ignore[arg-type]  # bounded status literal
                     safe_message=message,
                 )
             )

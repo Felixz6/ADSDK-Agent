@@ -74,6 +74,36 @@ ADSDK-Agent 是一个面向 Android APK 的本地隐私合规审计与取证分�
 +-------------------------------------------------------------------------------+
 ```
 
+### 2.1 容器组装与应用生命周期初始化时序
+
+系统严格区分**对象构造**与**I/O 初始化**，彻底杜绝模块导入期产生副作用：
+
+1. **容器构造 (`build_container`)**：
+   - 纯内存对象实例化与依赖装配（`TaskRepository`, `TaskService`, `ComparisonService`, `AISettingsService`, `LeaseRegistry` 等），**不做任何文件读写或数据库连接 I/O**。
+   - 统一注入 `task_service.set_runner(run_persisted_task)`。
+   - 实例化对象存入 `app.state.container`，所有接口依赖提供者（`app/api/deps.py`）均通过 `request.app.state.container` 动态解析。
+
+2. **应用生命周期 (`lifespan`) 阶段执行顺序**：
+   - `task_repository.initialize()`：连接 SQLite 并创建表结构、索引与约束迁移。
+   - `repair_historical_application_names(...)`：检查并修复历史任务中缺失或资源引用形式的应用名称。
+   - `task_service.recover()`：将服务中断前处于 `queued` 或 `running` 的遗留任务标记为 `failed`（一次启动过程仅执行一次）。
+   - `yield` 运行服务。
+   - 退出清理：`task_service.shutdown()` 优雅关闭后台线程池。
+
+3. **测试夹具与依赖覆盖 (Fake Session Factory 注入)**：
+   - **独立数据隔离**：测试推荐使用 `tests/conftest.py` 提供的 `make_test_app(tmp_path)`，使用基于临时目录的独立 SQLite 路径。
+   - **依赖替换**：测试如需替换探针与抓包会话，使用 FastAPI 原生机制 `app.dependency_overrides`：
+     ```python
+     from app.api.deps import get_frida_session_factory, get_mitm_session_factory
+     app.dependency_overrides[get_frida_session_factory] = lambda: FakeTestFridaSession
+     app.dependency_overrides[get_mitm_session_factory] = lambda: FakeTestMitmSession
+     ```
+   - 全局 autouse fixture 会在每个用例结束后自动执行 `app.dependency_overrides.clear()`，杜绝跨用例污染。
+
+4. **报告 Provenance 溯源契约**：
+   - 动态执行报告中的 `executor_strategy_receipt.executor_provenance_source` 用于记录执行策略决策归属。
+   - 历史版本（v0.1）曾记录为 `app.main._dynamic_analyze_v2.execution_decision`，现版本统一标准化为 `app.pipelines.dynamic.execution_decision`，两者代表相同的执行语义。
+
 ---
 
 ## 3. 核心领域模块职责

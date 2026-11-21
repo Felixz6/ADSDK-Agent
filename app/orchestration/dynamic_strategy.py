@@ -152,14 +152,30 @@ def normalize_dynamic_strategy(
             if application_launch_allowed is not None
             else requested_strategy != "attach_only"
         )
-        common = {
-            "requested_strategy": requested_strategy,
-            "target_running": target_running,
-            "requested_scope": scope,
-        }
-        if scope in _READONLY_STRATEGIES:
+
+        def _decision(
+            *,
+            effective_strategy: str,
+            normalized: bool,
+            reason_code: str | None,
+            application_launch_allowed: bool,
+            effective_scope: str,
+            blocked: bool = False,
+        ) -> DynamicStrategyDecision:
             return DynamicStrategyDecision(
-                **common,
+                requested_strategy=requested_strategy,
+                effective_strategy=effective_strategy,
+                normalized=normalized,
+                reason_code=reason_code,
+                application_launch_allowed=application_launch_allowed,
+                target_running=target_running,
+                requested_scope=scope,
+                effective_scope=effective_scope,
+                blocked=blocked,
+            )
+
+        if scope in _READONLY_STRATEGIES:
+            return _decision(
                 effective_strategy=requested_strategy,
                 normalized=False,
                 reason_code=None,
@@ -167,8 +183,7 @@ def normalize_dynamic_strategy(
                 effective_scope=scope,
             )
         if not allow_dynamic:
-            return DynamicStrategyDecision(
-                **common,
+            return _decision(
                 effective_strategy=requested_strategy,
                 normalized=True,
                 reason_code="dynamic_not_allowed",
@@ -176,8 +191,7 @@ def normalize_dynamic_strategy(
                 effective_scope="static_only",
             )
         if not dynamic_confirmed:
-            return DynamicStrategyDecision(
-                **common,
+            return _decision(
                 effective_strategy=requested_strategy,
                 normalized=True,
                 reason_code="dynamic_not_confirmed",
@@ -185,8 +199,7 @@ def normalize_dynamic_strategy(
                 effective_scope="static_only",
             )
         if requested_strategy == "strict":
-            return DynamicStrategyDecision(
-                **common,
+            return _decision(
                 effective_strategy="strict",
                 normalized=False,
                 reason_code=None,
@@ -194,8 +207,7 @@ def normalize_dynamic_strategy(
                 effective_scope=scope,
             )
         if requested_strategy == "attach_only" and target_running:
-            return DynamicStrategyDecision(
-                **common,
+            return _decision(
                 effective_strategy="attach_only",
                 normalized=False,
                 reason_code=None,
@@ -204,16 +216,14 @@ def normalize_dynamic_strategy(
             )
         if requested_strategy == "attach_only" and not target_running:
             if launch_allowed:
-                return DynamicStrategyDecision(
-                    **common,
+                return _decision(
                     effective_strategy="balanced",
                     normalized=True,
                     reason_code="attach_only_target_missing_launch_allowed",
                     application_launch_allowed=True,
                     effective_scope=scope,
                 )
-            return DynamicStrategyDecision(
-                **common,
+            return _decision(
                 effective_strategy="attach_only",
                 normalized=False,
                 reason_code="attach_only_target_missing_launch_forbidden",
@@ -229,8 +239,7 @@ def normalize_dynamic_strategy(
         elif not allow_network and plan_references_traffic:
             reason = "network_capture_disabled"
             normalized = True
-        return DynamicStrategyDecision(
-            **common,
+        return _decision(
             effective_strategy=effective,
             normalized=normalized,
             reason_code=reason,

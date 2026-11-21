@@ -6,11 +6,15 @@ RUN_DIR="${ROOT_DIR}/.run"
 mkdir -p "${RUN_DIR}"
 
 VENV_DIR="${ROOT_DIR}/.venv"
-VENV_PYTHON="${VENV_DIR}/bin/python"
-if [ ! -x "${VENV_PYTHON}" ]; then
-  # Fallback for Windows-like path in WSL or git bash
-  VENV_PYTHON="${VENV_DIR}/Scripts/python.exe"
-fi
+OS_TYPE="$(uname -s 2>/dev/null || echo "Unknown")"
+case "${OS_TYPE}" in
+  MINGW*|MSYS*|CYGWIN*)
+    VENV_PYTHON="${VENV_DIR}/Scripts/python.exe"
+    ;;
+  *)
+    VENV_PYTHON="${VENV_DIR}/bin/python"
+    ;;
+esac
 
 if [ ! -f "${VENV_PYTHON}" ] && [ ! -x "${VENV_PYTHON}" ]; then
   echo "未找到虚拟环境 Python：${VENV_PYTHON}"

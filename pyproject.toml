@@ -63,3 +63,14 @@ ignore = ["E501", "UP042"]
 [tool.ruff.lint.isort]
 combine-as-imports = true
 known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["app.core.*", "app.orchestration.*"]
+check_untyped_defs = true
+

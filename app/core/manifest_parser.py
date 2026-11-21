@@ -1,6 +1,7 @@
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 from app.core.application_names import (
     resolve_application_label,
@@ -56,7 +57,7 @@ def parse_manifest_info(
     apk_filename: str | None = None,
 ) -> dict:
     manifest_path = os.path.join(unpack_dir, "AndroidManifest.xml")
-    result = {
+    result: dict[str, Any] = {
         "package_name": None,
         "version_name": None,
         "version_code": None,

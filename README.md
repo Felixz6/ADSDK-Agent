@@ -1,5 +1,7 @@
 # AdSDK Agent
 
+[![CI](https://github.com/Felixz6/ADSDK-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Felixz6/ADSDK-Agent/actions/workflows/ci.yml)
+
 > **面向 Android APK 的本地隐私合规审计与取证分析平台。**  
 > 坚持“隐私审计留在本机”与“证据先于叙述”，通过现代化的 Web 审计工作台，提供 APK 静态清单提取、动态行为拦截、网络流量观测、单调时钟 Consent 阶段划分、确定性证据关联、隐私风险发现与 AI 辅助研判。
 
@@ -56,11 +58,11 @@
 | **前端框架** | React 18、TypeScript、Vite 6 | 严谨强类型组件化，支持全站路由代码分割与懒加载 |
 | **样式与交互** | Tailwind CSS、Framer Motion | 精细化 CSS Tokens 设计系统、流体微交互与按压动效 |
 | **状态与请求** | TanStack Query v5、Zustand | 服务端数据缓存、自愈轮询、主题切换与活跃分析状态管理 |
-| **前端质量** | Vitest、Testing Library、MSW | 31 个测试套件，337 项用例全部通过，覆盖空态与错误边界 |
+| **前端质量** | Vitest、Testing Library、MSW | 自动化组件与页面测试套件，全面覆盖空态与错误边界 |
 | **后端核心** | Python 3.12+、FastAPI、Pydantic v2 | 高性能异步 API，严格输入校验与强类型响应契约 |
 | **底层工具链** | apktool、ADB、Frida 17、mitmproxy | 离线静态解包、设备交互、底层 API Hook、受控流量镜像 |
 | **数据与安全** | SQLite (WAL 模式)、Windows DPAPI | 单机任务状态持久化、本地机器级别加密保护 AI API 密钥 |
-| **后端质量** | pytest、httpx | 788 项自动化测试通过，涵盖单元、链路、降级与真实回放 |
+| **后端质量** | pytest、httpx | 自动化测试守护，涵盖单元、链路、降级与真实回放 |
 
 ---
 
@@ -276,12 +278,10 @@ output/runs/<run_id>/
 ```powershell
 # 运行后端全量测试套件 (pytest)
 .venv\Scripts\python.exe -m pytest -q
-# 输出结果：788 passed
 
 # 运行前端全量测试套件 (vitest)
 cd web
 npm test -- --run
-# 输出结果：31 test files / 337 passed
 
 # 运行前端类型检查与生产构建
 npm run typecheck
@@ -296,9 +296,9 @@ npm run build
 
 | 宿主/设备环境 | 支持等级 | 说明与建议 |
 | :--- | :--- | :--- |
-| **Windows 11 / 10** | Tier 1 (全功能) | 宿主系统原生支持，提供一键启动脚本、Windows DPAPI 硬件密钥加密保护 |
-| **Linux (Ubuntu 22.04+)** | Tier 1 (全功能) | 提供 `start.sh` / `stop.sh` 脚本，支持无头服务器部署与 CI 自动化 |
-| **macOS (Apple Silicon / Intel)** | Tier 2 (可用) | 支持静态分析与流量审计，动态真机需要配置 ADB 与对应 Frida Server 架构 |
+| **Windows 11 / 10** | Tier 1 (全功能) | 宿主系统原生支持，提供一键启动脚本、Windows 原生 DPAPI (`CryptProtectData`) 绑定当前用户的本地密钥加密保护 |
+| **Linux (Ubuntu 22.04+)** | Tier 1 (全功能) | 提供 `start.sh` / `stop.sh` 脚本；AI 密钥推荐通过 `AI_API_KEY` 环境变量注入，本地持久化自动降级为基于当前用户与主机节点绑定的加盐 HMAC 保护机制 (`ADSDK_SEC1`) |
+| **macOS (Apple Silicon / Intel)** | Tier 2 (可用) | 支持静态分析与流量审计；动态真机需配置 ADB 与对应 Frida Server 架构；密钥存储机制与 Linux 一致 |
 | **物理真机 (Rooted Android 9~14)** | Tier 1 (推荐) | 取证真实性最高，支持全部 ARM64/ARMv7 目标 API 插桩与硬件标识读取 |
 | **MuMu 模拟器 12 (Android 12 x86_64)** | Tier 1 (已深度适配) | 支持基于 QEMU 网关 `10.0.2.2` 的宿主代理直连与 Native Bridge 指令集兼容自愈 |
 | **非 Root 原生设备** | Tier 3 (受限) | 仅支持静态分析与受限的基于 VPN/Wi-Fi 代理的网络流量抓取，不支持 Frida 注入 |
