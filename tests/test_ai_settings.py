@@ -30,7 +30,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.config as app_config
-import app.container as container
 import app.main as main_module
 import app.pipelines.task_runner as task_runner
 from app.ai import secret_store as secret_store_module
@@ -44,6 +43,11 @@ from app.ai.settings_store import (
     AISettingsStore,
 )
 from app.api import middleware as middleware_module
+from app.api.deps import (
+    get_ai_settings_service,
+    get_task_repository,
+    get_task_service,
+)
 from app.repositories import TaskRepository
 
 
@@ -54,7 +58,7 @@ from app.repositories import TaskRepository
 def _rewire(store_dir: Path) -> tuple[Path, Path]:
     settings_path = Path(store_dir) / "ai-settings.json"
     secret_path = Path(store_dir) / "ai-secret.bin"
-    store = container.ai_settings_service.store
+    store = main_module.app.state.container.ai_settings_service.store
     store._path = settings_path  # noqa: SLF001 — tests own the seam
     store.secret_store._path = secret_path  # noqa: SLF001
     return settings_path, secret_path
@@ -68,8 +72,10 @@ def ai_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings_path, secret_path = _rewire(tmp_path)
     # Rebuild a fresh factory+service bound to the freshly re-wired store so
     # provider cache state never bleeds between tests.
-    service = AISettingsService(container.ai_settings_service.store)
-    monkeypatch.setattr(container, "ai_settings_service", service)
+    service = AISettingsService(main_module.app.state.container.ai_settings_service.store)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_ai_settings_service, lambda: service
+    )
     monkeypatch.setattr(task_runner, "ai_settings_service", service)
     return service
 
@@ -615,8 +621,8 @@ def test_ai_disabled_does_not_break_static_task(monkeypatch: pytest.MonkeyPatch,
     service.set_runner(
         lambda _t: {"ok": True, "status": "success", "report_json": str(run_dir / "report.json")}
     )
-    monkeypatch.setattr(container, "task_service", service)
-    monkeypatch.setattr(container, "task_repository", repo)
+    monkeypatch.setitem(main_module.app.dependency_overrides, get_task_service, lambda: service)
+    monkeypatch.setitem(main_module.app.dependency_overrides, get_task_repository, lambda: repo)
     monkeypatch.setattr(task_runner, "task_service", service)
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(tmp_path))
     tc = TestClient(main_module.app)
@@ -647,8 +653,8 @@ def test_legacy_env_config_compatible(monkeypatch: pytest.MonkeyPatch, tmp_path:
     # store bound to the live env.
     store = AISettingsStore()
     _rewire(tmp_path)
-    container.ai_settings_service.store._env = store._env  # noqa: SLF001
-    payload = container.ai_settings_service.get_effective_settings()
+    main_module.app.state.container.ai_settings_service.store._env = store._env  # noqa: SLF001
+    payload = main_module.app.state.container.ai_settings_service.get_effective_settings()
     assert payload["base_url"] == "https://legacy/v1"
     assert payload["model"] == "legacy-model"
     assert payload["api_key_source"] == "environment"

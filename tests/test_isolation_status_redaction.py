@@ -18,10 +18,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.config as app_config
-import app.container as container
 import app.pipelines.common as common_module
 import app.pipelines.dynamic as dynamic_module
 from app import main as main_module
+from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.core.device import DeviceContext
 from app.core.redaction import Redactor
 from app.tools.log_writer import append_log
@@ -267,8 +267,16 @@ def _install_common_fakes(
                 issues=[],
             )
 
-    monkeypatch.setattr(container, "frida_session_factory", P0FakeFridaSession)
-    monkeypatch.setattr(container, "mitm_session_factory", P0FakeMitmSession)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides,
+        get_frida_session_factory,
+        lambda: P0FakeFridaSession,
+    )
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides,
+        get_mitm_session_factory,
+        lambda: P0FakeMitmSession,
+    )
     monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
     monkeypatch.setattr(common_module, "parse_manifest_info", fake_manifest)
     monkeypatch.setattr(common_module, "scan_for_sdks", fake_sdks)

@@ -158,7 +158,7 @@ def _run_ai_orchestrated_task(
     return base_report
 
 
-def _run_persisted_task(task: TaskRecord):
+def run_persisted_task(task: TaskRecord):
     from app.pipelines.dynamic import dynamic_analyze
     from app.pipelines.static import analyze
 
@@ -170,6 +170,10 @@ def _run_persisted_task(task: TaskRecord):
     if task.task_type == "ai_orchestrated":
         return _run_ai_orchestrated_task(task, payload)
     raise ValueError(f"unsupported executable task type: {task.task_type}")
+
+
+# deprecated alias
+_run_persisted_task = run_persisted_task
 
 
 def regenerate_task_ai_report(

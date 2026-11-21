@@ -1,14 +1,15 @@
-"""FastAPI dependency providers backed by the process container."""
+"""FastAPI dependency providers backed by the request application container."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from app import container
+from starlette.requests import HTTPConnection
 
 if TYPE_CHECKING:
     from app.ai.settings_service import AISettingsService
     from app.comparisons import ComparisonService
+    from app.container import Container
     from app.frida import FridaDiagnosticsService, FridaServerManager
     from app.orchestration.consent_checkpoint import ConsentCheckpointService
     from app.orchestration.device_lease import LeaseRegistry
@@ -16,44 +17,58 @@ if TYPE_CHECKING:
     from app.services import TaskService
 
 
-def get_task_repository() -> TaskRepository:
-    return container.task_repository
+def _get_container(connection: HTTPConnection | None = None) -> Container:
+    if connection is not None:
+        container = getattr(connection.app.state, "container", None)
+        if container is not None:
+            return container
+    from app.container import _default_container
+
+    return _default_container
 
 
-def get_task_service() -> TaskService:
-    return container.task_service
+def get_task_repository(connection: HTTPConnection = None) -> TaskRepository:  # type: ignore[assignment]
+    return _get_container(connection).task_repository
 
 
-def get_comparison_service() -> ComparisonService:
-    return container.comparison_service
+def get_task_service(connection: HTTPConnection = None) -> TaskService:  # type: ignore[assignment]
+    return _get_container(connection).task_service
 
 
-def get_ai_settings_service() -> AISettingsService:
-    return container.ai_settings_service
+def get_comparison_service(connection: HTTPConnection = None) -> ComparisonService:  # type: ignore[assignment]
+    return _get_container(connection).comparison_service
 
 
-def get_consent_checkpoint_service() -> ConsentCheckpointService:
-    return container.consent_checkpoint_service
+def get_ai_settings_service(connection: HTTPConnection = None) -> AISettingsService:  # type: ignore[assignment]
+    return _get_container(connection).ai_settings_service
 
 
-def get_device_lease_registry() -> LeaseRegistry:
-    return container.device_lease_registry
+def get_consent_checkpoint_service(
+    connection: HTTPConnection = None,  # type: ignore[assignment]
+) -> ConsentCheckpointService:
+    return _get_container(connection).consent_checkpoint_service
 
 
-def get_frida_server_manager() -> FridaServerManager:
-    return container.frida_server_manager
+def get_device_lease_registry(connection: HTTPConnection = None) -> LeaseRegistry:  # type: ignore[assignment]
+    return _get_container(connection).device_lease_registry
 
 
-def get_frida_diagnostics_service() -> FridaDiagnosticsService:
-    return container.frida_diagnostics_service
+def get_frida_server_manager(connection: HTTPConnection = None) -> FridaServerManager:  # type: ignore[assignment]
+    return _get_container(connection).frida_server_manager
 
 
-def get_frida_session_factory() -> Any:
-    return container.frida_session_factory
+def get_frida_diagnostics_service(
+    connection: HTTPConnection = None,  # type: ignore[assignment]
+) -> FridaDiagnosticsService:
+    return _get_container(connection).frida_diagnostics_service
 
 
-def get_mitm_session_factory() -> Any:
-    return container.mitm_session_factory
+def get_frida_session_factory(connection: HTTPConnection = None) -> Any:  # type: ignore[assignment]
+    return _get_container(connection).frida_session_factory
+
+
+def get_mitm_session_factory(connection: HTTPConnection = None) -> Any:  # type: ignore[assignment]
+    return _get_container(connection).mitm_session_factory
 
 
 __all__ = [

@@ -73,7 +73,6 @@ class TaskService:
         max_workers: int = 3,
     ) -> None:
         self.repository = repository
-        self.repository.initialize()
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="adsdk-task",

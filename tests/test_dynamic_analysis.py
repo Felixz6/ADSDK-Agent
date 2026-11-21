@@ -4,10 +4,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import app.config as app_config
-import app.container as container
 import app.pipelines.common as common_module
 import app.pipelines.dynamic as dynamic_module
 from app import main as main_module
+from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.core.device import DeviceContext
 from app.tools.log_writer import append_log
 from tests.fake_sessions import FakeTestFridaSession, FakeTestMitmSession
@@ -100,8 +100,12 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
             dynamic_module.launch_app(self.package_name, device_context=self.device)
             return True
 
-    monkeypatch.setattr(container, "frida_session_factory", DemoFridaSession)
-    monkeypatch.setattr(container, "mitm_session_factory", FakeTestMitmSession)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_frida_session_factory, lambda: DemoFridaSession
+    )
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_mitm_session_factory, lambda: FakeTestMitmSession
+    )
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_dir))
     monkeypatch.setattr(app_config, "APK_ALLOWED_ROOTS", (tmp_path.resolve(),))
     monkeypatch.setattr(
@@ -196,8 +200,14 @@ def test_high_frequency_sensitive_access_rule(tmp_path, monkeypatch):
                 )
             return True
 
-    monkeypatch.setattr(container, "frida_session_factory", HighFreqFridaSession)
-    monkeypatch.setattr(container, "mitm_session_factory", FakeTestMitmSession)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides,
+        get_frida_session_factory,
+        lambda: HighFreqFridaSession,
+    )
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_mitm_session_factory, lambda: FakeTestMitmSession
+    )
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_dir))
     monkeypatch.setattr(app_config, "APK_ALLOWED_ROOTS", (tmp_path.resolve(),))
     monkeypatch.setattr(

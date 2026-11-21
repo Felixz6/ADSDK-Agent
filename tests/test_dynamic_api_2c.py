@@ -20,10 +20,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.config as app_config
-import app.container as container
 import app.main as main_module
 import app.pipelines.common as common_module
 import app.pipelines.dynamic as dynamic_module
+from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.core.device import DeviceContext
 from app.orchestration.dynamic_collection import (
     run_dynamic_collection as real_run_dynamic_collection,
@@ -591,15 +591,15 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(scenario, *args, **kwargs)
 
-    monkeypatch.setattr(
-        container,
-        "frida_session_factory",
-        BoundFakeFridaSession,
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides,
+        get_frida_session_factory,
+        lambda: BoundFakeFridaSession,
     )
-    monkeypatch.setattr(
-        container,
-        "mitm_session_factory",
-        BoundFakeMitmSession,
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides,
+        get_mitm_session_factory,
+        lambda: BoundFakeMitmSession,
     )
 
     def recording_collection(*args: Any, **kwargs: Any):

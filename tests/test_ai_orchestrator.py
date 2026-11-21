@@ -20,7 +20,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.config as app_config
-import app.container as container
 import app.main as main_module
 import app.pipelines.dynamic as dynamic_module
 import app.pipelines.full_analysis as full_analysis_module
@@ -59,6 +58,11 @@ from app.ai.tool_registry import (
     UnknownToolError,
     prioritize_steps,
 )
+from app.api.deps import (
+    get_ai_settings_service,
+    get_task_repository,
+    get_task_service,
+)
 from app.repositories import TaskRepository
 from app.services import TaskService
 from app.services.ai_task_service import AITaskService
@@ -91,7 +95,9 @@ def _install_local_ai_settings(
             "api_key": "sk-test-status-only",
         }
     )
-    monkeypatch.setattr(container, "ai_settings_service", service)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_ai_settings_service, lambda: service
+    )
     monkeypatch.setattr(task_runner, "ai_settings_service", service)
     return service
 
@@ -1093,7 +1099,9 @@ def test_ai_status_endpoint_defaults_to_disabled(monkeypatch: pytest.MonkeyPatch
     )
     service = AISettingsService(store)
     service.save_settings({"enabled": False})
-    monkeypatch.setattr(container, "ai_settings_service", service)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_ai_settings_service, lambda: service
+    )
     monkeypatch.setattr(task_runner, "ai_settings_service", service)
     client = TestClient(main_module.app)
     payload = client.get("/ai/status").json()
@@ -1143,8 +1151,10 @@ def test_ai_plan_and_report_endpoints_report_availability(
     service.set_runner(
         lambda _task: {"ok": True, "status": "success", "report_json": str(report_path)}
     )
-    monkeypatch.setattr(container, "task_service", service)
-    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setitem(main_module.app.dependency_overrides, get_task_service, lambda: service)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_task_repository, lambda: repository
+    )
     monkeypatch.setattr(task_runner, "task_service", service)
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(tmp_path))
 
@@ -1245,8 +1255,10 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
     )
     monkeypatch.setattr(full_analysis_module.FullAnalysisSession, "run", run_session)
     monkeypatch.setattr(dynamic_module, "dynamic_analyze", legacy_dynamic)
-    monkeypatch.setattr(container, "task_service", service)
-    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setitem(main_module.app.dependency_overrides, get_task_service, lambda: service)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_task_repository, lambda: repository
+    )
     monkeypatch.setattr(task_runner, "task_service", service)
     service.set_runner(task_runner._run_persisted_task)
     client = TestClient(main_module.app)

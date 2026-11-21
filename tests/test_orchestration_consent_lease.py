@@ -1600,17 +1600,15 @@ def _api_client(tmp_path, monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    import app.container as container
     import app.main as main_module
     import app.pipelines.task_runner as task_runner
+    from app.api.deps import (
+        get_consent_checkpoint_service,
+        get_task_repository,
+        get_task_service,
+    )
     from app.repositories import TaskRepository
     from app.services import TaskService
-
-    if hasattr(container, "task_service") and container.task_service is not None:
-        try:
-            container.task_service.shutdown()
-        except Exception:
-            pass
 
     db_path = tmp_path / "state" / f"tasks_{uuid.uuid4().hex}.db"
     repository = TaskRepository(db_path)
@@ -1626,12 +1624,18 @@ def _api_client(tmp_path, monkeypatch):
     report_path.write_text("{}", encoding="utf-8")
     service = TaskService(repository, max_workers=1)
     service.set_runner(lambda _task: payload)
-    monkeypatch.setattr(container, "task_service", service)
-    monkeypatch.setattr(container, "task_repository", repository)
+    monkeypatch.setitem(main_module.app.dependency_overrides, get_task_service, lambda: service)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_task_repository, lambda: repository
+    )
     monkeypatch.setattr(task_runner, "task_service", service)
     # Fresh checkpoint registry per test so state never bleeds across tests.
     fresh = ConsentCheckpointService(clock=_TickClock())
-    monkeypatch.setattr(container, "consent_checkpoint_service", fresh)
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides,
+        get_consent_checkpoint_service,
+        lambda: fresh,
+    )
     return TestClient(main_module.app), service, fresh, repository
 
 

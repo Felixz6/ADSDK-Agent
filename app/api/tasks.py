@@ -260,9 +260,12 @@ def download_task_artifact(
 
 
 @router.websocket("/ws/tasks/{task_id}")
-async def task_progress_websocket(websocket: WebSocket, task_id: str):
+async def task_progress_websocket(
+    websocket: WebSocket,
+    task_id: str,
+    task_svc: TaskService = Depends(get_task_service),
+):
     await websocket.accept()
-    task_svc = get_task_service()
     last_updated: str | None = None
     try:
         while True:

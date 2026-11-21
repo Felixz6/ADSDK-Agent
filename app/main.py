@@ -10,26 +10,38 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.api.middleware import AILocalOnlyMiddleware
-from app.container import task_repository, task_service
+from app.config import STATIC_UNPACK_CACHE_DIR
+from app.container import Container, _default_container, build_container
 from app.models import AnalyzeRequest, AnalyzeResponse, DynamicAnalyzeRequest
 from app.pipelines.dynamic import dynamic_analyze
 from app.pipelines.static import analyze
-from app.pipelines.task_runner import _run_persisted_task
-
-task_service.set_runner(_run_persisted_task)
+from app.pipelines.task_runner import run_persisted_task
+from app.services.application_name_service import repair_historical_application_names
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task_repository.initialize()
-    task_service.recover()
+    container: Container = getattr(app.state, "container", None)
+    if container is None:
+        container = build_container()
+        app.state.container = container
+    container.task_service.set_runner(run_persisted_task)
+    container.task_repository.initialize()
+    repair_historical_application_names(
+        container.task_repository,
+        static_unpack_cache_dir=STATIC_UNPACK_CACHE_DIR,
+    )
+    container.task_service.recover()
     yield
-    task_service.shutdown()
+    container.task_service.shutdown()
 
 
-def create_app() -> FastAPI:
+def create_app(container: Container | None = None) -> FastAPI:
     """Build the ASGI app: CORS, local-only guard, and domain routers."""
+    if container is None:
+        container = build_container()
     app_instance = FastAPI(title="AdSDK Agent", version="0.2.0", lifespan=lifespan)
+    app_instance.state.container = container
     app_instance.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -55,7 +67,7 @@ def create_app() -> FastAPI:
     return app_instance
 
 
-app = create_app()
+app = create_app(_default_container)
 
 
 @app.get("/")
