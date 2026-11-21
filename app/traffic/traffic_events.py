@@ -621,3 +621,25 @@ def validate_traffic_jsonl(
         records=read_result.records,
         issues=read_result.issues,
     )
+
+
+def read_traffic_http_requests(
+    path: str | os.PathLike[str],
+) -> list[dict[str, Any]]:
+    """Read valid http_request records from a JSONL file, ignoring malformed lines."""
+    source = Path(path)
+    if not source.is_file():
+        return []
+    records: list[dict[str, Any]] = []
+    with source.open("r", encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                payload = json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(payload, dict) and payload.get("type") == "http_request":
+                records.append(payload)
+    return records

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -33,7 +34,10 @@ from app.tools.adb_runner import (
     select_device_context,
 )
 from app.traffic.mitm_runner import check_port_listening, get_mitm_status
+from app.traffic.traffic_events import read_traffic_http_requests
 from app.traffic.traffic_parser import parse_traffic_text
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.frida import FridaDiagnosticsService, FridaServerManager
@@ -116,15 +120,13 @@ def traffic_check(device_id: str):
     jsonl_path = mitm_status.get("jsonl_path")
     if jsonl_path and Path(jsonl_path).is_file():
         try:
-            with open(jsonl_path, encoding="utf-8") as f:
-                for line in f:
-                    stripped = line.strip()
-                    if stripped:
-                        item = json.loads(stripped)
-                        if item.get("type") == "http_request":
-                            records.append(item)
-        except Exception:
-            pass
+            records = read_traffic_http_requests(jsonl_path)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Failed reading structured traffic jsonl %s: %s",
+                jsonl_path,
+                type(exc).__name__,
+            )
     if not records:
         stream_log = mitm_status.get("stream_log")
         records = parse_traffic_text(stream_log) if stream_log else []

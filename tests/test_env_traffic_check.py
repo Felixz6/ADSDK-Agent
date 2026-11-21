@@ -130,3 +130,43 @@ def test_traffic_check_failure_reason(monkeypatch):
     assert len(body["possible_reasons"]) >= 2
     assert "emulator-5554" not in resp.text
     assert body["device_id"].startswith("redacted:")
+
+
+def test_traffic_check_handles_corrupt_jsonl_line_without_500(tmp_path, monkeypatch):
+    """Corrupt lines in requests.jsonl should be skipped without raising 500 or failing traffic_check."""
+    client = TestClient(main_module.app)
+    jsonl_file = tmp_path / "requests.jsonl"
+    jsonl_file.write_text(
+        '{"type": "http_request", "method": "GET", "url": "https://example.com"}\n'
+        "<<<CORRUPTED_JSON_LINE>>>\n"
+        '{"type": "http_request", "method": "POST", "url": "https://example.com/api"}\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        env_module,
+        "check_device_online",
+        lambda device_id=None: {"ok": True, "device_id": device_id, "target": None},
+    )
+    monkeypatch.setattr(
+        env_module,
+        "get_mitm_status",
+        lambda port=8080: {
+            "has_last_session": True,
+            "owned_by_session": True,
+            "running": True,
+            "port_listening": True,
+            "traffic_dir_exists": True,
+            "traffic_dir_writable": True,
+            "flow_file_size": 100,
+            "jsonl_path": str(jsonl_file),
+            "stream_log": None,
+        },
+    )
+
+    resp = client.get("/traffic/check", params={"device_id": "emulator-5554"})
+    assert resp.status_code == 200
+    body = resp.json()
+    # Verified that 2 valid lines were parsed, skipping the corrupted line
+    assert body["captured_request_count"] == 2
+    assert body["captured_success"] is True
