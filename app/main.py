@@ -30,8 +30,7 @@ from app.services.application_name_service import repair_historical_application_
 async def lifespan(app: FastAPI):
     container: Container = getattr(app.state, "container", None)
     if container is None:
-        container = build_container()
-        app.state.container = container
+        raise RuntimeError("application container is not initialised on app.state")
     if container.task_service._runner is None:
         from functools import partial
 

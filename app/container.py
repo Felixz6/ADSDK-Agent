@@ -35,8 +35,7 @@ def default_frida_session_factory(*args: Any, **kwargs: Any) -> Any:
     return FridaSession(*args, **kwargs)
 
 
-setattr(default_frida_session_factory, "_is_real_frida", True)
-setattr(FridaSession, "_is_real_frida", True)
+setattr(default_frida_session_factory, "is_real", True)
 
 
 def default_mitm_session_factory(*args: Any, **kwargs: Any) -> Any:
@@ -58,6 +57,7 @@ class Container:
     frida_server_manager: FridaServerManager
     frida_session_factory: Any = default_frida_session_factory
     mitm_session_factory: Any = default_mitm_session_factory
+    frida_real_device: bool = True
 
 
 def _get_setting(settings: Any, key: str, default: Any) -> Any:
@@ -101,6 +101,8 @@ def build_container(settings: Any = None) -> Container:
         handshake_timeout_seconds=FRIDA_SERVER_HANDSHAKE_TIMEOUT_SECONDS,
     )
 
+    frida_real = _get_setting(settings, "frida_real_device", True)
+
     container = Container(
         task_repository=repository,
         task_service=service,
@@ -113,6 +115,7 @@ def build_container(settings: Any = None) -> Container:
         frida_server_manager=manager,
         frida_session_factory=default_frida_session_factory,
         mitm_session_factory=default_mitm_session_factory,
+        frida_real_device=frida_real,
     )
 
     from functools import partial

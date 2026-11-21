@@ -7,7 +7,6 @@ from typing import Any
 
 from app.core.artifacts import atomic_write_json, atomic_write_text
 from app.core.device import DeviceContext
-from app.core.protocols import CommandRunner
 from app.tools.utils import run_cmd
 
 
@@ -18,7 +17,7 @@ class LogcatCollector:
         device: DeviceContext,
         package_name: str,
         output_dir: Path,
-        command_runner: CommandRunner = run_cmd,
+        command_runner: Any = run_cmd,
         max_lines: int = 200,
         max_bytes: int = 64 * 1024,
         timeout_seconds: int = 10,
@@ -36,7 +35,7 @@ class LogcatCollector:
         try:
             result = self.command_runner(command, timeout=self.timeout_seconds)
         except TypeError:
-            result = self.command_runner(command)  # type: ignore[call-arg]
+            result = self.command_runner(command)
         raw_lines = str(result.get("stdout") or "").splitlines()
         pid_text = str(pid) if pid else None
         selected = [

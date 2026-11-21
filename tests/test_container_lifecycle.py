@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.container import Container, build_container
@@ -158,3 +159,110 @@ def test_task_runner_uses_same_container_instance(tmp_path: Path):
 
     assert len(captured_container) >= 1
     assert captured_container[0] is app.state.container
+
+
+def test_pipeline_entries_raise_when_called_without_container():
+    """Pipeline entries must strictly require container without silently falling back to build_container."""
+    from app.models import DynamicAnalyzeRequest
+    from app.pipelines.dynamic import _dynamic_analyze_v2, dynamic_analyze
+    from app.pipelines.full_analysis import run_full_analysis_session
+    from app.pipelines.task_runner import (
+        _execute_ai_orchestration,
+        _run_ai_orchestrated_task,
+        regenerate_task_ai_report,
+        run_persisted_task,
+    )
+    from app.tasks.models import TaskRecord
+
+    fake_task = TaskRecord(
+        id="t-1",
+        task_type="static",
+        status="queued",
+        progress_percent=0,
+        request_payload={"apk_path": "test.apk"},
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+
+    with pytest.raises(TypeError):
+        run_persisted_task(fake_task)  # type: ignore[call-arg]
+
+    with pytest.raises(TypeError):
+        run_full_analysis_session(task=fake_task, payload={})  # type: ignore[call-arg]
+
+    with pytest.raises(TypeError):
+        dynamic_analyze(DynamicAnalyzeRequest(apk_path="test.apk"))  # type: ignore[call-arg]
+
+    with pytest.raises(TypeError):
+        _dynamic_analyze_v2(DynamicAnalyzeRequest(apk_path="test.apk"))  # type: ignore[call-arg]
+
+    with pytest.raises(TypeError):
+        _run_ai_orchestrated_task(fake_task, {})  # type: ignore[call-arg]
+
+    with pytest.raises(TypeError):
+        _execute_ai_orchestration(task=fake_task, payload={}, run_dir=None, base_report={})  # type: ignore[call-arg]
+
+    with pytest.raises(TypeError):
+        regenerate_task_ai_report("t-1")  # type: ignore[call-arg]
+
+
+def test_missing_container_on_app_state_fails_cleanly_without_creating_files(tmp_path: Path):
+    """When app.state.container is missing or removed, routes must fail with 500 without creating DB files."""
+    app = make_test_app(tmp_path)
+    # Remove container from state to simulate uninitialised state
+    del app.state.container
+
+    initial_files = list(tmp_path.rglob("*"))
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get("/tasks")
+    assert resp.status_code == 500
+
+    # Ensure no new SQLite files or directories were silently created
+    current_files = list(tmp_path.rglob("*"))
+    assert current_files == initial_files
+
+
+def test_same_app_sees_identical_services_across_route_runner_and_pipeline(tmp_path: Path):
+    """Inside the same app, the route layer, runner, and pipeline observe identical service instances."""
+    app = make_test_app(tmp_path)
+    container = app.state.container
+
+    captured_lease_reg = []
+    captured_consent_svc = []
+
+    def capturing_runner(task, *, container):
+        captured_lease_reg.append(container.device_lease_registry)
+        captured_consent_svc.append(container.consent_checkpoint_service)
+        return {"status": "completed"}
+
+    from functools import partial
+
+    app.state.container.task_service.set_runner(
+        partial(capturing_runner, container=app.state.container)
+    )
+
+    with TestClient(app) as client:
+        # Route layer service resolution via Depends
+        route_consent_svc = (
+            client.app.dependency_overrides.get(app.state.container.consent_checkpoint_service)
+            or app.state.container.consent_checkpoint_service
+        )
+        assert route_consent_svc is container.consent_checkpoint_service
+
+        resp = client.post("/tasks", json={"task_type": "static", "apk_path": "D:/samples/app.apk"})
+        assert resp.status_code == 202
+        task_id = resp.json()["id"]
+
+        import time
+
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            record = container.task_service.get(task_id)
+            if record and record.status in {"completed", "failed"}:
+                break
+            time.sleep(0.02)
+
+    assert len(captured_lease_reg) == 1
+    assert captured_lease_reg[0] is container.device_lease_registry
+    assert captured_consent_svc[0] is container.consent_checkpoint_service

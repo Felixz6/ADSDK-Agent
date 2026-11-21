@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -56,8 +56,10 @@ from .cleanup_manager import (
     CleanupDiagnostic,
     CleanupManager,
     CleanupOutcome,
+    CleanupStatus,
     CleanupStep,
     ResourceOwnershipRegistry,
+    VerificationResult,
 )
 from .consent_checkpoint import (
     ConsentCheckpointService,
@@ -308,7 +310,7 @@ def build_default_plan(
         )
     return AIPlan(
         objective=objective[:600],
-        strategy=strategy,  # type: ignore[arg-type]
+        strategy=cast(Any, strategy),
         steps=steps,
         expected_outputs=[],
         stop_conditions=[],
@@ -847,8 +849,8 @@ class FullAnalysisSession:
                 cleanup_attempted=True,
                 cleanup_action_result=action_result,
                 verification_attempted=True,
-                verification_result=verification,  # type: ignore[arg-type]  # bounded literal verified at runtime
-                final_status=final,  # type: ignore[arg-type]  # bounded status literal
+                verification_result=cast(VerificationResult, verification),
+                final_status=cast(CleanupStatus, final),
                 reason_code=reason,
             )
         )
@@ -874,7 +876,7 @@ class FullAnalysisSession:
         try:
             manager = CleanupManager(
                 registry=self.registry,
-                actions=self.effects,  # type: ignore[arg-type]
+                actions=cast(Any, self.effects),
                 snapshot=self._snapshot,
                 device_id=self.device_id,
             )

@@ -16,6 +16,8 @@ from app.traffic.traffic_events import (
 
 
 class FakeTestFridaSession:
+    is_real: bool = False
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.run_id = kwargs.get("run_id", "test-run")
         self.device = kwargs.get("device", DeviceContext(serial="emulator-5554"))

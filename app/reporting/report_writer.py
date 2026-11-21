@@ -1,46 +1,18 @@
+from __future__ import annotations
+
+from typing import Any
+
 from app.core.artifacts import atomic_write_json, atomic_write_text
 
 
-def _md_cell(value) -> str:
+def _md_cell(value: object) -> str:
     if value is None:
         return ""
     text = str(value)
-    return text.replace("|", "\\|").replace("\n", " ")
+    return text.replace("\r", " ").replace("\n", " ").replace("|", "\\|").strip()
 
 
-def write_json_report(report: dict, report_path: str):
-    atomic_write_json(report_path, report)
-
-
-def write_markdown_report(report: dict, report_path: str):
-    app_info = report.get("app_info", {}) or {}
-    sdks = report.get("sdks", []) or []
-    dynamic_findings = report.get("dynamic_findings", {}) or {}
-    dynamic_rules = dynamic_findings.get("rules", []) if isinstance(dynamic_findings, dict) else []
-    strict_dynamic_findings = report.get("strict_dynamic_findings", {}) or {}
-    strict_rules = (
-        strict_dynamic_findings.get("rules", [])
-        if isinstance(strict_dynamic_findings, dict)
-        else []
-    )
-    dynamic_events = report.get("dynamic_events", []) or []
-    traffic_summary = report.get("traffic_summary", {}) or {}
-    consent_time = report.get("consent_time")
-    pre_consent_seconds = report.get("pre_consent_seconds")
-    post_consent_seconds = report.get("post_consent_seconds")
-    risk_summary = report.get("risk_summary", {}) or {}
-    compliance_insight = report.get("compliance_insight", {}) or {}
-    timeline = report.get("timeline", {}) or {}
-    execution = report.get("dynamic_execution", {}) or {}
-    evidence_quality = report.get("dynamic_evidence_quality", {}) or {}
-    process_diagnostics = report.get("process_diagnostics", {}) or {}
-    traffic_diagnostics = report.get("traffic_diagnostics", {}) or {}
-    environment_capabilities = report.get("environment_capabilities", {}) or {}
-    task_result = report.get("dynamic_task_result", {}) or {}
-    correlation = report.get("evidence_correlation")
-    privacy_findings = report.get("privacy_findings")
-
-    lines = []
+def _build_md_executive_summary(report: dict, lines: list[str]) -> None:
     lines.append("# Android 广告 SDK 分析报告")
     lines.append("")
     lines.append("## 执行摘要")
@@ -65,6 +37,8 @@ def write_markdown_report(report: dict, report_path: str):
         for warning in warnings:
             lines.append(f"- {_md_cell(warning)}")
 
+
+def _build_md_risk_summary(risk_summary: dict, steps: list, lines: list[str]) -> None:
     lines.append("")
     lines.append("## 综合风险摘要")
     lines.append("")
@@ -86,7 +60,6 @@ def write_markdown_report(report: dict, report_path: str):
                 f"{_md_cell(item.get('severity'))} | {_md_cell(item.get('score'))} |"
             )
 
-    steps = report.get("steps") or []
     if steps:
         lines.append("")
         lines.append("### 分析步骤")
@@ -100,79 +73,93 @@ def write_markdown_report(report: dict, report_path: str):
                 f"{_md_cell(step.get('duration_ms'))} | {_md_cell(error)} |"
             )
 
-    if execution or evidence_quality:
-        lines.append("")
-        lines.append("## 动态可靠性")
-        lines.append("")
-        lines.append("### 环境能力")
-        lines.append("")
-        for key in (
-            "transport_available",
-            "process_enumeration_available",
-            "attach_available",
-            "spawn_creation_available",
-            "spawn_resume_stable",
-        ):
-            lines.append(f"- {key}: `{_md_cell(environment_capabilities.get(key))}`")
-        lines.append("")
-        lines.append("### 本次采集结果")
-        lines.append("")
-        lines.append(
-            f"- 最终执行模式: `{_md_cell(execution.get('selected_mode') or evidence_quality.get('mode') or '旧版报告未记录')}`"
-        )
-        lines.append(f"- 执行策略: `{_md_cell(execution.get('policy') or '旧版报告未记录')}`")
-        lines.append(f"- 证据等级: `{_md_cell(evidence_quality.get('level') or '无法判断')}`")
-        lines.append(
-            f"- 进程结果: `{_md_cell(task_result.get('process_result') or process_diagnostics.get('status'))}`"
-        )
-        for item in evidence_quality.get("coverage") or []:
-            lines.append(f"- 覆盖: {_md_cell(item)}")
-        for item in evidence_quality.get("limitations") or []:
-            lines.append(f"- 限制: {_md_cell(item)}")
-        attempts = execution.get("attempts") or []
-        if attempts:
-            lines.append("")
-            lines.append("| 执行尝试 | 状态 | 阶段 | 进程结果 | 恢复后存活(ms) | 原因码 |")
-            lines.append("|---|---|---|---|---:|---|")
-            for item in attempts:
-                lines.append(
-                    f"| {_md_cell(item.get('mode'))} | {_md_cell(item.get('status'))} | "
-                    f"{_md_cell(item.get('phase'))} | {_md_cell(item.get('process_result'))} | "
-                    f"{_md_cell(item.get('post_resume_survival_ms'))} | {_md_cell(item.get('reason_code'))} |"
-                )
-        if process_diagnostics.get("status") == "process_crashed":
-            lines.append("")
-            lines.append("### Native 崩溃摘要")
-            lines.append("")
-            lines.append(f"- signal: `{_md_cell(process_diagnostics.get('signal'))}`")
-            lines.append(f"- signal_code: `{_md_cell(process_diagnostics.get('signal_code'))}`")
-            lines.append(f"- summary: {_md_cell(process_diagnostics.get('summary'))}")
-            lines.append(
-                "- suspected_components: "
-                + _md_cell(", ".join(process_diagnostics.get("suspected_components") or []))
-            )
-            lines.append(f"- reason_code: `{_md_cell(process_diagnostics.get('reason_code'))}`")
-            if process_diagnostics.get("native_frames"):
-                lines.append(
-                    "- 完整 backtrace: `dynamic/process-diagnostics.json`（报告正文仅展示摘要）"
-                )
-        lines.append("")
-        lines.append("### 证据边界")
-        lines.append("")
-        lines.append("- `not_evaluated` 代表证据不足，不代表安全。")
-        lines.append("- 零请求不代表应用没有网络行为。")
-        lines.append("- attach 模式不能证明启动阶段没有行为。")
-        lines.append("- 兼容性诊断提示不等同于单一根因证明。")
-        if process_diagnostics:
-            lines.append(
-                f"- 进程退出摘要: {_md_cell(process_diagnostics.get('most_likely_cause') or process_diagnostics.get('status'))}"
-            )
-        if traffic_diagnostics:
-            lines.append(
-                f"- 网络诊断: {_md_cell(traffic_diagnostics.get('outcome'))}; "
-                f"Pinning 疑似=`{_md_cell(traffic_diagnostics.get('pinning_suspected'))}`"
-            )
 
+def _build_md_dynamic_quality(
+    execution: dict,
+    evidence_quality: dict,
+    environment_capabilities: dict,
+    task_result: dict,
+    process_diagnostics: dict,
+    traffic_diagnostics: dict,
+    lines: list[str],
+) -> None:
+    if not (execution or evidence_quality):
+        return
+
+    lines.append("")
+    lines.append("## 动态可靠性")
+    lines.append("")
+    lines.append("### 环境能力")
+    lines.append("")
+    for key in (
+        "transport_available",
+        "process_enumeration_available",
+        "attach_available",
+        "spawn_creation_available",
+        "spawn_resume_stable",
+    ):
+        lines.append(f"- {key}: `{_md_cell(environment_capabilities.get(key))}`")
+    lines.append("")
+    lines.append("### 本次采集结果")
+    lines.append("")
+    lines.append(
+        f"- 最终执行模式: `{_md_cell(execution.get('selected_mode') or evidence_quality.get('mode') or '旧版报告未记录')}`"
+    )
+    lines.append(f"- 执行策略: `{_md_cell(execution.get('policy') or '旧版报告未记录')}`")
+    lines.append(f"- 证据等级: `{_md_cell(evidence_quality.get('level') or '无法判断')}`")
+    lines.append(
+        f"- 进程结果: `{_md_cell(task_result.get('process_result') or process_diagnostics.get('status'))}`"
+    )
+    for item in evidence_quality.get("coverage") or []:
+        lines.append(f"- 覆盖: {_md_cell(item)}")
+    for item in evidence_quality.get("limitations") or []:
+        lines.append(f"- 限制: {_md_cell(item)}")
+    attempts = execution.get("attempts") or []
+    if attempts:
+        lines.append("")
+        lines.append("| 执行尝试 | 状态 | 阶段 | 进程结果 | 恢复后存活(ms) | 原因码 |")
+        lines.append("|---|---|---|---|---:|---|")
+        for item in attempts:
+            lines.append(
+                f"| {_md_cell(item.get('mode'))} | {_md_cell(item.get('status'))} | "
+                f"{_md_cell(item.get('phase'))} | {_md_cell(item.get('process_result'))} | "
+                f"{_md_cell(item.get('post_resume_survival_ms'))} | {_md_cell(item.get('reason_code'))} |"
+            )
+    if process_diagnostics.get("status") == "process_crashed":
+        lines.append("")
+        lines.append("### Native 崩溃摘要")
+        lines.append("")
+        lines.append(f"- signal: `{_md_cell(process_diagnostics.get('signal'))}`")
+        lines.append(f"- signal_code: `{_md_cell(process_diagnostics.get('signal_code'))}`")
+        lines.append(f"- summary: {_md_cell(process_diagnostics.get('summary'))}")
+        lines.append(
+            "- suspected_components: "
+            + _md_cell(", ".join(process_diagnostics.get("suspected_components") or []))
+        )
+        lines.append(f"- reason_code: `{_md_cell(process_diagnostics.get('reason_code'))}`")
+        if process_diagnostics.get("native_frames"):
+            lines.append(
+                "- 完整 backtrace: `dynamic/process-diagnostics.json`（报告正文仅展示摘要）"
+            )
+    lines.append("")
+    lines.append("### 证据边界")
+    lines.append("")
+    lines.append("- `not_evaluated` 代表证据不足，不代表安全。")
+    lines.append("- 零请求不代表应用没有网络行为。")
+    lines.append("- attach 模式不能证明启动阶段没有行为。")
+    lines.append("- 兼容性诊断提示不等同于单一根因证明。")
+    if process_diagnostics:
+        lines.append(
+            f"- 进程退出摘要: {_md_cell(process_diagnostics.get('most_likely_cause') or process_diagnostics.get('status'))}"
+        )
+    if traffic_diagnostics:
+        lines.append(
+            f"- 网络诊断: {_md_cell(traffic_diagnostics.get('outcome'))}; "
+            f"Pinning 疑似=`{_md_cell(traffic_diagnostics.get('pinning_suspected'))}`"
+        )
+
+
+def _build_md_app_info_and_sdks(report: dict, app_info: dict, sdks: list, lines: list[str]) -> None:
     lines.append("")
     lines.append("## 基本信息")
     lines.append("")
@@ -195,7 +182,19 @@ def write_markdown_report(report: dict, report_path: str):
     else:
         lines.append("| 未识别 | - | - | - |")
 
+
+def _build_md_dynamic_findings(
+    dynamic_findings: dict,
+    consent_time: Any,
+    pre_consent_seconds: Any,
+    post_consent_seconds: Any,
+    strict_dynamic_findings: dict,
+    lines: list[str],
+) -> None:
     if dynamic_findings:
+        dynamic_rules = (
+            dynamic_findings.get("rules", []) if isinstance(dynamic_findings, dict) else []
+        )
         lines.append("")
         lines.append("## 动态规则判定")
         lines.append("")
@@ -224,6 +223,11 @@ def write_markdown_report(report: dict, report_path: str):
     lines.append(f"- post_consent_seconds: `{_md_cell(post_consent_seconds)}`")
 
     if strict_dynamic_findings:
+        strict_rules = (
+            strict_dynamic_findings.get("rules", [])
+            if isinstance(strict_dynamic_findings, dict)
+            else []
+        )
         lines.append("")
         lines.append("## 严格版动态规则结果")
         lines.append("")
@@ -244,6 +248,8 @@ def write_markdown_report(report: dict, report_path: str):
         else:
             lines.append("| - | - | - |")
 
+
+def _build_md_dynamic_timeline(dynamic_events: list, timeline: dict, lines: list[str]) -> None:
     if dynamic_events:
         lines.append("")
         lines.append("## 动态事件时间线")
@@ -275,101 +281,8 @@ def write_markdown_report(report: dict, report_path: str):
                 f"{_md_cell(event.get('severity'))} |"
             )
 
-    if isinstance(correlation, dict):
-        correlation_summary = correlation.get("summary") or {}
-        lines.append("")
-        lines.append("## 动态事件与网络请求关联")
-        lines.append("")
-        lines.append(f"- 状态: `{_md_cell(correlation.get('status'))}`")
-        lines.append(f"- 动态事件数: `{_md_cell(correlation_summary.get('dynamic_event_count'))}`")
-        lines.append(
-            f"- 网络请求数: `{_md_cell(correlation_summary.get('network_request_count'))}`"
-        )
-        lines.append(f"- 关联数: `{_md_cell(correlation_summary.get('correlated_pair_count'))}`")
-        lines.append(f"- 时间窗口: `{_md_cell(correlation.get('window_ms'))} ms`")
-        lines.append(
-            "- 高/中/低置信: "
-            f"`{_md_cell(correlation_summary.get('high_confidence_count'))}` / "
-            f"`{_md_cell(correlation_summary.get('medium_confidence_count'))}` / "
-            f"`{_md_cell(correlation_summary.get('low_confidence_count'))}`"
-        )
-        correlation_items = correlation.get("items") or []
-        if correlation_items:
-            lines.append("")
-            lines.append("| 事件 | 请求 | 时间差(ms) | Consent | 置信度 | 说明 |")
-            lines.append("|---|---|---:|---|---|---|")
-            for item in correlation_items[:20]:
-                lines.append(
-                    f"| {_md_cell(item.get('event_type'))} | "
-                    f"{_md_cell(item.get('request_method'))} {_md_cell(item.get('request_host'))} | "
-                    f"{_md_cell(item.get('delta_ms'))} | "
-                    f"{_md_cell(item.get('consent_state'))} | "
-                    f"{_md_cell(item.get('confidence'))} | "
-                    f"{_md_cell(item.get('summary'))} |"
-                )
-        else:
-            lines.append("")
-            lines.append("- 未观察到可关联证据；该结果不表示相关行为未发生。")
-        for limitation in correlation.get("limitations") or []:
-            lines.append(f"- 证据限制: {_md_cell(limitation)}")
 
-    if isinstance(privacy_findings, dict):
-        findings_summary = privacy_findings.get("summary") or {}
-        lines.append("")
-        lines.append("## 可解释隐私发现")
-        lines.append("")
-        lines.append(
-            "> 本结果是基于当前观察窗口和技术证据形成的风险提示，不构成法律合规结论。"
-            "未观察到某项行为不代表该行为不会在其他设备、时间、账号或操作路径下发生。"
-        )
-        lines.append("")
-        lines.append(f"- 状态: `{_md_cell(privacy_findings.get('status'))}`")
-        lines.append(f"- 发现数量: `{_md_cell(findings_summary.get('finding_count'))}`")
-        lines.append(
-            "- 已观察事实 / 疑似风险提示 / 证据缺口: "
-            f"`{_md_cell(findings_summary.get('confirmed_observation_count'))}` / "
-            f"`{_md_cell(findings_summary.get('suspected_risk_count'))}` / "
-            f"`{_md_cell(findings_summary.get('evidence_gap_count'))}`"
-        )
-        lines.append(
-            "- 规则命中 / 未命中 / 未评估 / 异常: "
-            f"`{_md_cell(findings_summary.get('matched_rule_count'))}` / "
-            f"`{_md_cell(findings_summary.get('not_matched_rule_count'))}` / "
-            f"`{_md_cell(findings_summary.get('not_evaluated_rule_count'))}` / "
-            f"`{_md_cell(findings_summary.get('error_rule_count'))}`"
-        )
-        finding_items = privacy_findings.get("findings") or []
-        if finding_items:
-            lines.append("")
-            lines.append("| 发现 | 类型 | 严重性 | 置信度 | Consent | 证据数 | 说明 |")
-            lines.append("|---|---|---|---|---|---:|---|")
-            for item in finding_items[:30]:
-                lines.append(
-                    f"| {_md_cell(item.get('title'))} | "
-                    f"{_md_cell(item.get('finding_type'))} | "
-                    f"{_md_cell(item.get('severity'))} | "
-                    f"{_md_cell(item.get('confidence'))} | "
-                    f"{_md_cell(item.get('consent_state'))} | "
-                    f"{_md_cell(len(item.get('evidence_refs') or []))} | "
-                    f"{_md_cell(item.get('summary'))} |"
-                )
-        else:
-            lines.append("")
-            lines.append("- 本次观察中没有形成可展示的隐私发现；该结果不代表应用安全或合规。")
-        rule_results = privacy_findings.get("rule_results") or []
-        if rule_results:
-            lines.append("")
-            lines.append("| 规则 | 状态 | 原因码 |")
-            lines.append("|---|---|---|")
-            for rule in rule_results:
-                lines.append(
-                    f"| {_md_cell(rule.get('rule_id'))} | "
-                    f"{_md_cell(rule.get('status'))} | "
-                    f"{_md_cell(', '.join(rule.get('reason_codes') or []))} |"
-                )
-        for limitation in privacy_findings.get("limitations") or []:
-            lines.append(f"- 证据限制: {_md_cell(limitation)}")
-
+def _build_md_traffic_details(traffic_summary: dict, lines: list[str]) -> None:
     lines.append(f"- collection_status: `{_md_cell(traffic_summary.get('status'))}`")
     lines.append(f"- evaluation_status: `{_md_cell(traffic_summary.get('evaluation_status'))}`")
     lines.append(f"- total_requests: `{_md_cell(traffic_summary.get('total_requests'))}`")
@@ -381,6 +294,119 @@ def write_markdown_report(report: dict, report_path: str):
         for item in top_hosts[:20]:
             lines.append(f"| {_md_cell(item.get('host'))} | {_md_cell(item.get('count'))} |")
 
+
+def _build_md_correlation(correlation: dict, lines: list[str]) -> None:
+    correlation_summary = correlation.get("summary") or {}
+    lines.append("")
+    lines.append("## 动态事件与网络请求关联")
+    lines.append("")
+    lines.append(f"- 状态: `{_md_cell(correlation.get('status'))}`")
+    lines.append(f"- 动态事件数: `{_md_cell(correlation_summary.get('dynamic_event_count'))}`")
+    lines.append(f"- 网络请求数: `{_md_cell(correlation_summary.get('network_request_count'))}`")
+    lines.append(f"- 关联数: `{_md_cell(correlation_summary.get('correlated_pair_count'))}`")
+    lines.append(f"- 时间窗口: `{_md_cell(correlation.get('window_ms'))} ms`")
+    lines.append(
+        "- 高/中/低置信: "
+        f"`{_md_cell(correlation_summary.get('high_confidence_count'))}` / "
+        f"`{_md_cell(correlation_summary.get('medium_confidence_count'))}` / "
+        f"`{_md_cell(correlation_summary.get('low_confidence_count'))}`"
+    )
+    correlation_items = correlation.get("items") or []
+    if correlation_items:
+        lines.append("")
+        lines.append("| 事件 | 请求 | 时间差(ms) | Consent | 置信度 | 说明 |")
+        lines.append("|---|---|---:|---|---|---|")
+        for item in correlation_items[:20]:
+            lines.append(
+                f"| {_md_cell(item.get('event_type'))} | "
+                f"{_md_cell(item.get('request_method'))} {_md_cell(item.get('request_host'))} | "
+                f"{_md_cell(item.get('delta_ms'))} | "
+                f"{_md_cell(item.get('consent_state'))} | "
+                f"{_md_cell(item.get('confidence'))} | "
+                f"{_md_cell(item.get('summary'))} |"
+            )
+    else:
+        lines.append("")
+        lines.append("- 未观察到可关联证据；该结果不表示相关行为未发生。")
+    for limitation in correlation.get("limitations") or []:
+        lines.append(f"- 证据限制: {_md_cell(limitation)}")
+
+
+def _build_md_privacy_findings(privacy_findings: dict, lines: list[str]) -> None:
+    findings_summary = privacy_findings.get("summary") or {}
+    lines.append("")
+    lines.append("## 可解释隐私发现")
+    lines.append("")
+    lines.append(
+        "> 本结果是基于当前观察窗口和技术证据形成的风险提示，不构成法律合规结论。"
+        "未观察到某项行为不代表该行为不会在其他设备、时间、账号或操作路径下发生。"
+    )
+    lines.append("")
+    lines.append(f"- 状态: `{_md_cell(privacy_findings.get('status'))}`")
+    lines.append(f"- 发现数量: `{_md_cell(findings_summary.get('finding_count'))}`")
+    lines.append(
+        "- 已观察事实 / 疑似风险提示 / 证据缺口: "
+        f"`{_md_cell(findings_summary.get('confirmed_observation_count'))}` / "
+        f"`{_md_cell(findings_summary.get('suspected_risk_count'))}` / "
+        f"`{_md_cell(findings_summary.get('evidence_gap_count'))}`"
+    )
+    lines.append(
+        "- 规则命中 / 未命中 / 未评估 / 异常: "
+        f"`{_md_cell(findings_summary.get('matched_rule_count'))}` / "
+        f"`{_md_cell(findings_summary.get('not_matched_rule_count'))}` / "
+        f"`{_md_cell(findings_summary.get('not_evaluated_rule_count'))}` / "
+        f"`{_md_cell(findings_summary.get('error_rule_count'))}`"
+    )
+    finding_items = privacy_findings.get("findings") or []
+    if finding_items:
+        lines.append("")
+        lines.append("| 发现 | 类型 | 严重性 | 置信度 | Consent | 证据数 | 说明 |")
+        lines.append("|---|---|---|---|---|---:|---|")
+        for item in finding_items[:30]:
+            lines.append(
+                f"| {_md_cell(item.get('title'))} | "
+                f"{_md_cell(item.get('finding_type'))} | "
+                f"{_md_cell(item.get('severity'))} | "
+                f"{_md_cell(item.get('confidence'))} | "
+                f"{_md_cell(item.get('consent_state'))} | "
+                f"{_md_cell(len(item.get('evidence_refs') or []))} | "
+                f"{_md_cell(item.get('summary'))} |"
+            )
+    else:
+        lines.append("")
+        lines.append("- 本次观察中没有形成可展示的隐私发现；该结果不代表应用安全或合规。")
+    rule_results = privacy_findings.get("rule_results") or []
+    if rule_results:
+        lines.append("")
+        lines.append("| 规则 | 状态 | 原因码 |")
+        lines.append("|---|---|---|")
+        for rule in rule_results:
+            lines.append(
+                f"| {_md_cell(rule.get('rule_id'))} | "
+                f"{_md_cell(rule.get('status'))} | "
+                f"{_md_cell(', '.join(rule.get('reason_codes') or []))} |"
+            )
+    for limitation in privacy_findings.get("limitations") or []:
+        lines.append(f"- 证据限制: {_md_cell(limitation)}")
+
+
+def _build_md_traffic_summary(traffic_summary: dict, lines: list[str]) -> None:
+    lines.append("")
+    lines.append("## 网络外发摘要")
+    lines.append("")
+    lines.append(f"- collection_status: `{_md_cell(traffic_summary.get('status'))}`")
+    lines.append(f"- evaluation_status: `{_md_cell(traffic_summary.get('evaluation_status'))}`")
+    lines.append(f"- total_requests: `{_md_cell(traffic_summary.get('total_requests'))}`")
+    top_hosts = traffic_summary.get("top_hosts", []) or []
+    if top_hosts:
+        lines.append("")
+        lines.append("| host | count |")
+        lines.append("|---|---:|")
+        for item in top_hosts[:20]:
+            lines.append(f"| {_md_cell(item.get('host'))} | {_md_cell(item.get('count'))} |")
+
+
+def _build_md_conclusion(report: dict, compliance_insight: dict, lines: list[str]) -> None:
     lines.append("")
     lines.append("## 结论")
     lines.append("")
@@ -407,17 +433,71 @@ def write_markdown_report(report: dict, report_path: str):
         lines.append("")
         for action in actions:
             lines.append(
-                f"- **{_md_cell(action.get('priority'))}** "
-                f"{_md_cell(action.get('action'))} "
-                f"（{_md_cell(action.get('reason'))}）"
+                f"- [{_md_cell(action.get('priority'))}] "
+                f"{_md_cell(action.get('action'))}: "
+                f"{_md_cell(action.get('reason'))}"
             )
-    insight_limitations = compliance_insight.get("limitations") or []
-    if insight_limitations:
-        lines.append("")
-        lines.append("### 证据限制")
-        lines.append("")
-        for item in insight_limitations:
-            lines.append(f"- {_md_cell(item)}")
-    lines.append("")
 
-    atomic_write_text(report_path, "\n".join(lines))
+
+def build_markdown_report_content(report: dict) -> str:
+    app_info = report.get("app_info", {}) or {}
+    sdks = report.get("sdks", []) or []
+    dynamic_findings = report.get("dynamic_findings", {}) or {}
+    strict_dynamic_findings = report.get("strict_dynamic_findings", {}) or {}
+    dynamic_events = report.get("dynamic_events", []) or []
+    traffic_summary = report.get("traffic_summary", {}) or {}
+    consent_time = report.get("consent_time")
+    pre_consent_seconds = report.get("pre_consent_seconds")
+    post_consent_seconds = report.get("post_consent_seconds")
+    risk_summary = report.get("risk_summary", {}) or {}
+    compliance_insight = report.get("compliance_insight", {}) or {}
+    timeline = report.get("timeline", {}) or {}
+    execution = report.get("dynamic_execution", {}) or {}
+    evidence_quality = report.get("dynamic_evidence_quality", {}) or {}
+    process_diagnostics = report.get("process_diagnostics", {}) or {}
+    traffic_diagnostics = report.get("traffic_diagnostics", {}) or {}
+    environment_capabilities = report.get("environment_capabilities", {}) or {}
+    task_result = report.get("dynamic_task_result", {}) or {}
+    correlation = report.get("evidence_correlation")
+    privacy_findings = report.get("privacy_findings")
+    steps = report.get("steps") or []
+
+    lines: list[str] = []
+    _build_md_executive_summary(report, lines)
+    _build_md_risk_summary(risk_summary, steps, lines)
+    _build_md_dynamic_quality(
+        execution,
+        evidence_quality,
+        environment_capabilities,
+        task_result,
+        process_diagnostics,
+        traffic_diagnostics,
+        lines,
+    )
+    _build_md_app_info_and_sdks(report, app_info, sdks, lines)
+    _build_md_dynamic_findings(
+        dynamic_findings,
+        consent_time,
+        pre_consent_seconds,
+        post_consent_seconds,
+        strict_dynamic_findings,
+        lines,
+    )
+    _build_md_dynamic_timeline(dynamic_events, timeline, lines)
+    if isinstance(correlation, dict):
+        _build_md_correlation(correlation, lines)
+    if isinstance(privacy_findings, dict):
+        _build_md_privacy_findings(privacy_findings, lines)
+    _build_md_traffic_details(traffic_summary, lines)
+    _build_md_conclusion(report, compliance_insight, lines)
+
+    return "\n".join(lines) + "\n"
+
+
+def write_markdown_report(report: dict, report_path: str):
+    content = build_markdown_report_content(report)
+    atomic_write_text(report_path, content)
+
+
+def write_json_report(report: dict, report_path: str):
+    atomic_write_json(report_path, report)

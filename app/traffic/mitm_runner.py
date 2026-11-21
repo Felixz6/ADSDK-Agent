@@ -77,7 +77,7 @@ def create_mitm_session(
     if (run_dir is None) == (traffic_dir is None):
         raise ValueError("provide exactly one of run_dir or traffic_dir")
     selected_traffic_dir = (
-        Path(traffic_dir) if traffic_dir is not None else Path(run_dir) / "traffic"  # type: ignore[arg-type]
+        Path(traffic_dir) if traffic_dir is not None else Path(str(run_dir)) / "traffic"
     )
     values: dict[str, Any] = {
         "run_id": run_id,

@@ -189,3 +189,19 @@ output/runs/<run_id>/
 ├── report.md                     # Markdown 格式审计报告
 └── report.html                   # 自包含样式的现代化 HTML 交互报告
 ```
+
+---
+
+## 6. 静态类型检查覆盖与待收敛计划
+
+当前系统已对以下核心业务目录严格纳入 `mypy` 校验（共 54 个源文件，0 errors）：
+- `app/core/`（静态分析、Manifest 解析、时钟协议）
+- `app/orchestration/`（设备租约、确认门、清理状态机）
+- `app/traffic/`（流量捕获与请求脱敏校验）
+- `app/pipelines/`（分析流水线用例）
+- `app/api/`（FastAPI 网关与依赖注入）
+- `app/frida/`（第一批核心：diagnostics, server_manager, execution_session）
+
+**尚未完全纳入严格模式的目录与收敛计划**：
+- `app/ai/`：包含 LLM Provider 动态调用、Prompt 上下文组装与容错重试，目前通过结构化 Pydantic 模型确保运行时类型安全，计划在后续针对 Provider 协议与 AITaskService 进行静态类型收敛。
+- `app/frida/` 其余文件（如 `process_monitor.py`、`traffic_diagnostics.py`）：计划随对应模块重构逐步纳入全局 files 配置。

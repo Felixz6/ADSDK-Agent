@@ -7,10 +7,9 @@ import struct
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.core.device import DeviceContext
-from app.core.protocols import CommandRunner
 from app.tools.utils import run_cmd
 
 from .errors import DynamicErrorCode
@@ -52,7 +51,7 @@ class FridaServerManager:
         remote_path: str,
         start_timeout_seconds: float,
         handshake_timeout_seconds: float,
-        command_runner: CommandRunner = run_cmd,
+        command_runner: Any = run_cmd,
     ) -> None:
         self.enabled = enabled
         self.local_path = local_path
@@ -68,7 +67,7 @@ class FridaServerManager:
         try:
             return self.command_runner(command, timeout=selected)
         except TypeError:
-            return self.command_runner(command)  # type: ignore[call-arg]
+            return self.command_runner(command)
 
     @staticmethod
     def _response(
@@ -83,8 +82,8 @@ class FridaServerManager:
         details: dict[str, Any] | None = None,
     ) -> FridaServerActionResponse:
         return FridaServerActionResponse(
-            action=action,  # type: ignore[arg-type]
-            status=status,  # type: ignore[arg-type]
+            action=cast(Any, action),
+            status=cast(Any, status),
             error_code=error_code,
             message=message,
             device_ref=device.public_serial,
@@ -160,7 +159,7 @@ class FridaServerManager:
             status="success" if pids else "failed",
             message="frida-server 正在运行" if pids else "未观察到 frida-server 进程",
             owned=owned_alive,
-            pid=owned.pid if owned_alive else (pids[0] if pids else None),
+            pid=owned.pid if (owned_alive and owned is not None) else (pids[0] if pids else None),
             details={
                 "process_count": len(pids),
                 "ownership": "platform" if owned_alive else ("external" if pids else "none"),

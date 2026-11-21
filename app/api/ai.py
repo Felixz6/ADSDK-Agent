@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
 from app import config as app_config
@@ -14,7 +14,7 @@ from app.ai.settings_service import (
     AISettingsValidationError,
     resolve_effective_ai_settings,
 )
-from app.api.deps import get_ai_settings_service, get_task_service
+from app.api.deps import get_ai_settings_service, get_container, get_task_service
 from app.api.errors import task_not_found
 from app.pipelines.task_runner import (
     regenerate_task_ai_report as run_regenerate_task_ai_report,
@@ -32,6 +32,7 @@ from app.tasks.models import (
 
 if TYPE_CHECKING:
     from app.ai.settings_service import AISettingsService
+    from app.container import Container
     from app.services import TaskService
 
 router = APIRouter(tags=["ai"])
@@ -243,8 +244,7 @@ def get_task_ai_runtime_diagnostics(
 )
 def regenerate_task_ai_report(
     task_id: str,
-    request: Request,
+    container: Container = Depends(get_container),
     use_cache: bool | None = None,
 ):
-    container = getattr(request.app.state, "container", None)
     return run_regenerate_task_ai_report(task_id, use_cache=use_cache, container=container)

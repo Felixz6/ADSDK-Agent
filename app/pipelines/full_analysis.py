@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi.responses import JSONResponse
 
@@ -16,6 +16,7 @@ from app.config import (
     CONSENT_CHECKPOINT_WAIT_SECONDS,
     SCHEMA_VERSION,
 )
+from app.container import Container
 from app.core.artifacts import atomic_write_json
 from app.models import DynamicAnalyzeRequest
 from app.orchestration.cleanup_manager import (
@@ -86,7 +87,7 @@ def _capture_device_snapshot(
         device_ref=mask_device_ref(device_id),
         captured_at=task_utc_now(),
         initial_state=state,
-        capture_kind=capture_kind,  # type: ignore[arg-type]  # runtime capture kind literal
+        capture_kind=cast(Any, capture_kind),
     )
 
 
@@ -199,15 +200,10 @@ def run_full_analysis_session(
     *,
     task: TaskRecord,
     payload: dict[str, Any],
-    container: Any = None,
+    container: Container,
 ) -> dict[str, Any] | JSONResponse:
     """Single production entry for ai_orchestrated full_analysis tasks."""
     from app.pipelines.dynamic import _dynamic_analyze_v2
-
-    if container is None:
-        from app.container import build_container
-
-        container = build_container()
 
     ai_settings_svc = container.ai_settings_service
     device_lease_reg = container.device_lease_registry
@@ -343,7 +339,7 @@ def run_full_analysis_session(
         package_name=payload.get("package_name"),
         objective=str(payload.get("objective") or "分析本次 APK 的隐私风险"),
         strategy="full_analysis",
-        dynamic_mode_policy=str(payload.get("dynamic_mode_policy") or "balanced"),  # type: ignore[arg-type]  # validated policy literal
+        dynamic_mode_policy=cast(Any, str(payload.get("dynamic_mode_policy") or "balanced")),
         application_launch_allowed=True,
         allow_dynamic=bool(payload.get("allow_dynamic")),
         allow_network=bool(payload.get("allow_network")),
@@ -353,7 +349,7 @@ def run_full_analysis_session(
         lease=device_lease_reg,
         consent=consent_svc,
         registry=registry,
-        effects=effects,  # type: ignore[arg-type]  # concrete ProductionSessionEffects implements protocol
+        effects=cast(Any, effects),
         run_dir=run_dir,
     )
     transition = session.run()

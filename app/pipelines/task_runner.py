@@ -49,36 +49,16 @@ ai_settings_service: Any = None
 task_service: Any = None
 
 
-def _resolve_ai_settings_service(container: Container | None = None) -> Any:
-    if container is not None and getattr(container, "ai_settings_service", None) is not None:
-        return container.ai_settings_service
-    if ai_settings_service is not None:
-        return ai_settings_service
-    from app.container import build_container
-
-    return build_container().ai_settings_service
-
-
-def _resolve_task_service(container: Container | None = None) -> Any:
-    if container is not None and getattr(container, "task_service", None) is not None:
-        return container.task_service
-    if task_service is not None:
-        return task_service
-    from app.container import build_container
-
-    return build_container().task_service
-
-
 def _execute_ai_orchestration(
     *,
     task: TaskRecord,
     payload: dict[str, Any],
     run_dir: Path | None,
     base_report: dict[str, Any],
-    container: Container | None = None,
+    container: Container,
 ) -> dict[str, Any]:
     """Build and run the orchestrator, returning the public AI section."""
-    ai_settings_svc = _resolve_ai_settings_service(container)
+    ai_settings_svc = container.ai_settings_service
     report_step("ai_tool_execution", "running", "正在执行 AI 编排工具")
     scope = str(payload.get("analysis_scope") or "static_only")
     allow_dynamic = bool(payload.get("allow_dynamic"))
@@ -125,7 +105,7 @@ def _run_ai_orchestrated_task(
     task: TaskRecord,
     payload: dict[str, Any],
     *,
-    container: Container | None = None,
+    container: Container,
 ) -> dict[str, Any] | JSONResponse:
     """Run one ``ai_orchestrated`` task."""
     from app.pipelines.dynamic import dynamic_analyze
@@ -189,7 +169,7 @@ def _run_ai_orchestrated_task(
     return base_report
 
 
-def run_persisted_task(task: TaskRecord, *, container: Container | None = None):
+def run_persisted_task(task: TaskRecord, *, container: Container):
     from app.pipelines.dynamic import dynamic_analyze
     from app.pipelines.static import analyze
 
@@ -210,12 +190,12 @@ _run_persisted_task = run_persisted_task
 def regenerate_task_ai_report(
     task_id: str,
     *,
+    container: Container,
     use_cache: bool | None = None,
-    container: Container | None = None,
 ):
     """Re-run only the AI orchestration against existing deterministic artifacts."""
-    task_svc = _resolve_task_service(container)
-    ai_settings_svc = _resolve_ai_settings_service(container)
+    task_svc = container.task_service
+    ai_settings_svc = container.ai_settings_service
     task = task_svc.get(task_id)
     if task is None:
         raise _task_not_found(task_id)

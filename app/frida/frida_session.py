@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from app.core.device import DeviceContext
 from app.core.redaction import Redactor
@@ -108,6 +108,8 @@ def _safe_datetime(value: str) -> datetime:
 @dataclass
 class FridaSession:
     """Own one target process, script, event stream, and timing baseline."""
+
+    is_real: ClassVar[bool] = True
 
     run_id: str
     device: DeviceContext
