@@ -30,16 +30,9 @@ from .models import (
     AITokenUsage,
     EvidenceDigest,
 )
+from .text_safety import safe_int
 
-
-def _int(value: Any, default: int = 0) -> int:
-    """Best-effort int coercion (mirrors context_builder._int locally)."""
-
-    if isinstance(value, bool):
-        return default
-    if isinstance(value, (int, float)):
-        return int(value)
-    return default
+_int = safe_int
 
 
 FIXED_DISCLAIMER = (
@@ -612,6 +605,7 @@ def _bounded_text_list(values: Sequence[Any], *, limit: int = 10) -> list[str]:
 
 
 def _dedupe(values: Sequence[str]) -> list[str]:
+    # Filters out falsy/empty values while deduplicating in insertion order (unlike privacy_findings._dedupe).
     return list(dict.fromkeys(value for value in values if value))
 
 

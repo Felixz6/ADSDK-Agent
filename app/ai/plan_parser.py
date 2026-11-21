@@ -147,9 +147,8 @@ def _balanced_object_slice(text: str) -> tuple[str, int] | None:
     """Return the substring of the first balanced ``{...}`` object and its
     start index, or ``None`` when no balanced object exists.
 
-    Respects string literals and escapes so a brace inside a string never
-    triggers a false open/close. The scan is O(n) and bounded by the input
-    cap applied upstream, so pathological nesting cannot cause backtracking.
+    Note: Distinct from providers.base._balanced_object_slice(text, start) which takes
+    an explicit start index and returns only the string slice.
     """
     start = text.find("{")
     if start < 0:

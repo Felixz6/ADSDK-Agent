@@ -6,6 +6,7 @@ from app.core.application_names import (
     resolve_application_label,
     stable_application_name,
 )
+from app.core.xml_utils import _local_name
 
 ANDROID_NAME = "{http://schemas.android.com/apk/res/android}name"
 ANDROID_PERMISSION = "{http://schemas.android.com/apk/res/android}permission"
@@ -43,10 +44,6 @@ COMPONENT_TAGS = {
     "receiver",
     "provider",
 }
-
-
-def _local_name(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
 
 
 def _normalized_names(values) -> list[str]:

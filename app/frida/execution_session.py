@@ -10,6 +10,7 @@ from .execution_modes import DynamicModePolicy, ExecutionAttempt, ExecutionMode
 
 
 def _utc_text(value: Any) -> str | None:
+    """Format a specific datetime instance to UTC ISO-8601 text (distinct from diagnostics._utc_text)."""
     if not isinstance(value, datetime):
         return None
     return (

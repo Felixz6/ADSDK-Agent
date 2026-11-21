@@ -29,6 +29,7 @@ from .models import (
 
 
 def _utc_text() -> str:
+    """Return current UTC timestamp as ISO-8601 text (distinct from execution_session._utc_text(dt))."""
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 

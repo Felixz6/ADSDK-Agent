@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -31,6 +30,7 @@ from .models import (
     ToolCompactResult,
     ToolEvidenceRef,
 )
+from .text_safety import _CONTROL_CHARS, _WHITESPACE, safe_int, sanitize_untrusted_text
 
 # Bounds. Every one of these is enforced, not advisory.
 MAX_TOP_FINDINGS = 10
@@ -39,58 +39,6 @@ MAX_TITLE_CHARS = 200
 MAX_LIST_ITEMS = 12
 MAX_EVIDENCE_REFS_PER_FINDING = 8
 MAX_HOSTS = 8
-MAX_UNTRUSTED_TEXT_CHARS = 240
-
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_WHITESPACE = re.compile(r"\s+")
-
-# Instruction-like markers that must never survive into the prompt as
-# something the model could read as a directive. They are replaced with an
-# inert token; the surrounding text is still shown as evidence.
-_INJECTION_MARKERS = re.compile(
-    r"(?i)\b("
-    r"ignore\s+(all\s+|any\s+|the\s+)?(previous|prior|above|preceding)\s+"
-    r"(instruction|instructions|prompt|prompts|rule|rules)"
-    r"|disregard\s+(all\s+|any\s+|the\s+)?(previous|prior|above)\s+"
-    r"(instruction|instructions|prompt|prompts)"
-    r"|system\s*prompt"
-    r"|you\s+are\s+now\b"
-    r"|忽略(之前|以上|前面)?的?(全部|所有)?指令"
-    r"|无视(之前|以上|前面)?的?指令"
-    r")"
-)
-
-# Command-ish surfaces that must never be echoed verbatim into the prompt.
-_COMMAND_MARKERS = re.compile(
-    r"(?i)\b(adb\s+shell|adb\s+install|frida\s+-|frida-server|mitmdump|"
-    r"mitmproxy|rm\s+-rf|curl\s+http|powershell|cmd\.exe|/bin/sh|/bin/bash)\b"
-)
-
-_NEUTRALISED = "[neutralized]"
-
-
-def sanitize_untrusted_text(
-    value: Any,
-    *,
-    limit: int = MAX_UNTRUSTED_TEXT_CHARS,
-) -> str:
-    """Make APK/network-derived free text safe to place in a prompt.
-
-    The result is data, never an instruction: control characters are removed,
-    instruction-like and command-like markers are neutralised, and the text is
-    truncated to *limit* characters.
-    """
-
-    if value is None:
-        return ""
-    text = value if isinstance(value, str) else str(value)
-    text = _CONTROL_CHARS.sub(" ", text)
-    text = _WHITESPACE.sub(" ", text).strip()
-    text = _INJECTION_MARKERS.sub(_NEUTRALISED, text)
-    text = _COMMAND_MARKERS.sub(_NEUTRALISED, text)
-    if len(text) > limit:
-        text = text[: max(0, limit - 3)] + "..."
-    return text
 
 
 def _clean(value: Any, limit: int) -> str:
@@ -117,12 +65,7 @@ def _bounded_list(values: Any, *, limit: int = MAX_LIST_ITEMS) -> list[str]:
     return out
 
 
-def _int(value: Any, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return default
-    if isinstance(value, (int, float)):
-        return int(value)
-    return default
+_int = safe_int
 
 
 def read_json_artifact(path: Path | str | None) -> dict[str, Any] | None:
@@ -278,7 +221,7 @@ def build_network_summary(
     }
 
 
-def build_correlation_summary(
+def build_correlation_context_summary(
     correlation: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     if not isinstance(correlation, Mapping):
@@ -295,6 +238,10 @@ def build_correlation_summary(
         "low_confidence_count": _int(summary.get("low_confidence_count")),
         "limitations": _bounded_list(correlation.get("limitations")),
     }
+
+
+# Backwards-compatible alias avoiding collision with evidence_correlation.build_correlation_summary
+build_correlation_summary = build_correlation_context_summary
 
 
 def build_privacy_findings_summary(
@@ -597,6 +544,7 @@ def make_evidence_refs(evidence_ids: Sequence[str]) -> list[ToolEvidenceRef]:
 __all__ = [
     "AIContextBuilder",
     "MAX_TOP_FINDINGS",
+    "build_correlation_context_summary",
     "build_correlation_summary",
     "build_dynamic_summary",
     "build_evidence_gaps",

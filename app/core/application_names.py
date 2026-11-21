@@ -4,6 +4,8 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from app.core.xml_utils import _local_name
+
 _NAMED_STRING_REFERENCE = re.compile(r"^@(?:\*?[A-Za-z0-9_.]+:)?string/(?P<name>[A-Za-z0-9_.-]+)$")
 _NUMERIC_REFERENCE = re.compile(r"^@(?:0x)?(?P<id>[0-9A-Fa-f]{8})$")
 _LOCALE_QUALIFIER = re.compile(r"^(?:[a-z]{2,3}|b\+[A-Za-z0-9+]+)(?:-r[A-Z]{2})?(?:-.+)?$")
@@ -137,7 +139,3 @@ def _decode_android_escapes(value: str) -> str:
         .replace(r"\\", "\\")
         .strip()
     )
-
-
-def _local_name(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]

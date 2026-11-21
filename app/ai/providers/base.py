@@ -316,6 +316,9 @@ def _balanced_object_slice(text: str, start: int) -> str | None:
     quotes) and ``//``/``#`` comments. Returns ``None`` if the object is
     unterminated. This intentionally only balances braces — it does not validate
     JSON internally (the caller does).
+
+    Note: Distinct from plan_parser._balanced_object_slice(text) which finds the
+    first brace and returns (slice_text, start_index).
     """
 
     depth = 0

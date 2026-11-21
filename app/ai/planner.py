@@ -25,20 +25,12 @@ from .plan_validator import (
     validate_plan,
 )
 from .provider import ProviderError, ProviderResponse
+from .text_safety import sanitize_untrusted_text
 from .tool_registry import (
     DEFAULT_PLAN_STEPS,
     AIToolRegistry,
     prioritize_steps,
 )
-
-
-def sanitize_untrusted_text(text: str | None, *, limit: int = 400) -> str:
-    if not text:
-        return ""
-    cleaned = " ".join(text.split())
-    if len(cleaned) <= limit:
-        return cleaned
-    return cleaned[:limit] + "..."
 
 
 @dataclass(slots=True)
@@ -668,7 +660,14 @@ def _validate_plan(
     strategy: str,
     allow_dynamic: bool,
 ) -> AIPlan:
-    """Validate model plan JSON: schema, whitelist, arguments, dependencies."""
+    """Validate model plan JSON: schema, whitelist, arguments, dependencies.
+
+    Note on plan validation boundaries:
+    - app.ai.plan_validator: Static schema validation (step count, arguments, DAG).
+    - app.ai.planner._validate_plan (here): Internal model output parser & validator.
+    - app.orchestration.runtime_plan_validator: Runtime environment & hardware state validation.
+    - app.orchestration.full_analysis_session._validate_plan: Execution session safety envelope enforcement.
+    """
 
     plan = AIPlan.model_validate(dict(payload))
     if not plan.steps:

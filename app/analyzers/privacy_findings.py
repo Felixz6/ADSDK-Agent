@@ -286,6 +286,7 @@ def _normalized_grade(value: Any) -> str | None:
 
 
 def _dedupe(values: Sequence[str]) -> list[str]:
+    # Preserves order and keeps all entries including empty strings (unlike report_composer._dedupe).
     return list(dict.fromkeys(values))
 
 

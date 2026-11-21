@@ -8,16 +8,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from app.core.clock import utc_now_iso
+from app.core.clock import utc_now_iso as utc_now
 from app.tasks.models import (
     TaskListResponse,
     TaskRecord,
     TaskStepRecord,
 )
-
-
-def utc_now() -> str:
-    return utc_now_iso()
 
 
 class TaskRepository:

@@ -201,7 +201,7 @@ class PlanValidationError(ValueError):
         self.message = message
 
 
-def _validate_plan(
+def _validate_session_plan_constraints(
     plan: AIPlan,
     *,
     strategy: str,
@@ -209,7 +209,11 @@ def _validate_plan(
     allow_network: bool,
     confirmed_tools: frozenset[str],
 ) -> None:
-    """Whitelist / DAG / risk / confirmation / device-capability validation."""
+    """Enforce session-level hardware and safety envelope constraints.
+
+    Distinct from ai.plan_validator (schema/format) and runtime_plan_validator (live device checks).
+    Raises PlanValidationError if any operator-specified boundary is violated.
+    """
     allowed_names = _STRATEGY_STEPS.get(strategy)
     if allowed_names is None:
         raise PlanValidationError("unknown_strategy", f"unknown strategy {strategy}")
@@ -245,6 +249,9 @@ def _validate_plan(
                 "traffic_without_dynamic",
                 "traffic_analysis requires dynamic_analysis or allow_network",
             )
+
+
+_validate_plan = _validate_session_plan_constraints
 
 
 def build_default_plan(
