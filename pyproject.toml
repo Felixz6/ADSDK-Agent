@@ -36,6 +36,11 @@ all = [
     "adsdk-agent[dynamic,dev]",
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["web*", "tests*", "scripts*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

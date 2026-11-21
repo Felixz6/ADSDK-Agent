@@ -23,3 +23,4 @@ mitmproxy==12.2.1
 # --- 开发/测试依赖 (Development & Testing) ---
 pytest==8.4.1
 ruff>=0.8.0
+mypy>=1.10.0
