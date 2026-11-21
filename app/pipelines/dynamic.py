@@ -20,6 +20,7 @@ from app.config import (
     MITM_STOP_TIMEOUT_SECONDS,
     SCHEMA_VERSION,
 )
+from app.container import Container
 from app.core.artifacts import atomic_write_json, atomic_write_text
 from app.core.clock import utc_now as _utc_now
 from app.core.device import DeviceContext
@@ -1737,17 +1738,17 @@ def _assemble_dynamic_report(
 def _dynamic_analyze_v2(
     req: DynamicAnalyzeRequest,
     *,
-    container: Any = None,
+    container: Container,
     ownership_registry: ResourceOwnershipRegistry | None = None,
     frida_session_factory: Any = None,
     mitm_session_factory: Any = None,
     diagnostics_service: Any = None,
 ):
-    if frida_session_factory is None and container is not None:
+    if frida_session_factory is None:
         frida_session_factory = getattr(container, "frida_session_factory", None)
-    if mitm_session_factory is None and container is not None:
+    if mitm_session_factory is None:
         mitm_session_factory = getattr(container, "mitm_session_factory", None)
-    if diagnostics_service is None and container is not None:
+    if diagnostics_service is None:
         diagnostics_service = getattr(container, "frida_diagnostics_service", None)
 
     context, steps, failure_response = _prepare_run(
@@ -1873,7 +1874,7 @@ def _dynamic_analyze_v2(
 def dynamic_analyze(
     req: DynamicAnalyzeRequest,
     *,
-    container: Any = None,
+    container: Container,
     frida_session_factory: Any = None,
     mitm_session_factory: Any = None,
     diagnostics_service: Any = None,

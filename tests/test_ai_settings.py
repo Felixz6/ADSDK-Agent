@@ -802,6 +802,7 @@ def test_new_ai_task_captures_provider_from_saved_effective_model(
             payload={"analysis_scope": "static_only", "ai_enabled": True},
             run_dir=None,
             base_report={},
+            container=main_module.app.state.container,
         )
 
     assert captured["model"] == "new-task-model"

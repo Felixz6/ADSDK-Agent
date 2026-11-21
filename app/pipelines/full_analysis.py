@@ -16,6 +16,7 @@ from app.config import (
     CONSENT_CHECKPOINT_WAIT_SECONDS,
     SCHEMA_VERSION,
 )
+from app.container import Container
 from app.core.artifacts import atomic_write_json
 from app.models import DynamicAnalyzeRequest
 from app.orchestration.cleanup_manager import (
@@ -199,15 +200,10 @@ def run_full_analysis_session(
     *,
     task: TaskRecord,
     payload: dict[str, Any],
-    container: Any = None,
+    container: Container,
 ) -> dict[str, Any] | JSONResponse:
     """Single production entry for ai_orchestrated full_analysis tasks."""
     from app.pipelines.dynamic import _dynamic_analyze_v2
-
-    if container is None:
-        from app.container import build_container
-
-        container = build_container()
 
     ai_settings_svc = container.ai_settings_service
     device_lease_reg = container.device_lease_registry

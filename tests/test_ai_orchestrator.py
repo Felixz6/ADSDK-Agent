@@ -1260,7 +1260,11 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
         main_module.app.dependency_overrides, get_task_repository, lambda: repository
     )
     monkeypatch.setattr(task_runner, "task_service", service)
-    service.set_runner(task_runner._run_persisted_task)
+    from functools import partial
+
+    service.set_runner(
+        partial(task_runner.run_persisted_task, container=main_module.app.state.container)
+    )
     client = TestClient(main_module.app)
 
     response = client.post(

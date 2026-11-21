@@ -23,9 +23,7 @@ def _get_container(connection: HTTPConnection | None = None) -> Container:
         container = getattr(connection.app.state, "container", None)
         if container is not None:
             return container
-    from app.container import build_container
-
-    return build_container()
+    raise RuntimeError("application container is not initialised")
 
 
 def get_container(request: Request) -> Container:
