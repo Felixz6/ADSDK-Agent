@@ -9,8 +9,14 @@ import app.pipelines.dynamic as dynamic_module
 from app import main as main_module
 from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.core.device import DeviceContext
-from app.tools.log_writer import append_log
 from tests.fake_sessions import FakeTestFridaSession, FakeTestMitmSession
+
+
+def _append_log(path: str | Path, text: str) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(text if text.endswith("\n") else text + "\n")
 
 
 class DummyProcess:
@@ -90,7 +96,7 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
     class DemoFridaSession(FakeTestFridaSession):
         def start(self):
             super().start()
-            append_log(
+            _append_log(
                 str(self.event_log_path), "[HOOK] Settings.Secure.getString name=android_id ret=abc"
             )
             return True
@@ -190,12 +196,12 @@ def test_high_frequency_sensitive_access_rule(tmp_path, monkeypatch):
         def start(self):
             super().start()
             for _ in range(4):
-                append_log(
+                _append_log(
                     str(self.event_log_path),
                     "[HOOK] Settings.Secure.getString name=android_id ret=abc",
                 )
             for _ in range(2):
-                append_log(
+                _append_log(
                     str(self.event_log_path), "[HOOK] ClipboardManager.getPrimaryClip called"
                 )
             return True

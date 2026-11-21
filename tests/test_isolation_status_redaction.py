@@ -24,8 +24,14 @@ from app import main as main_module
 from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.core.device import DeviceContext
 from app.core.redaction import Redactor
-from app.tools.log_writer import append_log
 from tests.fake_sessions import FakeTestFridaSession, FakeTestMitmSession
+
+
+def _append_log(path: str | Path, text: str) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(text if text.endswith("\n") else text + "\n")
 
 
 class DummyProcess:
@@ -217,7 +223,7 @@ def _install_common_fakes(
             super().start()
             state["spawn_count"] += 1
             if hook_writer is None:
-                append_log(
+                _append_log(
                     str(self.event_log_path),
                     f"[INFO] 2026-07-24T00:00:0{state['spawn_count']}Z "
                     f"fixture-run-marker-{state['spawn_count']}\n",
@@ -373,7 +379,7 @@ def test_dynamic_derived_artifacts_and_response_do_not_contain_raw_identifier(
     _write_fake_apk(apk_path)
 
     def write_sensitive_hook(log_path: Path, _: int) -> None:
-        append_log(
+        _append_log(
             str(log_path),
             f"[HOOK] Settings.Secure.getString name=android_id ret={raw_android_id}",
         )
