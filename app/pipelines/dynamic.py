@@ -514,15 +514,12 @@ def _noop_register_runtime_target(pid: int, *, ownership_source: str, created_by
     del pid, ownership_source, created_by_run
 
 
-def _is_real_frida_factory(factory: Any) -> bool:
+def _is_real_frida_factory(factory: Any, *, container: Container | None = None) -> bool:
     if factory is None:
-        return True
-    if getattr(factory, "_is_real_frida", False):
-        return True
-    if factory is FridaSession:
-        return True
-    name = getattr(factory, "__name__", "")
-    return name in ("FridaSession", "default_frida_session_factory")
+        return False
+    if container is not None and not container.frida_real_device:
+        return False
+    return bool(getattr(factory, "is_real", False))
 
 
 def _report_frida_diagnostics(
@@ -654,10 +651,11 @@ def _build_real_frida_session(
     register_runtime_target: Any,
     frida_session_factory: Any = None,
     diagnostics_service: Any = None,
+    container: Container | None = None,
 ) -> tuple[Any, dict[str, Any] | None, Any]:
     """Build the real Frida session (policy or single-mode) and its diagnostics."""
     factory = frida_session_factory or FridaSession
-    is_real_frida = _is_real_frida_factory(factory)
+    is_real_frida = _is_real_frida_factory(factory, container=container)
     frida_session: Any = None
     frida_diagnostic_payload: dict[str, Any] | None = None
     if is_real_frida:
@@ -808,6 +806,7 @@ def _build_dynamic_sessions(
     frida_session_factory: Any = None,
     mitm_session_factory: Any = None,
     diagnostics_service: Any = None,
+    container: Container | None = None,
 ) -> tuple[
     Any,
     Any,
@@ -831,6 +830,7 @@ def _build_dynamic_sessions(
         _noop_register_runtime_target,
         frida_session_factory=frida_session_factory,
         diagnostics_service=diagnostics_service,
+        container=container,
     )
     mitm_session: Any = None
     if req.enable_traffic:
@@ -1783,6 +1783,7 @@ def _dynamic_analyze_v2(
         frida_session_factory=frida_session_factory,
         mitm_session_factory=mitm_session_factory,
         diagnostics_service=diagnostics_service,
+        container=container,
     )
     environment = _DynamicEnvironment(
         context=context,

@@ -274,3 +274,75 @@ def test_high_frequency_sensitive_access_rule(tmp_path, monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     assert body["dynamic_findings"]["summary"]["high_frequency_sensitive_access"] == "suspicious"
+
+
+def test_fake_named_frida_session_without_is_real_does_not_trigger_real_device_calls(
+    tmp_path, monkeypatch
+):
+    """A fake class named exactly 'FridaSession' must NOT trigger real device logcat/diagnostics if is_real is False."""
+    client = TestClient(main_module.app)
+    apk_path = tmp_path / "fake.apk"
+    _write_fake_apk(apk_path, "com.example.fake")
+    output_dir = tmp_path / "output"
+
+    class FridaSession(FakeTestFridaSession):
+        is_real = False
+
+    logcat_called = []
+    monkeypatch.setattr(
+        dynamic_module,
+        "LogcatCollector",
+        lambda *args, **kwargs: logcat_called.append(True),
+    )
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_frida_session_factory, lambda: FridaSession
+    )
+    monkeypatch.setitem(
+        main_module.app.dependency_overrides, get_mitm_session_factory, lambda: FakeTestMitmSession
+    )
+    monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_dir))
+    monkeypatch.setattr(app_config, "APK_ALLOWED_ROOTS", (tmp_path.resolve(),))
+    monkeypatch.setattr(
+        dynamic_module,
+        "select_device_context",
+        lambda device_id=None: DeviceContext(serial=device_id or "emulator-5554"),
+    )
+    monkeypatch.setattr(
+        common_module,
+        "unpack_apk",
+        lambda apk, out_dir: {"returncode": 0, "stdout": "", "stderr": "", "cmd": []},
+    )
+    monkeypatch.setattr(
+        common_module,
+        "parse_manifest_info",
+        lambda _: {
+            "package_name": "com.example.fake",
+            "version_name": "1.0.0",
+            "version_code": "1",
+            "application_label": "Fake",
+        },
+    )
+    monkeypatch.setattr(common_module, "scan_for_sdks", lambda _: [])
+    monkeypatch.setattr(
+        dynamic_module,
+        "install_apk",
+        lambda _, device_context=None: {"returncode": 0, "stdout": "ok", "stderr": "", "cmd": []},
+    )
+    monkeypatch.setattr(
+        dynamic_module,
+        "launch_app",
+        lambda _, device_context=None: {"returncode": 0, "stdout": "ok", "stderr": "", "cmd": []},
+    )
+    monkeypatch.setattr(
+        dynamic_module,
+        "evaluate_timeline_rules",
+        lambda *args, **kwargs: {"summary": {}, "rules": [], "window": {}},
+    )
+
+    resp = client.post(
+        "/dynamic/analyze",
+        json={"apk_path": str(apk_path), "pre_consent_seconds": 0, "post_consent_seconds": 0},
+    )
+    assert resp.status_code == 200
+    # Verified: LogcatCollector was NOT called because is_real was False
+    assert len(logcat_called) == 0
