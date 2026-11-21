@@ -1,7 +1,7 @@
 """Frida reliability domain services.
 
 The package intentionally keeps diagnostics, lifecycle ownership and execution
-policy outside ``app.main`` so every layer can be tested without a real device.
+policy outside the API gateway layer so every layer can be tested without a real device.
 """
 
 from .diagnostics import FridaDiagnosticsService

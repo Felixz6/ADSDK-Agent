@@ -154,7 +154,7 @@ output/runs/<run_id>/
 ├── ai-plan.json                  # AI 规划生成的步骤 DAG (若启用 AI)
 ├── evidence-digest.json          # 传入模型的紧凑型证据摘要
 ├── ai-report.json                # AI 生成的合规研判与叙述
-├── report.json                   # 综合合规审计全量数据快照
+├── report.json                   # 综合合规审计全量数据快照 (注: 报告中 executor_strategy_receipt.executor_provenance_source 字段旧值为 app.main._dynamic_analyze_v2.execution_decision，新值为 app.pipelines.dynamic.execution_decision，两者含义相同)
 ├── report.md                     # Markdown 格式审计报告
 └── report.html                   # 自包含样式的现代化 HTML 交互报告
 ```

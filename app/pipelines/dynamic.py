@@ -1354,7 +1354,7 @@ def _derive_execution_state(
     executor_strategy_receipt = {
         "executor_received_strategy": req.dynamic_mode_policy,
         "executor_execution_strategy": selected_mode.value,
-        "executor_provenance_source": "app.main._dynamic_analyze_v2.execution_decision",
+        "executor_provenance_source": "app.pipelines.dynamic.execution_decision",
     }
     return (
         timeline_payload,

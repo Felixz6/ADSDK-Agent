@@ -922,7 +922,7 @@ class FullAnalysisSession:
 
 
 # ---------------------------------------------------------------------------
-# Convenience entry points used by app/main.py.
+# Convenience entry points for full analysis execution.
 # ---------------------------------------------------------------------------
 def execute_full_analysis_plan(*, session: FullAnalysisSession) -> SessionTransition:
     """Run one session end-to-end and return its structured transition."""
