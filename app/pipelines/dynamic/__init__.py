@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from fastapi.responses import JSONResponse
 
 from app.container import Container
-from app.frida.hook_parser import parse_hook_to_events_json
-from app.frida.logcat_collector import LogcatCollector
 from app.models import DynamicAnalyzeRequest
 from app.orchestration.cleanup_manager import ResourceOwnershipRegistry
 from app.orchestration.dynamic_collection import (
     DynamicCollectionConfig,
     DynamicCollectionResult,
-    run_dynamic_collection,
 )
-from app.orchestration.timeline_rules import evaluate_timeline_rules
 from app.pipelines.common import (
     _build_and_write_evidence_correlation,
     _build_and_write_privacy_findings,
@@ -27,40 +22,25 @@ from app.pipelines.common import (
     run_static_stage,
 )
 from app.pipelines.dynamic.collection import (
-    _append_collection_steps,
     _collect_traffic_stage,
-    _emit_frida_control,
     _run_collection_stage,
-    _session_status,
-    _state_value,
 )
 from app.pipelines.dynamic.report import (
     _assemble_dynamic_report,
     _build_execution_outcome,
     _process_diagnostics_stage,
-    _traffic_summary_from_result,
 )
 from app.pipelines.dynamic.sessions import (
     _build_dynamic_sessions,
     _DynamicEnvironment,
     _install_and_select_device,
-    _make_collection_callbacks,
-    _make_launch_target_for_attach,
-    _noop_register_runtime_target,
-    _register_owned_target,
 )
 from app.pipelines.dynamic.timeline import (
-    _build_dynamic_findings,
     _collect_events_stage,
-    _normalize_events,
 )
 from app.tools.adb_runner import (
     DeviceSelectionError,
-    install_apk,
-    launch_app,
-    select_device_context,
 )
-from app.tools.utils import run_cmd
 
 
 def _dynamic_analyze_v2(
@@ -79,6 +59,8 @@ def _dynamic_analyze_v2(
     if diagnostics_service is None:
         diagnostics_service = getattr(container, "frida_diagnostics_service", None)
 
+    tools = container.tools
+
     context, steps, failure_response = _prepare_run(
         req.apk_path,
         device_id=req.device_id,
@@ -91,9 +73,10 @@ def _dynamic_analyze_v2(
         context,
         steps,
         package_name_input=req.package_name,
+        tools=tools,
     )
     context, device_context, device_failure, install_ok, package_name = _install_and_select_device(
-        req, context, steps, static_stage
+        req, context, steps, static_stage, tools=tools
     )
     (
         frida_session,
@@ -112,6 +95,7 @@ def _dynamic_analyze_v2(
         mitm_session_factory=mitm_session_factory,
         diagnostics_service=diagnostics_service,
         container=container,
+        tools=tools,
     )
     environment = _DynamicEnvironment(
         context=context,
@@ -125,6 +109,7 @@ def _dynamic_analyze_v2(
         stimulate_ui=stimulate_ui,
         register_frida_started=register_frida_started,
         frida_session_factory=frida_session_factory,
+        tools=tools,
     )
 
     collection_result = _run_collection_stage(req, steps, context, environment)
@@ -192,7 +177,7 @@ def _dynamic_analyze_v2(
         dynamic_evidence_grade=execution.evidence_quality.level,
         consent_timestamp_utc=consent_timestamp_utc,
     )
-    report, report_error = _finalize_report(report, context, steps)
+    report, report_error = _finalize_report(report, context, steps, tools=tools)
     if report_error is not None or report.get("status") == "failed":
         return JSONResponse(status_code=500, content=report)
     if device_failure:
@@ -221,26 +206,5 @@ __all__ = [
     "DeviceSelectionError",
     "DynamicCollectionConfig",
     "DynamicCollectionResult",
-    "LogcatCollector",
-    "_append_collection_steps",
-    "_build_dynamic_findings",
-    "_dynamic_analyze_v2",
-    "_emit_frida_control",
-    "_make_collection_callbacks",
-    "_make_launch_target_for_attach",
-    "_noop_register_runtime_target",
-    "_normalize_events",
-    "_register_owned_target",
-    "_session_status",
-    "_state_value",
-    "_traffic_summary_from_result",
     "dynamic_analyze",
-    "evaluate_timeline_rules",
-    "install_apk",
-    "launch_app",
-    "parse_hook_to_events_json",
-    "run_cmd",
-    "run_dynamic_collection",
-    "select_device_context",
-    "time",
 ]

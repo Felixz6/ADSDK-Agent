@@ -18,12 +18,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.config as app_config
-import app.pipelines.common as common_module
-import app.pipelines.dynamic as dynamic_module
 from app import main as main_module
 from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.core.device import DeviceContext
 from app.core.redaction import Redactor
+from app.pipelines.tools import PipelineTools
 from tests.fake_sessions import FakeTestFridaSession, FakeTestMitmSession
 
 
@@ -162,14 +161,6 @@ def _install_common_fakes(
         "APK_ALLOWED_ROOTS",
         (output_root.parent.resolve(),),
     )
-    monkeypatch.setattr(
-        dynamic_module,
-        "select_device_context",
-        lambda device_id=None: DeviceContext(
-            serial=device_id or "emulator-5554",
-        ),
-    )
-    monkeypatch.setattr(dynamic_module.time, "sleep", lambda _: None)
 
     def fake_unpack(*args: Any, **kwargs: Any) -> dict[str, Any]:
         apk_path = Path(_extract_argument(args, kwargs, keyword="apk_path", position=0)).resolve()
@@ -283,11 +274,17 @@ def _install_common_fakes(
         get_mitm_session_factory,
         lambda: P0FakeMitmSession,
     )
-    monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
-    monkeypatch.setattr(common_module, "parse_manifest_info", fake_manifest)
-    monkeypatch.setattr(common_module, "scan_for_sdks", fake_sdks)
-    monkeypatch.setattr(dynamic_module, "install_apk", fake_install)
-    monkeypatch.setattr(dynamic_module, "launch_app", fake_launch)
+    main_module.app.state.container.tools = PipelineTools(
+        select_device_context=lambda device_id=None: DeviceContext(
+            serial=device_id or "emulator-5554",
+        ),
+        sleep=lambda _: None,
+        unpack_apk=fake_unpack,
+        parse_manifest_info=fake_manifest,
+        scan_for_sdks=fake_sdks,
+        install_apk=fake_install,
+        launch_app=fake_launch,
+    )
     return state
 
 
@@ -531,35 +528,23 @@ def test_missing_or_corrupt_evidence_degrades_status_and_rules_are_not_evaluated
     )
 
     if failure_mode == "missing_hook":
-        monkeypatch.setattr(
-            dynamic_module,
-            "parse_hook_to_events_json",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                FileNotFoundError("hook evidence is missing")
-            ),
-        )
+        main_module.app.state.container.tools.parse_hook_to_events_json = lambda *args, **kwargs: (
+            _ for _ in ()
+        ).throw(FileNotFoundError("hook evidence is missing"))
     elif failure_mode == "corrupt_hook":
-        monkeypatch.setattr(
-            dynamic_module,
-            "parse_hook_to_events_json",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                UnicodeDecodeError("utf-8", b"\xff", 0, 1, "corrupt hook evidence")
-            ),
-        )
+        main_module.app.state.container.tools.parse_hook_to_events_json = lambda *args, **kwargs: (
+            _ for _ in ()
+        ).throw(UnicodeDecodeError("utf-8", b"\xff", 0, 1, "corrupt hook evidence"))
     elif failure_mode == "missing_traffic":
         pass
     elif failure_mode == "manifest_error":
-        monkeypatch.setattr(
-            common_module,
-            "parse_manifest_info",
-            lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("manifest parse failed")),
-        )
+        main_module.app.state.container.tools.parse_manifest_info = lambda *args, **kwargs: (
+            _ for _ in ()
+        ).throw(ValueError("manifest parse failed"))
     elif failure_mode == "sdk_error":
-        monkeypatch.setattr(
-            common_module,
-            "scan_for_sdks",
-            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("sdk scan failed")),
-        )
+        main_module.app.state.container.tools.scan_for_sdks = lambda *args, **kwargs: (
+            _ for _ in ()
+        ).throw(RuntimeError("sdk scan failed"))
 
     client = TestClient(main_module.app, raise_server_exceptions=False)
     body = _post_dynamic(client, apk_path)
@@ -575,11 +560,9 @@ def test_manifest_value_error_keeps_structured_reports_and_correlation(
     apk_path = tmp_path / "manifest-error-regression.apk"
     _write_fake_apk(apk_path, marker="manifest-error-regression")
     _install_common_fakes(monkeypatch, output_root)
-    monkeypatch.setattr(
-        common_module,
-        "parse_manifest_info",
-        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("manifest parse failed")),
-    )
+    main_module.app.state.container.tools.parse_manifest_info = lambda *args, **kwargs: (
+        _ for _ in ()
+    ).throw(ValueError("manifest parse failed"))
 
     client = TestClient(main_module.app, raise_server_exceptions=True)
     response = client.post(

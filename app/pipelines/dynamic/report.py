@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +21,10 @@ from app.pipelines.common import (
     _base_report,
     _step_result,
 )
+from app.pipelines.dynamic._shared import (
+    _traffic_failure_summary,
+    _traffic_summary_from_result,
+)
 from app.pipelines.dynamic.collection import (
     _session_status,
     _TrafficOutcome,
@@ -32,10 +35,6 @@ from app.pipelines.dynamic.sessions import (
 )
 from app.pipelines.dynamic.timeline import _build_dynamic_findings
 from app.tools.utils import run_cmd
-from app.traffic.traffic_events import (
-    TrafficCollectionOutcome,
-    TrafficCollectionResult,
-)
 
 
 @dataclass(slots=True)
@@ -48,55 +47,6 @@ class _ExecutionOutcome:
     evidence_quality: Any
     task_result: dict[str, Any]
     sessions_payload: dict[str, Any]
-
-
-def _traffic_summary_from_result(
-    result: TrafficCollectionResult,
-) -> dict[str, Any]:
-    hosts = Counter(record.hostname for record in result.records)
-    failed = result.outcome is TrafficCollectionOutcome.COLLECTOR_FAILED
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "status": "failed" if failed else "success",
-        "evaluation_status": "not_evaluated" if failed else "not_matched",
-        "coverage": result.coverage,
-        "collector_outcome": result.outcome.value,
-        "warnings": (
-            ["traffic collector did not produce trustworthy evidence"]
-            if failed
-            else (
-                ["collector succeeded; no HTTP requests were observed"]
-                if result.valid_request_count == 0
-                else []
-            )
-        ),
-        "total_requests": result.valid_request_count,
-        "top_hosts": [{"host": host, "count": count} for host, count in hosts.most_common(20)],
-        "sample_requests": [record.model_dump(mode="json") for record in result.records[:50]],
-        "validation": result.to_dict(),
-    }
-
-
-def _traffic_failure_summary(exc: Exception) -> dict[str, Any]:
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "status": "failed",
-        "evaluation_status": "not_evaluated",
-        "coverage": "unavailable",
-        "collector_outcome": TrafficCollectionOutcome.COLLECTOR_FAILED.value,
-        "warnings": [f"traffic processing failed: {type(exc).__name__}"],
-        "total_requests": 0,
-        "top_hosts": [],
-        "sample_requests": [],
-        "validation": {
-            "outcome": TrafficCollectionOutcome.COLLECTOR_FAILED.value,
-            "coverage": "unavailable",
-            "process_ready": False,
-            "addon_ready": False,
-            "records": [],
-            "issues": [{"code": "traffic_processing_exception", "line_number": 0}],
-        },
-    }
 
 
 def _process_diagnostics_stage(
@@ -125,12 +75,14 @@ def _process_diagnostics_stage(
         diagnostic_session = (
             runtime_failure_sessions[-1] if runtime_failure_sessions else frida_session
         )
-        logcat = LogcatCollector(
+        logcat_factory = getattr(environment.tools, "logcat_collector_factory", LogcatCollector)
+        logcat = logcat_factory(
             device=device_context,
             package_name=package_name,
             output_dir=dynamic_diagnostics_dir,
         ).collect(pid=getattr(diagnostic_session, "pid", None))
-        pid_result = run_cmd(
+        run_cmd_fn = getattr(environment.tools, "run_cmd", run_cmd)
+        pid_result = run_cmd_fn(
             device_context.adb_command("shell", "pidof", package_name),
             timeout=10,
         )
@@ -552,7 +504,10 @@ def _assemble_dynamic_report(
         dynamic_events,
         evidence_available=hook_evidence_available,
     )
-    strict_dynamic_findings = evaluate_timeline_rules(
+    evaluate_timeline_fn = getattr(
+        environment.tools, "evaluate_timeline_rules", evaluate_timeline_rules
+    )
+    strict_dynamic_findings = evaluate_timeline_fn(
         events_json_path=str(context.events_path),
         consent_time=execution.consent_time,
         pre_consent_seconds=req.pre_consent_seconds,

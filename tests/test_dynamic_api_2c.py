@@ -21,13 +21,12 @@ from fastapi.testclient import TestClient
 
 import app.config as app_config
 import app.main as main_module
-import app.pipelines.common as common_module
-import app.pipelines.dynamic as dynamic_module
 from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.core.device import DeviceContext
 from app.orchestration.dynamic_collection import (
     run_dynamic_collection as real_run_dynamic_collection,
 )
+from app.pipelines.tools import PipelineTools
 from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
     TrafficCollectionResult,
@@ -493,11 +492,7 @@ class _ApiHarness:
             self.scenario.calls.append("report.write")
             raise OSError("fixture report write failure")
 
-        self.monkeypatch.setattr(
-            common_module,
-            "write_markdown_report",
-            fail_markdown,
-        )
+        main_module.app.state.container.tools.write_markdown_report = fail_markdown
 
 
 def _write_fake_apk(path: Path) -> None:
@@ -521,11 +516,6 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
         app_config,
         "APK_ALLOWED_ROOTS",
         (tmp_path.resolve(),),
-    )
-    monkeypatch.setattr(
-        dynamic_module,
-        "select_device_context",
-        lambda device_id=None: DeviceContext(serial=device_id or "fixture-device"),
     )
 
     def fake_unpack(apk: str, out_dir: str) -> dict[str, Any]:
@@ -568,21 +558,6 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
         scenario.calls.append("ui.stimulate")
         return {"returncode": 0, "stdout": "", "stderr": "", "cmd": []}
 
-    monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
-    monkeypatch.setattr(dynamic_module, "install_apk", fake_install)
-    monkeypatch.setattr(dynamic_module, "launch_app", fake_ui_stimulation)
-    monkeypatch.setattr(
-        common_module,
-        "parse_manifest_info",
-        lambda _: {
-            "package_name": "com.example.stage2c",
-            "version_name": "1.0",
-            "version_code": "1",
-            "application_label": "Stage2C",
-        },
-    )
-    monkeypatch.setattr(common_module, "scan_for_sdks", lambda _: [])
-
     class BoundFakeFridaSession(_FakeFridaSession):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(scenario, *args, **kwargs)
@@ -609,17 +584,22 @@ def dynamic_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ApiHarness:
             raise AssertionError("run_dynamic_collection must use its keyword-only contract")
         return real_run_dynamic_collection(*args, **kwargs)
 
-    monkeypatch.setattr(
-        dynamic_module,
-        "run_dynamic_collection",
-        recording_collection,
-        raising=False,
-    )
-
-    monkeypatch.setattr(
-        dynamic_module,
-        "evaluate_timeline_rules",
-        lambda **kwargs: {
+    main_module.app.state.container.tools = PipelineTools(
+        select_device_context=lambda device_id=None: DeviceContext(
+            serial=device_id or "fixture-device"
+        ),
+        unpack_apk=fake_unpack,
+        install_apk=fake_install,
+        launch_app=fake_ui_stimulation,
+        parse_manifest_info=lambda _: {
+            "package_name": "com.example.stage2c",
+            "version_name": "1.0",
+            "version_code": "1",
+            "application_label": "Stage2C",
+        },
+        scan_for_sdks=lambda _: [],
+        run_dynamic_collection=recording_collection,
+        evaluate_timeline_rules=lambda **kwargs: {
             "summary": {},
             "rules": [],
             "window": {

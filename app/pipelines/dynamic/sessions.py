@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -34,14 +34,12 @@ from app.pipelines.common import (
     _step_result,
     resolve_frida_hook_script,
 )
+from app.pipelines.tools import PipelineTools
 from app.tasks.runtime import register_cleanup, report_step
 from app.tools.adb_runner import (
     DeviceSelectionError,
-    install_apk,
-    launch_app,
-    select_device_context,
 )
-from app.tools.utils import now_iso, run_cmd
+from app.tools.utils import now_iso
 
 
 @dataclass(slots=True)
@@ -57,15 +55,7 @@ class _DynamicEnvironment:
     stimulate_ui: Any
     register_frida_started: Any
     frida_session_factory: Any = None
-
-
-def _resolve_dynamic_tool(name: str, default: Any) -> Any:
-    import sys
-
-    dyn_mod = sys.modules.get("app.pipelines.dynamic")
-    if dyn_mod is not None and hasattr(dyn_mod, name):
-        return getattr(dyn_mod, name)
-    return default
+    tools: PipelineTools = field(default_factory=PipelineTools)
 
 
 def _install_and_select_device(
@@ -73,16 +63,19 @@ def _install_and_select_device(
     context: AnalysisRunContext,
     steps: list[StepResult],
     static_stage: StaticStageResult,
+    *,
+    tools: PipelineTools | None = None,
 ) -> tuple[AnalysisRunContext, DeviceContext | None, bool, bool, str]:
     """Select the target device and install the APK when the policy requires it."""
+    resolved_tools = tools or PipelineTools()
     unpack_ok = static_stage.unpack_ok
     package_name = static_stage.package_name or ""
 
     device_context: DeviceContext | None = None
     device_failure = False
     started = _utc_now()
-    select_fn = _resolve_dynamic_tool("select_device_context", select_device_context)
-    install_fn = _resolve_dynamic_tool("install_apk", install_apk)
+    select_fn = resolved_tools.select_device_context
+    install_fn = resolved_tools.install_apk
     if unpack_ok and package_name:
         try:
             device_context = select_fn(req.device_id)
@@ -248,14 +241,16 @@ def _make_launch_target_for_attach(
     device_context: DeviceContext,
     package_name: str,
     register_runtime_target: Any,
+    *,
+    tools: PipelineTools | None = None,
 ) -> Any:
     """Launch the target and resolve the exact PID for attach-then-verify."""
+    resolved_tools = tools or PipelineTools()
 
     def launch_target_for_attach() -> dict[str, Any]:
         launch_requested = _utc_now()
-        launch_fn = _resolve_dynamic_tool("launch_app", launch_app)
-        run_cmd_fn = _resolve_dynamic_tool("run_cmd", run_cmd)
-        time_mod = _resolve_dynamic_tool("time", time)
+        launch_fn = resolved_tools.launch_app
+        run_cmd_fn = resolved_tools.run_cmd
         launch_result = launch_fn(
             package_name,
             device_context=device_context,
@@ -265,8 +260,8 @@ def _make_launch_target_for_attach(
                 "package_launch_failed",
                 "Target package launch command failed",
             )
-        deadline = time_mod.monotonic() + 5.0
-        while time_mod.monotonic() < deadline:
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
             pid_result = run_cmd_fn(
                 device_context.adb_command("shell", "pidof", package_name),
                 timeout=3,
@@ -292,7 +287,7 @@ def _make_launch_target_for_attach(
                     "_launch_requested_datetime": launch_requested,
                     "pid": pid,
                 }
-            time_mod.sleep(0.25)
+            resolved_tools.sleep(0.25)
         raise FridaSessionError(
             "package_process_not_found",
             "Target package did not expose a process after launch",
@@ -313,8 +308,11 @@ def _build_real_frida_session(
     frida_session_factory: Any = None,
     diagnostics_service: Any = None,
     container: Container | None = None,
+    *,
+    tools: PipelineTools | None = None,
 ) -> tuple[Any, dict[str, Any] | None, Any]:
     """Build the real Frida session (policy or single-mode) and its diagnostics."""
+    resolved_tools = tools or (container.tools if container is not None else PipelineTools())
     factory = frida_session_factory or FridaSession
     is_real_frida = _is_real_frida_factory(factory, container=container)
     frida_session: Any = None
@@ -351,6 +349,7 @@ def _build_real_frida_session(
                 device_context,
                 package_name,
                 register_runtime_target,
+                tools=resolved_tools,
             ),
         )
     else:
@@ -372,11 +371,14 @@ def _make_collection_callbacks(
     package_name: str,
     ownership_registry: ResourceOwnershipRegistry | None,
     register_runtime_target: Any,
+    *,
+    tools: PipelineTools | None = None,
 ) -> tuple[Any, Any]:
     """Create the UI-stimulation and Frida-started ownership callbacks."""
+    resolved_tools = tools or PipelineTools()
 
     def stimulate_ui() -> None:
-        launch_fn = _resolve_dynamic_tool("launch_app", launch_app)
+        launch_fn = resolved_tools.launch_app
         result = launch_fn(
             package_name,
             device_context=device_context,
@@ -467,6 +469,7 @@ def _build_dynamic_sessions(
     mitm_session_factory: Any = None,
     diagnostics_service: Any = None,
     container: Container | None = None,
+    tools: PipelineTools | None = None,
 ) -> tuple[
     Any,
     Any,
@@ -478,6 +481,7 @@ def _build_dynamic_sessions(
     if device_context is None:
         return None, None, None, None, None
 
+    resolved_tools = tools or (container.tools if container is not None else PipelineTools())
     script_path = resolve_frida_hook_script()
     frida_session, frida_diagnostic_payload, register_runtime_target = _build_real_frida_session(
         req,
@@ -491,6 +495,7 @@ def _build_dynamic_sessions(
         frida_session_factory=frida_session_factory,
         diagnostics_service=diagnostics_service,
         container=container,
+        tools=resolved_tools,
     )
     mitm_session: Any = None
     if req.enable_traffic:
@@ -517,6 +522,7 @@ def _build_dynamic_sessions(
         package_name,
         ownership_registry,
         register_runtime_target,
+        tools=resolved_tools,
     )
     return (
         frida_session,

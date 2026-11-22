@@ -18,8 +18,11 @@ router = APIRouter(tags=["analysis"], include_in_schema=False)
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-def analyze_endpoint(req: AnalyzeRequest) -> AnalyzeResponse:
-    return analyze(req)
+def analyze_endpoint(
+    req: AnalyzeRequest,
+    container: Container = Depends(get_container),
+) -> AnalyzeResponse:
+    return analyze(req, container=container)
 
 
 @router.post("/dynamic/analyze", response_model=AnalyzeResponse)

@@ -27,6 +27,10 @@ from app.pipelines.common import (
     _redact_device_diagnostic,
     _step_result,
 )
+from app.pipelines.dynamic._shared import (
+    _traffic_failure_summary,
+    _traffic_summary_from_result,
+)
 from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
 )
@@ -207,10 +211,7 @@ def _run_collection_stage(
     mitm_session = environment.mitm_session
 
     if environment.install_ok and environment.device_context is not None:
-        import sys
-
-        dyn_mod = sys.modules.get("app.pipelines.dynamic")
-        run_fn = getattr(dyn_mod, "run_dynamic_collection", run_dynamic_collection)
+        run_fn = getattr(environment.tools, "run_dynamic_collection", run_dynamic_collection)
         collection_result = run_fn(
             frida_session=frida_session,
             mitm_session=mitm_session,
@@ -319,8 +320,6 @@ def _collect_session_traffic(
     mitm_session: Any,
     traffic_started: Any,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from app.pipelines.dynamic.report import _traffic_failure_summary, _traffic_summary_from_result
-
     try:
         traffic_result = mitm_session.validate_traffic()
         traffic_summary = _traffic_summary_from_result(traffic_result)

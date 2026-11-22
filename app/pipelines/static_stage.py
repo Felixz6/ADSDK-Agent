@@ -9,17 +9,16 @@ from pathlib import Path
 from typing import Any
 
 from app import config as app_config
-from app.core.apk_unpack import unpack_apk
 from app.core.clock import utc_now as _utc_now
 from app.core.env_checks import check_apktool
 from app.core.manifest_parser import parse_manifest_info
 from app.core.run_context import AnalysisRunContext
-from app.core.sdk_fingerprint import scan_for_sdks
 from app.core.static_unpack_cache import (
     StaticUnpackCacheError,
     prepare_static_unpack,
 )
 from app.core.status import StepResult, StepStatus, make_step_result
+from app.pipelines.tools import PipelineTools
 from app.tools.utils import ensure_dir
 
 _CRITICAL_STEPS = {
@@ -71,28 +70,20 @@ def _check_output_writable() -> dict[str, Any]:
         return {"ok": False, "path": output_dir, "error": str(e)}
 
 
-def _resolve_tool(name: str, default: Any) -> Any:
-    import sys
-
-    common_mod = sys.modules.get("app.pipelines.common")
-    if common_mod is not None and hasattr(common_mod, name):
-        return getattr(common_mod, name)
-    return default
-
-
 def _parse_manifest_application(
     unpack_dir: str,
     *,
     apk_filename: str,
+    parser: Any = None,
 ) -> dict[str, Any]:
     """Pass the display filename while retaining compatibility with injected parsers."""
-    parser = _resolve_tool("parse_manifest_info", parse_manifest_info)
+    parser_fn = parser or parse_manifest_info
     try:
-        return parser(unpack_dir, apk_filename=apk_filename)
+        return parser_fn(unpack_dir, apk_filename=apk_filename)
     except TypeError as exc:
         if "apk_filename" not in str(exc):
             raise
-        return parser(unpack_dir)
+        return parser_fn(unpack_dir)
 
 
 def _manifest_application_fallback(
@@ -129,8 +120,10 @@ def run_static_stage(
     steps: list[StepResult],
     *,
     package_name_input: str | None = None,
+    tools: PipelineTools | None = None,
 ) -> StaticStageResult:
     """Execute the common static analysis stage: unpack, manifest parse, SDK scan."""
+    resolved_tools = tools or PipelineTools()
     app_info = _manifest_application_fallback(package_name_input)
     manifest_evidence: dict[str, Any] = {
         "status": "not_evaluated",
@@ -145,7 +138,7 @@ def run_static_stage(
         apktool_info = check_apktool()
         apktool_version = str(apktool_info.get("apktool_version") or "unknown")
         cache_root = Path(app_config.STATIC_UNPACK_CACHE_DIR)
-        unpacker_fn = _resolve_tool("unpack_apk", unpack_apk)
+        unpacker_fn = resolved_tools.unpack_apk
         cache_result = prepare_static_unpack(
             snapshot_path=context.apk_path,
             apk_sha256=context.apk_sha256,
@@ -213,6 +206,7 @@ def run_static_stage(
             parsed_app_info = _parse_manifest_application(
                 str(analysis_dir),
                 apk_filename=str(context.source_apk_display or ""),
+                parser=resolved_tools.parse_manifest_info,
             )
             app_info = {
                 **_manifest_application_fallback(package_name_input),
@@ -253,7 +247,7 @@ def run_static_stage(
 
         sdk_started = _utc_now()
         try:
-            scan_fn = _resolve_tool("scan_for_sdks", scan_for_sdks)
+            scan_fn = resolved_tools.scan_for_sdks
             sdk_hits = scan_fn(str(analysis_dir))
             steps.append(
                 _step_result(

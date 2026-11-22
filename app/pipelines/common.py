@@ -36,18 +36,15 @@ from app.config import (
     SCHEMA_VERSION,
 )
 from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
-from app.core.apk_unpack import unpack_apk
 from app.core.artifacts import atomic_write_json
 from app.core.clock import parse_utc as _parse_utc, utc_now as _utc_now
 from app.core.device import DeviceContext
-from app.core.manifest_parser import parse_manifest_info
 from app.core.paths import ApkPathValidationError, ApkPathValidator, sha256_file
 from app.core.redaction import (
     _device_serials,
     _redact_known_device_serials,
 )
 from app.core.run_context import AnalysisRunContext, create_analysis_run_context
-from app.core.sdk_fingerprint import scan_for_sdks
 from app.core.status import (
     StepResult,
     StepStatus,
@@ -437,6 +434,8 @@ def _finalize_report(
     report: dict[str, Any],
     context: AnalysisRunContext,
     steps: list[StepResult],
+    *,
+    tools: Any = None,
 ) -> tuple[dict[str, Any], Exception | None]:
     report["sdks"] = correlate_sdk_evidence(
         list(report.get("sdks") or []),
@@ -480,9 +479,14 @@ def _finalize_report(
         ),
     }
 
+    markdown_writer = (
+        getattr(tools, "write_markdown_report", write_markdown_report)
+        if tools
+        else write_markdown_report
+    )
     try:
         write_html_report(report, context.report_html_path)
-        write_markdown_report(report, str(context.report_markdown_path))
+        markdown_writer(report, str(context.report_markdown_path))
         report_write_duration_ms = max(
             0,
             int((time.perf_counter() - report_write_started) * 1000),
@@ -718,9 +722,6 @@ __all__ = [
     "_validation_failure_response",
     "resolve_frida_hook_script",
     "run_static_stage",
-    "scan_for_sdks",
     "StaticStageResult",
     "task_service_response_payload",
-    "unpack_apk",
-    "parse_manifest_info",
 ]

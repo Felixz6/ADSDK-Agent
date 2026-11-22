@@ -28,9 +28,11 @@ from app.pipelines.common import (
     _public_ai_section,
     task_service_response_payload,
 )
+from app.pipelines.dynamic import dynamic_analyze
 from app.pipelines.full_analysis import (
     run_full_analysis_session,
 )
+from app.pipelines.static import analyze
 from app.services import AITaskService
 from app.tasks.models import (
     TaskAIArtifactSummary,
@@ -108,9 +110,6 @@ def _run_ai_orchestrated_task(
     container: Container,
 ) -> dict[str, Any] | JSONResponse:
     """Run one ``ai_orchestrated`` task."""
-    from app.pipelines.dynamic import dynamic_analyze
-    from app.pipelines.static import analyze
-
     scope = str(payload.get("analysis_mode") or payload.get("analysis_scope") or "static_only")
     allow_dynamic = bool(payload.get("allow_dynamic"))
     apk_path = str(payload["apk_path"])
@@ -170,9 +169,6 @@ def _run_ai_orchestrated_task(
 
 
 def run_persisted_task(task: TaskRecord, *, container: Container):
-    from app.pipelines.dynamic import dynamic_analyze
-    from app.pipelines.static import analyze
-
     payload = dict(task.request_payload)
     if task.task_type == "static":
         return analyze(AnalyzeRequest(apk_path=str(payload["apk_path"])))

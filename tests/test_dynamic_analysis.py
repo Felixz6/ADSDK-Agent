@@ -4,11 +4,11 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import app.config as app_config
-import app.pipelines.common as common_module
-import app.pipelines.dynamic as dynamic_module
 from app import main as main_module
 from app.api.deps import get_frida_session_factory, get_mitm_session_factory
 from app.core.device import DeviceContext
+from app.pipelines.dynamic.timeline import _build_dynamic_findings
+from app.pipelines.tools import PipelineTools
 from tests.fake_sessions import FakeTestFridaSession, FakeTestMitmSession
 
 
@@ -56,7 +56,7 @@ def test_build_dynamic_findings_detect_sensitive_call():
             "source": "frida",
         }
     ]
-    findings = dynamic_module._build_dynamic_findings(events)
+    findings = _build_dynamic_findings(events)
     assert findings["summary"]["pre_consent_sensitive_access"] == "suspicious"
 
 
@@ -71,7 +71,7 @@ def test_build_dynamic_findings_pre_consent_on_non_android_id():
             "source": "frida",
         }
     ]
-    findings = dynamic_module._build_dynamic_findings(events)
+    findings = _build_dynamic_findings(events)
     assert findings["summary"]["pre_consent_sensitive_access"] == "suspicious"
     assert findings["summary"]["high_frequency_sensitive_access"] == "not_detected"
 
@@ -103,7 +103,9 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
 
         def resume(self):
             super().resume()
-            dynamic_module.launch_app(self.package_name, device_context=self.device)
+            main_module.app.state.container.tools.launch_app(
+                self.package_name, device_context=self.device
+            )
             return True
 
     monkeypatch.setitem(
@@ -114,26 +116,18 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
     )
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_dir))
     monkeypatch.setattr(app_config, "APK_ALLOWED_ROOTS", (tmp_path.resolve(),))
-    monkeypatch.setattr(
-        dynamic_module,
-        "select_device_context",
-        lambda device_id=None: DeviceContext(serial=device_id or "emulator-5554"),
-    )
-    monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
-    monkeypatch.setattr(
-        common_module,
-        "parse_manifest_info",
-        lambda _: {
+    main_module.app.state.container.tools = PipelineTools(
+        select_device_context=lambda device_id=None: DeviceContext(
+            serial=device_id or "emulator-5554"
+        ),
+        unpack_apk=fake_unpack,
+        parse_manifest_info=lambda _: {
             "package_name": "com.example.demo",
             "version_name": "1.0.0",
             "version_code": "1",
             "application_label": "Demo",
         },
-    )
-    monkeypatch.setattr(
-        common_module,
-        "scan_for_sdks",
-        lambda _: [
+        scan_for_sdks=lambda _: [
             {
                 "sdk_name": "Pangle",
                 "package": "com.bytedance.sdk.openadsdk",
@@ -141,22 +135,14 @@ def test_dynamic_analyze_uses_manifest_package_and_writes_findings(tmp_path, mon
                 "version": None,
             }
         ],
-    )
-    monkeypatch.setattr(
-        dynamic_module,
-        "install_apk",
-        lambda _, device_context=None: {
+        install_apk=lambda _, device_context=None: {
             "returncode": 0,
             "stdout": "ok",
             "stderr": "",
             "cmd": device_context.adb_command("install"),
         },
-    )
-    monkeypatch.setattr(dynamic_module, "launch_app", fake_launch)
-    monkeypatch.setattr(
-        dynamic_module,
-        "evaluate_timeline_rules",
-        lambda events_json_path, consent_time, pre_consent_seconds, post_consent_seconds, evidence_available=True: {
+        launch_app=fake_launch,
+        evaluate_timeline_rules=lambda events_json_path, consent_time, pre_consent_seconds, post_consent_seconds, evidence_available=True: {
             "summary": {"pre_consent_sensitive_access_strict": "not_detected"},
             "rules": [],
             "window": {
@@ -216,47 +202,31 @@ def test_high_frequency_sensitive_access_rule(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_dir))
     monkeypatch.setattr(app_config, "APK_ALLOWED_ROOTS", (tmp_path.resolve(),))
-    monkeypatch.setattr(
-        dynamic_module,
-        "select_device_context",
-        lambda device_id=None: DeviceContext(serial=device_id or "emulator-5554"),
-    )
-    monkeypatch.setattr(common_module, "unpack_apk", fake_unpack)
-    monkeypatch.setattr(
-        common_module,
-        "parse_manifest_info",
-        lambda _: {
+    main_module.app.state.container.tools = PipelineTools(
+        select_device_context=lambda device_id=None: DeviceContext(
+            serial=device_id or "emulator-5554"
+        ),
+        unpack_apk=fake_unpack,
+        parse_manifest_info=lambda _: {
             "package_name": "com.example.demo2",
             "version_name": "1.0.0",
             "version_code": "1",
             "application_label": "Demo2",
         },
-    )
-    monkeypatch.setattr(common_module, "scan_for_sdks", lambda _: [])
-    monkeypatch.setattr(
-        dynamic_module,
-        "install_apk",
-        lambda _, device_context=None: {
+        scan_for_sdks=lambda _: [],
+        install_apk=lambda _, device_context=None: {
             "returncode": 0,
             "stdout": "ok",
             "stderr": "",
             "cmd": device_context.adb_command("install"),
         },
-    )
-    monkeypatch.setattr(
-        dynamic_module,
-        "launch_app",
-        lambda _, device_context=None: {
+        launch_app=lambda _, device_context=None: {
             "returncode": 0,
             "stdout": "ok",
             "stderr": "",
             "cmd": device_context.adb_command("shell"),
         },
-    )
-    monkeypatch.setattr(
-        dynamic_module,
-        "evaluate_timeline_rules",
-        lambda events_json_path, consent_time, pre_consent_seconds, post_consent_seconds, evidence_available=True: {
+        evaluate_timeline_rules=lambda events_json_path, consent_time, pre_consent_seconds, post_consent_seconds, evidence_available=True: {
             "summary": {"pre_consent_high_frequency_sensitive_access": "suspicious"},
             "rules": [],
             "window": {
@@ -289,11 +259,6 @@ def test_fake_named_frida_session_without_is_real_does_not_trigger_real_device_c
         is_real = False
 
     logcat_called = []
-    monkeypatch.setattr(
-        dynamic_module,
-        "LogcatCollector",
-        lambda *args, **kwargs: logcat_called.append(True),
-    )
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_frida_session_factory, lambda: FridaSession
     )
@@ -302,41 +267,32 @@ def test_fake_named_frida_session_without_is_real_does_not_trigger_real_device_c
     )
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(output_dir))
     monkeypatch.setattr(app_config, "APK_ALLOWED_ROOTS", (tmp_path.resolve(),))
-    monkeypatch.setattr(
-        dynamic_module,
-        "select_device_context",
-        lambda device_id=None: DeviceContext(serial=device_id or "emulator-5554"),
-    )
-    monkeypatch.setattr(
-        common_module,
-        "unpack_apk",
-        lambda apk, out_dir: {"returncode": 0, "stdout": "", "stderr": "", "cmd": []},
-    )
-    monkeypatch.setattr(
-        common_module,
-        "parse_manifest_info",
-        lambda _: {
+    main_module.app.state.container.tools = PipelineTools(
+        logcat_collector_factory=lambda *args, **kwargs: logcat_called.append(True),
+        select_device_context=lambda device_id=None: DeviceContext(
+            serial=device_id or "emulator-5554"
+        ),
+        unpack_apk=lambda apk, out_dir: {"returncode": 0, "stdout": "", "stderr": "", "cmd": []},
+        parse_manifest_info=lambda _: {
             "package_name": "com.example.fake",
             "version_name": "1.0.0",
             "version_code": "1",
             "application_label": "Fake",
         },
-    )
-    monkeypatch.setattr(common_module, "scan_for_sdks", lambda _: [])
-    monkeypatch.setattr(
-        dynamic_module,
-        "install_apk",
-        lambda _, device_context=None: {"returncode": 0, "stdout": "ok", "stderr": "", "cmd": []},
-    )
-    monkeypatch.setattr(
-        dynamic_module,
-        "launch_app",
-        lambda _, device_context=None: {"returncode": 0, "stdout": "ok", "stderr": "", "cmd": []},
-    )
-    monkeypatch.setattr(
-        dynamic_module,
-        "evaluate_timeline_rules",
-        lambda *args, **kwargs: {"summary": {}, "rules": [], "window": {}},
+        scan_for_sdks=lambda _: [],
+        install_apk=lambda _, device_context=None: {
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "cmd": [],
+        },
+        launch_app=lambda _, device_context=None: {
+            "returncode": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "cmd": [],
+        },
+        evaluate_timeline_rules=lambda *args, **kwargs: {"summary": {}, "rules": [], "window": {}},
     )
 
     resp = client.post(

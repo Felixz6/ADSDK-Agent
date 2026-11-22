@@ -89,11 +89,13 @@ def _normalize_events(
     output_path: Path,
     *,
     device_context: DeviceContext | None,
+    tools: Any = None,
 ) -> list[dict[str, Any]]:
-    import sys
-
-    dyn_mod = sys.modules.get("app.pipelines.dynamic")
-    parse_fn = getattr(dyn_mod, "parse_hook_to_events_json", parse_hook_to_events_json)
+    parse_fn = (
+        getattr(tools, "parse_hook_to_events_json", parse_hook_to_events_json)
+        if tools
+        else parse_hook_to_events_json
+    )
     events = parse_fn(
         str(source_path),
         str(output_path),
@@ -159,6 +161,7 @@ def _collect_events_stage(
             context.events_raw_path,
             context.events_path,
             device_context=environment.device_context,
+            tools=getattr(environment, "tools", None),
         )
         event_status = (
             StepStatus.PARTIAL
