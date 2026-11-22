@@ -9,7 +9,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main_module
-import app.pipelines.task_runner as task_runner
 from app.api.deps import get_task_repository, get_task_service
 from app.comparisons import ComparisonCreateRequest, ComparisonService
 from app.reporting import render_html_report, write_html_report
@@ -448,7 +447,6 @@ def test_task_api_create_list_detail_report_and_websocket(
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_task_repository, lambda: repository
     )
-    monkeypatch.setattr(task_runner, "task_service", service)
 
     client = TestClient(main_module.app)
     created_response = client.post(
@@ -483,7 +481,6 @@ def test_task_api_stable_errors_and_delete(
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_task_repository, lambda: repository
     )
-    monkeypatch.setattr(task_runner, "task_service", service)
     client = TestClient(main_module.app)
 
     missing = client.get("/tasks/missing")

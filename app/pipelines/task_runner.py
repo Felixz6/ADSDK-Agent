@@ -46,10 +46,6 @@ from app.tasks.runtime import (
 if TYPE_CHECKING:
     from app.container import Container
 
-# Optional backward-compatible fallback seams for existing tests
-ai_settings_service: Any = None
-task_service: Any = None
-
 
 def _execute_ai_orchestration(
     *,
@@ -304,6 +300,6 @@ def regenerate_task_ai_report(
 __all__ = [
     "_execute_ai_orchestration",
     "_run_ai_orchestrated_task",
-    "_run_persisted_task",
     "regenerate_task_ai_report",
+    "run_persisted_task",
 ]
