@@ -179,10 +179,15 @@ def _minimal_report() -> dict:
 
 
 def _assert_golden_match(actual: str, golden_file: Path):
-    if os.getenv("UPDATE_GOLDEN") == "1" or not golden_file.is_file():
+    if os.getenv("UPDATE_GOLDEN") == "1":
         golden_file.parent.mkdir(parents=True, exist_ok=True)
         golden_file.write_text(actual, encoding="utf-8")
         return
+
+    if not golden_file.is_file():
+        pytest.fail(
+            f"golden file missing: {golden_file}. Run with UPDATE_GOLDEN=1 to generate golden baseline."
+        )
 
     expected = golden_file.read_text(encoding="utf-8")
     if actual != expected:
@@ -232,3 +237,17 @@ def test_golden_report_minimal_markdown(tmp_path: Path):
     actual = out.read_text(encoding="utf-8")
     golden_path = GOLDEN_DIR / "report_minimal.md"
     _assert_golden_match(actual, golden_path)
+
+
+def test_all_golden_files_exist_and_non_empty():
+    """Verify all 4 golden files exist and contain non-trivial baseline content."""
+    expected_files = [
+        "report_full.html",
+        "report_full.md",
+        "report_minimal.html",
+        "report_minimal.md",
+    ]
+    for filename in expected_files:
+        golden_path = GOLDEN_DIR / filename
+        assert golden_path.is_file(), f"golden file missing: {filename}"
+        assert golden_path.stat().st_size > 0, f"golden file is empty: {filename}"
