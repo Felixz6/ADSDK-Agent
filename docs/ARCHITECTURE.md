@@ -195,14 +195,29 @@ output/runs/<run_id>/
 
 ## 6. 静态类型检查覆盖与待收敛计划
 
-当前系统已对以下核心业务目录严格纳入 `mypy` 校验（共 54 个源文件，0 errors）：
+当前系统已对以下核心业务目录严格纳入 `mypy` 校验（共 67 个源文件，0 errors）：
 - `app/core/`（静态分析、Manifest 解析、时钟协议）
 - `app/orchestration/`（设备租约、确认门、清理状态机）
 - `app/traffic/`（流量捕获与请求脱敏校验）
 - `app/pipelines/`（分析流水线用例）
 - `app/api/`（FastAPI 网关与依赖注入）
 - `app/frida/`（第一批核心：diagnostics, server_manager, execution_session）
+- `app/ai/providers/`（全部 Provider 实现与基类协议）
+- `app/ai/planner.py` 与 `app/ai/plan_parser.py`（AI 规划生成与解析验证）
 
 **尚未完全纳入严格模式的目录与收敛计划**：
-- `app/ai/`：包含 LLM Provider 动态调用、Prompt 上下文组装与容错重试，目前通过结构化 Pydantic 模型确保运行时类型安全，计划在后续针对 Provider 协议与 AITaskService 进行静态类型收敛。
+- `app/ai/` 其余文件（如 `orchestrator.py`、`report_composer.py`、`context_builder.py`）：包含 Prompt 上下文组装与容错重试，目前通过结构化 Pydantic 模型确保运行时类型安全，计划在后续迭代中收敛。
 - `app/frida/` 其余文件（如 `process_monitor.py`、`traffic_diagnostics.py`）：计划随对应模块重构逐步纳入全局 files 配置。
+
+---
+
+## 7. 有意保留的长函数及理由清单
+
+以下函数经评估属于高内聚领域算法、状态判定表或线性解析器，强行拆分会割裂局部上下文并降低可读性，因此有意保留原样且已全部配备完备的单元测试保护：
+- `calculate_risk_summary` (`app/analyzers/risk_scoring.py`): 线性规则权重计算与风险分级评估，属于纯数学映射表，拆分收益低。
+- `evaluate_timeline_rules` (`app/orchestration/timeline_rules.py`): 敏感调用与 Consent 单调时间轴滑动窗口双向判定，强规则表驱动。
+- `validate_plan` (`app/ai/plan_validator.py`): AI 规划 DAG 步骤、依赖关系与敏感工具确认门完备性语义校验表。
+- `validate` (`app/ai/report_composer.py`): AI 报告结构体完整性与合规研判契约字段断言。
+- `validate_plan_against_runtime_state` (`app/orchestration/runtime_plan_validator.py`): 运行时环境、设备能力与会话策略矩阵交叉校验。
+- `normalize_dynamic_strategy` (`app/orchestration/dynamic_strategy.py`): 运行策略三元降级状态机决策表。
+- `_plan` (`app/ai/planner.py`): AI 规划生成的主重试循环与 Prompt 上下文装配。

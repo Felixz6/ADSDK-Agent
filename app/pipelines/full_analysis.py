@@ -24,6 +24,7 @@ from app.orchestration.cleanup_manager import (
     CleanupStep,
     ResourceOwnershipRegistry,
 )
+from app.orchestration.consent_checkpoint import ConsentCheckpointService
 from app.orchestration.device_ops import (
     _adb_cleanup_action,
     _device_package_pids,
@@ -196,13 +197,60 @@ def _register_owned_resources(
         )
 
 
-def run_full_analysis_session(
+def _build_production_effects(
+    *,
+    task_id: str,
+    ai_service: AITaskService,
+    consent_svc: ConsentCheckpointService,
+    snapshot_factory: Any,
+    stop_registered_frida_session: Any,
+) -> ProductionSessionEffects:
+    """Wire atomic ADB and session lifecycle cleanup callbacks."""
+
+    def _safe_report_step(key: str, status: str, message: str | None = None) -> None:
+        report_step(key, status, message)
+
+    return ProductionSessionEffects(
+        task_id=task_id,
+        run_id=task_id,
+        ai_service=ai_service,
+        consent_service=consent_svc,
+        snapshot_factory=snapshot_factory,
+        clock=task_utc_now,
+        is_cancelled=_ai_cancelled,
+        report_step=_safe_report_step,
+        set_proxy_action=lambda device, value: _adb_cleanup_action(
+            device, ["shell", "settings", "put", "global", "http_proxy", value]
+        ),
+        delete_proxy_action=lambda device: _adb_cleanup_action(
+            device, ["shell", "settings", "delete", "global", "http_proxy"]
+        ),
+        kill_pid_action=lambda device, pid: _adb_cleanup_action(
+            device, ["shell", "kill", str(pid)]
+        ),
+        stop_mitm_pid_action=_stop_owned_host_pid,
+        stop_frida_session_action=stop_registered_frida_session,
+        read_proxy_action=_read_device_proxy,
+        resource_present_action=_resource_present,
+        resource_identity_matches_action=_resource_identity_matches,
+        force_stop_package_action=lambda device, package: _adb_cleanup_action(
+            device, ["shell", "am", "force-stop", package]
+        ),
+        consent_wait_seconds=CONSENT_CHECKPOINT_WAIT_SECONDS,
+    )
+
+
+def _build_full_analysis_session(
     *,
     task: TaskRecord,
     payload: dict[str, Any],
     container: Container,
-) -> dict[str, Any] | JSONResponse:
-    """Single production entry for ai_orchestrated full_analysis tasks."""
+    run_dir: Path,
+    registry: ResourceOwnershipRegistry,
+    report_holder: dict[str, dict[str, Any]],
+    initial_snapshot: dict[str, DeviceSessionSnapshot],
+) -> tuple[FullAnalysisSession, ProductionSessionEffects]:
+    """Wire dependencies, execution runner, and production effects for full analysis."""
     from app.pipelines.dynamic import _dynamic_analyze_v2
 
     ai_settings_svc = container.ai_settings_service
@@ -210,7 +258,6 @@ def run_full_analysis_session(
     consent_svc = container.consent_checkpoint_service
 
     output_dir = app_config.OUTPUT_DIR
-    run_dir = Path(output_dir) / "runs" / task.id
     effective = resolve_effective_ai_settings(ai_settings_svc.store)
     ai_enabled = bool(effective["enabled"]) and bool(payload.get("ai_enabled", True))
     provider = ai_settings_svc.factory.current() if ai_enabled else None
@@ -220,9 +267,6 @@ def run_full_analysis_session(
         enabled=ai_enabled,
         cancelled=_ai_cancelled,
     )
-    registry = ResourceOwnershipRegistry()
-    report_holder: dict[str, dict[str, Any]] = {}
-    initial_snapshot: dict[str, DeviceSessionSnapshot] = {}
     frida_session_stoppers: dict[str, Any] = {}
 
     def snapshot_factory(
@@ -301,36 +345,12 @@ def run_full_analysis_session(
         environment_probe=lambda: env_check(payload.get("device_id")),
     )
 
-    def _safe_report_step(key: str, status: str, message: str | None = None) -> None:
-        report_step(key, status, message)
-
-    effects = ProductionSessionEffects(
+    effects = _build_production_effects(
         task_id=task.id,
-        run_id=task.id,
         ai_service=ai_service,
-        consent_service=consent_svc,
+        consent_svc=consent_svc,
         snapshot_factory=snapshot_factory,
-        clock=task_utc_now,
-        is_cancelled=_ai_cancelled,
-        report_step=_safe_report_step,
-        set_proxy_action=lambda device, value: _adb_cleanup_action(
-            device, ["shell", "settings", "put", "global", "http_proxy", value]
-        ),
-        delete_proxy_action=lambda device: _adb_cleanup_action(
-            device, ["shell", "settings", "delete", "global", "http_proxy"]
-        ),
-        kill_pid_action=lambda device, pid: _adb_cleanup_action(
-            device, ["shell", "kill", str(pid)]
-        ),
-        stop_mitm_pid_action=_stop_owned_host_pid,
-        stop_frida_session_action=stop_registered_frida_session,
-        read_proxy_action=_read_device_proxy,
-        resource_present_action=_resource_present,
-        resource_identity_matches_action=_resource_identity_matches,
-        force_stop_package_action=lambda device, package: _adb_cleanup_action(
-            device, ["shell", "am", "force-stop", package]
-        ),
-        consent_wait_seconds=CONSENT_CHECKPOINT_WAIT_SECONDS,
+        stop_registered_frida_session=stop_registered_frida_session,
     )
     session = FullAnalysisSession(
         task_id=task.id,
@@ -352,11 +372,71 @@ def run_full_analysis_session(
         effects=cast(Any, effects),
         run_dir=run_dir,
     )
+    return session, effects
+
+
+def run_full_analysis_session(
+    *,
+    task: TaskRecord,
+    payload: dict[str, Any],
+    container: Container,
+) -> dict[str, Any] | JSONResponse:
+    """Single production entry for ai_orchestrated full_analysis tasks."""
+    output_dir = app_config.OUTPUT_DIR
+    run_dir = Path(output_dir) / "runs" / task.id
+    registry = ResourceOwnershipRegistry()
+    report_holder: dict[str, dict[str, Any]] = {}
+    initial_snapshot: dict[str, DeviceSessionSnapshot] = {}
+
+    session, effects = _build_full_analysis_session(
+        task=task,
+        payload=payload,
+        container=container,
+        run_dir=run_dir,
+        registry=registry,
+        report_holder=report_holder,
+        initial_snapshot=initial_snapshot,
+    )
     transition = session.run()
     before_snapshot = initial_snapshot.get("value") or getattr(transition, "snapshot", None)
+    postflight_snapshot, postflight_target_pid, unclassified_new_target = _audit_postflight_target(
+        task_id=task.id,
+        payload=payload,
+        transition=transition,
+        before_snapshot=before_snapshot,
+        registry=registry,
+    )
+    helper_provenance, has_unknown_helpers = _compute_helper_provenance(
+        before_snapshot=before_snapshot,
+        postflight_snapshot=postflight_snapshot,
+        registry=registry,
+    )
+    return _assemble_final_session_report(
+        task_id=task.id,
+        run_dir=run_dir,
+        report_holder=report_holder,
+        transition=transition,
+        effects=effects,
+        registry=registry,
+        postflight_target_pid=postflight_target_pid,
+        unclassified_new_target=unclassified_new_target,
+        helper_provenance=helper_provenance,
+        has_unknown_helpers=has_unknown_helpers,
+    )
+
+
+def _audit_postflight_target(
+    *,
+    task_id: str,
+    payload: dict[str, Any],
+    transition: Any,
+    before_snapshot: DeviceSessionSnapshot | None,
+    registry: ResourceOwnershipRegistry,
+) -> tuple[DeviceSessionSnapshot | None, int | None, bool]:
+    """Capture postflight snapshot and detect unclassified newly spawned targets."""
     postflight_snapshot = (
         _capture_device_snapshot(
-            run_id=task.id,
+            run_id=task_id,
             device_id=payload.get("device_id"),
             package_name=payload.get("package_name"),
             capture_kind="postflight",
@@ -404,11 +484,63 @@ def run_full_analysis_session(
                 reason_code="unclassified_new_target",
             )
         )
+    return postflight_snapshot, postflight_target_pid, unclassified_new_target
+
+
+def _compute_helper_provenance(
+    *,
+    before_snapshot: DeviceSessionSnapshot | None,
+    postflight_snapshot: DeviceSessionSnapshot | None,
+    registry: ResourceOwnershipRegistry,
+) -> tuple[dict[str, Any], bool]:
+    """Derive Frida helper provenance across before/after device snapshots."""
+    before_helpers = (
+        set(before_snapshot.initial_state.frida_helper_pids) if before_snapshot else set()
+    )
+    after_helpers = (
+        set(postflight_snapshot.initial_state.frida_helper_pids)
+        if postflight_snapshot is not None
+        else set()
+    )
+    owned_helpers = {
+        int(item.detail["pid"])
+        for item in registry.owned()
+        if item.kind == "frida_helper" and isinstance(item.detail.get("pid"), int)
+    }
+    newly_unknown = sorted(after_helpers - before_helpers - owned_helpers)
+    provenance = {
+        "process_name": "re.frida.helper",
+        "before_pids": sorted(before_helpers),
+        "after_pids": sorted(after_helpers),
+        "owned_pids": sorted(owned_helpers),
+        "preexisting_external_pids": sorted(before_helpers - owned_helpers),
+        "unknown_newly_appeared_pids": newly_unknown,
+        "postflight_capture": (
+            postflight_snapshot.safe_dump() if postflight_snapshot is not None else None
+        ),
+    }
+    return provenance, bool(newly_unknown)
+
+
+def _assemble_final_session_report(
+    *,
+    task_id: str,
+    run_dir: Path,
+    report_holder: dict[str, dict[str, Any]],
+    transition: Any,
+    effects: ProductionSessionEffects,
+    registry: ResourceOwnershipRegistry,
+    postflight_target_pid: int | None,
+    unclassified_new_target: bool,
+    helper_provenance: dict[str, Any],
+    has_unknown_helpers: bool,
+) -> dict[str, Any]:
+    """Assemble final full-analysis report document and write to disk."""
     report = report_holder.get(
         "value",
         {
             "schema_version": SCHEMA_VERSION,
-            "run_id": task.id,
+            "run_id": task_id,
             "status": ("success" if transition.final_state == "completed" else "failed"),
             "error_code": transition.runtime_validation_error_code
             or "full_analysis_session_failed",
@@ -442,32 +574,8 @@ def run_full_analysis_session(
     report["consent_checkpoint"] = (
         transition.consent.model_dump(mode="json") if transition.consent is not None else None
     )
-    before_helpers = (
-        set(before_snapshot.initial_state.frida_helper_pids) if before_snapshot else set()
-    )
-    after_helpers = (
-        set(postflight_snapshot.initial_state.frida_helper_pids)
-        if postflight_snapshot is not None
-        else set()
-    )
-    owned_helpers = {
-        int(item.detail["pid"])
-        for item in registry.owned()
-        if item.kind == "frida_helper" and isinstance(item.detail.get("pid"), int)
-    }
-    newly_unknown = sorted(after_helpers - before_helpers - owned_helpers)
-    report["helper_provenance"] = {
-        "process_name": "re.frida.helper",
-        "before_pids": sorted(before_helpers),
-        "after_pids": sorted(after_helpers),
-        "owned_pids": sorted(owned_helpers),
-        "preexisting_external_pids": sorted(before_helpers - owned_helpers),
-        "unknown_newly_appeared_pids": newly_unknown,
-        "postflight_capture": (
-            postflight_snapshot.safe_dump() if postflight_snapshot is not None else None
-        ),
-    }
-    if newly_unknown:
+    report["helper_provenance"] = helper_provenance
+    if has_unknown_helpers:
         report["status"] = "partial"
         report.setdefault("limitations", []).append(
             "new re.frida.helper PID has unknown provenance; it was not claimed or killed"

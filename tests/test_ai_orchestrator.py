@@ -97,7 +97,6 @@ def _install_local_ai_settings(
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_ai_settings_service, lambda: service
     )
-    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     return service
 
 
@@ -1101,7 +1100,6 @@ def test_ai_status_endpoint_defaults_to_disabled(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_ai_settings_service, lambda: service
     )
-    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     client = TestClient(main_module.app)
     payload = client.get("/ai/status").json()
 
@@ -1154,7 +1152,6 @@ def test_ai_plan_and_report_endpoints_report_availability(
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_task_repository, lambda: repository
     )
-    monkeypatch.setattr(task_runner, "task_service", service)
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(tmp_path))
 
     client = TestClient(main_module.app)
@@ -1258,7 +1255,6 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_task_repository, lambda: repository
     )
-    monkeypatch.setattr(task_runner, "task_service", service)
     from functools import partial
 
     service.set_runner(

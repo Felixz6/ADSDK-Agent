@@ -116,7 +116,7 @@ class FakeTestMitmSession:
 
     def validate_traffic(self) -> Any:
         return TrafficCollectionResult(
-            outcome=TrafficCollectionOutcome.COLLECTOR_SUCCESS_ZERO_REQUESTS,
+            outcome=TrafficCollectionOutcome.SUCCESS_ZERO_REQUESTS,
             coverage="no_observations",
             process_ready=True,
             addon_ready=True,

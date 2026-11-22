@@ -43,7 +43,7 @@ class OpenAICompatibleProvider:
         api_key: str | None = None,
         model: str | None = None,
         timeout_seconds: float | None = None,
-        transport: httpx.BaseClient | None = None,
+        transport: httpx.BaseTransport | None = None,
         provider_profile: str | None = None,
         thinking_mode: str | None = None,
         request_retries: int | None = None,
@@ -83,7 +83,7 @@ class OpenAICompatibleProvider:
     name = "openai_compatible"
 
     @property
-    def model(self) -> str:  # type: ignore[override]
+    def model(self) -> str:
         return self._model
 
     @property
@@ -115,7 +115,7 @@ class OpenAICompatibleProvider:
 
     def _client(self) -> httpx.Client:
         if self._transport is not None:
-            return self._transport  # type: ignore[return-value]
+            return httpx.Client(transport=self._transport, timeout=self._timeout)
         return httpx.Client(timeout=self._timeout)
 
     def _make_client(self) -> httpx.Client:
@@ -260,8 +260,9 @@ class OpenAICompatibleProvider:
             # No more retries (or non-retryable): raise the classified error.
             assert last_error is not None
             raise last_error
-        # Unreachable: the loop either returns or raises.
-        raise last_error  # type: ignore[misc]
+
+        assert last_error is not None
+        raise last_error
 
     def _retry_delay_seconds(self, error: ProviderError, attempt: int) -> float:
         """Compute a deterministic backoff delay.

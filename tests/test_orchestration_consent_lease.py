@@ -1601,7 +1601,6 @@ def _api_client(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     import app.main as main_module
-    import app.pipelines.task_runner as task_runner
     from app.api.deps import (
         get_consent_checkpoint_service,
         get_task_repository,
@@ -1628,7 +1627,6 @@ def _api_client(tmp_path, monkeypatch):
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_task_repository, lambda: repository
     )
-    monkeypatch.setattr(task_runner, "task_service", service)
     # Fresh checkpoint registry per test so state never bleeds across tests.
     fresh = ConsentCheckpointService(clock=_TickClock())
     monkeypatch.setitem(

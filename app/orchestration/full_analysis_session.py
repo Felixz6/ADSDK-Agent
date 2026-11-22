@@ -551,43 +551,14 @@ class FullAnalysisSession:
         self._transit(final_state, "session finished")
         return self._finalize(outcome_failures)
 
-    def _run_body(self, outcome_failures: list[str]) -> SessionState | None:
-        """Run planning, runtime gates, execution, consent, then finalisation."""
-        # 1. Planning preflight is read-only and becomes the cleanup baseline.
-        self._snapshot = self.effects.capture_snapshot(self.device_id, self.package_name)
-        self._transit("planning", "constrained plan selection")
-        request = AIOrchestrationRequest(
-            objective=self.objective,
-            analysis_scope=self.strategy,
-            analysis_mode=self.strategy,
-            dynamic_mode_policy=self.dynamic_mode_policy,
-            task_id=self.task_id,
-            allow_dynamic=self.allow_dynamic,
-            allow_network=self.allow_network,
-            confirmed_tools=self.confirmed_tools,
-            token_budget=self.token_budget,
-            report_language=self.report_language,
-            run_dir=self.run_dir,
-            orchestration_entrypoint="tasks_ai_orchestrated",
-            session_engine="FullAnalysisSession",
-            execution_pipeline_version="m7b",  # 历史契约值，勿随命名清理而修改
-        )
-
-        prepare = getattr(self.effects, "prepare_orchestration", None)
-        execute_prepared = getattr(self.effects, "execute_prepared_orchestration", None)
-        # Compatibility: read-only modes may still use the old one-shot effect.
-        if self.strategy in {"static_only", "report_only"} and not (
-            callable(prepare) and callable(execute_prepared)
-        ):
-            self._orch_result = self.effects.run_orchestration(request)
-            self._adopt_result(self._orch_result)
-            self._transit("ai_synthesis", "AI final report composed")
-            return None
-
-        # 2. Planning/repair/fallback only. This interface executes no tool.
+    def _plan_orchestration_phase(
+        self,
+        request: AIOrchestrationRequest,
+        prepare: Any,
+        outcome_failures: list[str],
+    ) -> SessionState | None:
+        """Execute the planning preflight phase without running state-changing tools."""
         try:
-            if not callable(prepare) or not callable(execute_prepared):
-                raise RuntimeError("two_phase_orchestration_effects_missing")
             self._prepared = prepare(request)
             self._plan = self._prepared.plan
             self._plan_build_path = "ai" if self._plan.generated_by == "ai" else "default"
@@ -595,13 +566,17 @@ class FullAnalysisSession:
                 self.effects.notify_plan_built(self._plan, self._plan_build_path)
             except BaseException:
                 pass
+            return None
         except BaseException as exc:
             outcome_failures.append(f"planning_failed: {type(exc).__name__}")
             self._transit("failed", "planning failed", error_code="planning_failed")
             return "failed"
 
-        # 3. Execution preflight and freshness comparison happen after the
-        # planner and before the first state-changing tool.
+    def _verify_preflight_freshness_gate(
+        self,
+        outcome_failures: list[str],
+    ) -> SessionState | None:
+        """Capture fresh device state and enforce preflight non-divergence."""
         fresh_capture = getattr(self.effects, "capture_fresh_snapshot", None)
         self._fresh_snapshot = (
             fresh_capture(self.device_id, self.package_name)
@@ -615,7 +590,15 @@ class FullAnalysisSession:
             outcome_failures.append(f"runtime_validation_failed: {freshness.block_factor}")
             self._transit("failed", "freshness gate blocked", error_code=freshness.block_factor)
             return "failed"
+        return None
 
+    def _validate_strategy_and_semantics(
+        self,
+        outcome_failures: list[str],
+    ) -> tuple[AIPlan | None, SessionState | None]:
+        """Normalize execution policy and validate plan against device capabilities."""
+        assert self._fresh_snapshot is not None
+        assert self._plan is not None
         state = self._fresh_snapshot.initial_state
         target_running = bool(self.package_name and state.foreground_package == self.package_name)
         plan_references_traffic = any(
@@ -629,6 +612,7 @@ class FullAnalysisSession:
         )
         prospective_lease = None
         if prepared_has_dynamic:
+            assert self._snapshot is not None
             prospective_lease = self.lease.owner(self._snapshot.device_ref)
             if prospective_lease is None:
                 prospective_lease = DeviceLease(device_key=self._snapshot.device_ref)
@@ -645,8 +629,6 @@ class FullAnalysisSession:
             http_proxy=state.http_proxy,
         )
 
-        # 4. Normalize the dynamic policy before runtime validation. Analysis
-        # mode chooses the plan route; it is never a requested/effective policy.
         self._strategy_decision = normalize_dynamic_strategy(
             requested_strategy=self.dynamic_mode_policy,
             requested_scope=self.strategy,
@@ -658,7 +640,6 @@ class FullAnalysisSession:
             plan_references_traffic=plan_references_traffic,
             native_bridge_detected=native_bridge_detected,
         )
-        # Runtime semantic validation sees the normalized execution policy.
         runtime_validation = validate_plan_against_runtime_state(
             self._plan,
             preflight=self._snapshot,
@@ -694,7 +675,7 @@ class FullAnalysisSession:
                 "runtime semantic gate blocked",
                 error_code=self._runtime_validation_code,
             )
-            return "failed"
+            return None, "failed"
 
         effective_scope = self._strategy_decision.effective_scope or self.strategy
         effective_plan = self._effective_plan(self._plan, effective_scope=effective_scope)
@@ -710,41 +691,51 @@ class FullAnalysisSession:
                 "strategy normalization blocked",
                 error_code=self._runtime_validation_code,
             )
-            return "failed"
+            return None, "failed"
+        return effective_plan, None
 
-        # 6. Explicit confirmation/lease/capability gates happen immediately
-        # before execution. Lease races are caught by acquire itself.
-        if self._plan_uses_dynamic:
+    def _acquire_dynamic_lease_gate(
+        self,
+        outcome_failures: list[str],
+    ) -> SessionState | None:
+        """Enforce operator confirmation and secure device lease before execution."""
+        assert self._snapshot is not None
+        self._transit(
+            "awaiting_confirmation",
+            "device-state changes require explicit confirmation",
+        )
+        if not self.allow_dynamic or "dynamic_analysis" not in self.confirmed_tools:
+            self._runtime_validation_code = "dynamic_confirmation_missing"
+            outcome_failures.append(f"runtime_validation_failed: {self._runtime_validation_code}")
             self._transit(
-                "awaiting_confirmation",
-                "device-state changes require explicit confirmation",
+                "failed",
+                "confirmation gate blocked",
+                error_code=self._runtime_validation_code,
             )
-            if not self.allow_dynamic or "dynamic_analysis" not in self.confirmed_tools:
-                self._runtime_validation_code = "dynamic_confirmation_missing"
-                outcome_failures.append(
-                    f"runtime_validation_failed: {self._runtime_validation_code}"
-                )
-                self._transit(
-                    "failed",
-                    "confirmation gate blocked",
-                    error_code=self._runtime_validation_code,
-                )
-                return "failed"
-            try:
-                self.lease.acquire(
-                    device_key=self._snapshot.device_ref,
-                    run_id=self.run_id,
-                    task_id=self.task_id,
-                )
-            except LeaseAcquireError as exc:
-                self._runtime_validation_code = exc.code
-                outcome_failures.append(f"lease_acquire_failed: {exc.code}")
-                self._transit("failed", "lease unavailable", error_code=exc.code)
-                return "failed"
-            if self._cancelled():
-                return "cancelled"
+            return "failed"
+        try:
+            self.lease.acquire(
+                device_key=self._snapshot.device_ref,
+                run_id=self.run_id,
+                task_id=self.task_id,
+            )
+        except LeaseAcquireError as exc:
+            self._runtime_validation_code = exc.code
+            outcome_failures.append(f"lease_acquire_failed: {exc.code}")
+            self._transit("failed", "lease unavailable", error_code=exc.code)
+            return "failed"
+        if self._cancelled():
+            return "cancelled"
+        return None
 
-        # 7. Only this point can dispatch tools, using the validated plan.
+    def _execute_and_consent_phase(
+        self,
+        request: AIOrchestrationRequest,
+        effective_plan: AIPlan,
+        execute_prepared: Any,
+        outcome_failures: list[str],
+    ) -> SessionState | None:
+        """Dispatch validated plan and await consent checkpoint resolution."""
         self._transit("preparing_device", "executing validated effective plan")
         try:
             self._orch_result = execute_prepared(
@@ -758,8 +749,6 @@ class FullAnalysisSession:
             outcome_failures.append(f"orchestration_failed: {type(exc).__name__}")
             self._orch_result = None
 
-        # Consent remains a post-execution evidence checkpoint and is never
-        # created on a blocked runtime-gate path.
         if self._orch_result is not None and self._needs_consent():
             self._transit("dynamic_pre_consent", "awaiting manual consent")
             self._consent_state = self.effects.enter_consent(self.task_id, self.run_id)
@@ -787,6 +776,66 @@ class FullAnalysisSession:
 
         self._transit("ai_synthesis", "AI final report composed")
         return None
+
+    def _run_body(self, outcome_failures: list[str]) -> SessionState | None:
+        """Run planning, runtime gates, execution, consent, then finalisation."""
+        self._snapshot = self.effects.capture_snapshot(self.device_id, self.package_name)
+        self._transit("planning", "constrained plan selection")
+        request = AIOrchestrationRequest(
+            objective=self.objective,
+            analysis_scope=self.strategy,
+            analysis_mode=self.strategy,
+            dynamic_mode_policy=self.dynamic_mode_policy,
+            task_id=self.task_id,
+            allow_dynamic=self.allow_dynamic,
+            allow_network=self.allow_network,
+            confirmed_tools=self.confirmed_tools,
+            token_budget=self.token_budget,
+            report_language=self.report_language,
+            run_dir=self.run_dir,
+            orchestration_entrypoint="tasks_ai_orchestrated",
+            session_engine="FullAnalysisSession",
+            execution_pipeline_version="m7b",  # 历史契约值，勿随命名清理而修改
+        )
+
+        prepare = getattr(self.effects, "prepare_orchestration", None)
+        execute_prepared = getattr(self.effects, "execute_prepared_orchestration", None)
+        if self.strategy in {"static_only", "report_only"} and not (
+            callable(prepare) and callable(execute_prepared)
+        ):
+            self._orch_result = self.effects.run_orchestration(request)
+            self._adopt_result(self._orch_result)
+            self._transit("ai_synthesis", "AI final report composed")
+            return None
+
+        if not callable(prepare) or not callable(execute_prepared):
+            raise RuntimeError("two_phase_orchestration_effects_missing")
+
+        plan_terminal = self._plan_orchestration_phase(request, prepare, outcome_failures)
+        if plan_terminal is not None:
+            return plan_terminal
+
+        freshness_terminal = self._verify_preflight_freshness_gate(outcome_failures)
+        if freshness_terminal is not None:
+            return freshness_terminal
+
+        effective_plan, validation_terminal = self._validate_strategy_and_semantics(
+            outcome_failures
+        )
+        if validation_terminal is not None or effective_plan is None:
+            return validation_terminal or "failed"
+
+        if self._plan_uses_dynamic:
+            lease_terminal = self._acquire_dynamic_lease_gate(outcome_failures)
+            if lease_terminal is not None:
+                return lease_terminal
+
+        return self._execute_and_consent_phase(
+            request,
+            effective_plan,
+            execute_prepared,
+            outcome_failures,
+        )
 
     # -- helpers -------------------------------------------------------
     def _adopt_result(self, result: AIOrchestrationResult | None) -> None:

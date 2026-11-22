@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from .models import (
     AIOrchestrationRequest,
@@ -13,6 +13,7 @@ from .models import (
     AIRoundType,
     AITokenUsage,
     PlanStep,
+    PlanStrategy,
     PlanValidationIssue,
     PlanValidationRound,
 )
@@ -208,7 +209,8 @@ class AIPlanner:
                 confirmed_tools,
             )
             if round1 is not None and round1.ok:
-                plan = self._apply_call_budget(round1.plan)  # type: ignore[arg-type]
+                assert round1.plan is not None
+                plan = self._apply_call_budget(round1.plan)
                 self.plan_source = "ai"
                 self.planning_failed = False
                 self.deterministic_plan_fallback = False
@@ -220,11 +222,13 @@ class AIPlanner:
             self._mark_deterministic_plan(reason="planning_failed")
             return self._default_plan(request, reason="planning_failed"), "planning_failed"
 
+        assert response is not None
         round1 = self._attempt_plan_round(
             response, strategy, allow_dynamic, confirmed_tools, stage="plan"
         )
         if round1.ok:
-            plan = self._apply_call_budget(round1.plan)  # type: ignore[arg-type]
+            assert round1.plan is not None
+            plan = self._apply_call_budget(round1.plan)
             self.plan_source = "ai"
             self.planning_failed = False
             self.deterministic_plan_fallback = False
@@ -286,22 +290,14 @@ class AIPlanner:
             previous_issues=round1.validation.issues,
         )
         if round2.ok:
-            plan = self._apply_call_budget(round2.plan)  # type: ignore[arg-type]
+            assert round2.plan is not None
+            plan = self._apply_call_budget(round2.plan)
             self.plan_source = "repaired"
             self.planning_failed = False
             self.deterministic_plan_fallback = False
             return plan.model_copy(update={"generated_by": "ai"}), None
         self._mark_deterministic_plan(reason="planning_failed")
         return self._default_plan(request, reason="planning_failed"), "planning_failed"
-
-    @dataclass(slots=True)
-    class _PlanRoundOutcome:
-        """Internal unpacking of one parse+validate attempt (never persisted)."""
-
-        ok: bool
-        plan: AIPlan | None
-        validation: PlanValidationResult
-        payload: Mapping[str, Any] | None
 
     def _attempt_plan_round(
         self,
@@ -513,8 +509,9 @@ class AIPlanner:
         if retry_error is not None:
             # The retry also failed at transport; finalize honestly.
             return None
+        assert retry_response is not None
         return self._attempt_plan_round(
-            retry_response,  # type: ignore[arg-type]
+            retry_response,
             strategy,
             allow_dynamic,
             confirmed_tools,
@@ -549,7 +546,7 @@ class AIPlanner:
         ]
         return AIPlan(
             objective=sanitize_untrusted_text(request.objective, limit=600),
-            strategy=strategy,  # type: ignore[arg-type]
+            strategy=strategy,
             steps=steps,
             expected_outputs=["evidence_digest", "deterministic_report"],
             stop_conditions=["tool budget reached", "cancellation requested"],
@@ -645,13 +642,11 @@ class AIPlanner:
     default_plan = _default_plan
 
 
-def _normalize_strategy(value: str | None) -> str:
+def _normalize_strategy(value: str | None) -> PlanStrategy:
     candidate = str(value or "static_only")
-    return (
-        candidate
-        if candidate in {"static_only", "dynamic_only", "full_analysis", "report_only"}
-        else "static_only"
-    )
+    if candidate in {"static_only", "dynamic_only", "full_analysis", "report_only"}:
+        return cast(PlanStrategy, candidate)
+    return "static_only"
 
 
 def _validate_plan(

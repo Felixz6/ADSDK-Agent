@@ -76,7 +76,6 @@ def ai_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_ai_settings_service, lambda: service
     )
-    monkeypatch.setattr(task_runner, "ai_settings_service", service)
     return service
 
 
@@ -623,7 +622,6 @@ def test_ai_disabled_does_not_break_static_task(monkeypatch: pytest.MonkeyPatch,
     )
     monkeypatch.setitem(main_module.app.dependency_overrides, get_task_service, lambda: service)
     monkeypatch.setitem(main_module.app.dependency_overrides, get_task_repository, lambda: repo)
-    monkeypatch.setattr(task_runner, "task_service", service)
     monkeypatch.setattr(app_config, "OUTPUT_DIR", str(tmp_path))
     tc = TestClient(main_module.app)
     created = tc.post(

@@ -80,6 +80,9 @@ files = [
     "app/frida/diagnostics.py",
     "app/frida/server_manager.py",
     "app/frida/execution_session.py",
+    "app/ai/providers",
+    "app/ai/planner.py",
+    "app/ai/plan_parser.py",
 ]
 ignore_missing_imports = true
 follow_imports = "silent"
@@ -97,6 +100,9 @@ module = [
     "app.frida.diagnostics",
     "app.frida.server_manager",
     "app.frida.execution_session",
+    "app.ai.providers.*",
+    "app.ai.planner",
+    "app.ai.plan_parser",
 ]
 check_untyped_defs = true
 

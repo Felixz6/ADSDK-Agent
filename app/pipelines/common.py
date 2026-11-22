@@ -189,15 +189,12 @@ def _safe_apk_input_display(value: Any) -> str:
     return name or "app.apk"
 
 
-def _prepare_run(
+def _validate_apk_path_step(
     apk_path_input: str,
-    *,
-    device_id: str | None,
-) -> tuple[AnalysisRunContext | None, list[StepResult], JSONResponse | None]:
-    run_id = current_task_id() or str(uuid4())
-    analysis_started_at = _utc_now()
-    steps: list[StepResult] = []
-
+    run_id: str,
+    analysis_started_at: datetime,
+    steps: list[StepResult],
+) -> tuple[Path | None, JSONResponse | None]:
     validation_started = _utc_now()
     validator = ApkPathValidator(
         allowed_roots=app_config.APK_ALLOWED_ROOTS,
@@ -218,7 +215,6 @@ def _prepare_run(
         )
         return (
             None,
-            steps,
             _validation_failure_response(
                 run_id=run_id,
                 apk_path=_safe_apk_input_display(apk_path_input),
@@ -239,7 +235,15 @@ def _prepare_run(
             details={"source_path_display": validated_apk.name},
         )
     )
+    return validated_apk, None
 
+
+def _compute_apk_hash_step(
+    validated_apk: Path,
+    run_id: str,
+    analysis_started_at: datetime,
+    steps: list[StepResult],
+) -> tuple[str | None, JSONResponse | None]:
     hash_started = _utc_now()
     try:
         apk_sha256 = sha256_file(validated_apk)
@@ -256,7 +260,6 @@ def _prepare_run(
         )
         return (
             None,
-            steps,
             _validation_failure_response(
                 run_id=run_id,
                 apk_path=validated_apk.name,
@@ -276,7 +279,17 @@ def _prepare_run(
             details={"sha256": apk_sha256},
         )
     )
+    return apk_sha256, None
 
+
+def _create_run_context_step(
+    validated_apk: Path,
+    apk_sha256: str,
+    run_id: str,
+    device_id: str | None,
+    analysis_started_at: datetime,
+    steps: list[StepResult],
+) -> tuple[AnalysisRunContext | None, JSONResponse | None]:
     try:
         context = create_analysis_run_context(
             validated_apk,
@@ -286,6 +299,7 @@ def _prepare_run(
             device_id=device_id,
             started_at=analysis_started_at,
         )
+        return context, None
     except (OSError, ValueError) as exc:
         message = f"run directory creation failed: {type(exc).__name__}"
         steps.append(
@@ -300,7 +314,6 @@ def _prepare_run(
         )
         return (
             None,
-            steps,
             _validation_failure_response(
                 run_id=run_id,
                 apk_path=validated_apk.name,
@@ -312,6 +325,15 @@ def _prepare_run(
             ),
         )
 
+
+def _create_apk_snapshot_step(
+    validated_apk: Path,
+    apk_sha256: str,
+    context: AnalysisRunContext,
+    run_id: str,
+    analysis_started_at: datetime,
+    steps: list[StepResult],
+) -> tuple[AnalysisRunContext | None, JSONResponse | None]:
     snapshot_started = _utc_now()
     try:
         snapshot = create_apk_snapshot(
@@ -338,7 +360,6 @@ def _prepare_run(
         )
         return (
             None,
-            steps,
             _validation_failure_response(
                 run_id=run_id,
                 apk_path=validated_apk.name,
@@ -350,7 +371,7 @@ def _prepare_run(
             ),
         )
 
-    context = replace(
+    updated_context = replace(
         context,
         apk_path=snapshot.path,
         source_apk_path=validated_apk,
@@ -368,7 +389,45 @@ def _prepare_run(
             details=snapshot.to_report_dict(),
         )
     )
-    return context, steps, None
+    return updated_context, None
+
+
+def _prepare_run(
+    apk_path_input: str,
+    *,
+    device_id: str | None,
+) -> tuple[AnalysisRunContext | None, list[StepResult], JSONResponse | None]:
+    run_id = current_task_id() or str(uuid4())
+    analysis_started_at = _utc_now()
+    steps: list[StepResult] = []
+
+    validated_apk, val_err = _validate_apk_path_step(
+        apk_path_input, run_id, analysis_started_at, steps
+    )
+    if val_err is not None:
+        return None, steps, val_err
+    assert validated_apk is not None
+
+    apk_sha256, hash_err = _compute_apk_hash_step(validated_apk, run_id, analysis_started_at, steps)
+    if hash_err is not None:
+        return None, steps, hash_err
+    assert apk_sha256 is not None
+
+    run_ctx, ctx_err = _create_run_context_step(
+        validated_apk, apk_sha256, run_id, device_id, analysis_started_at, steps
+    )
+    if ctx_err is not None:
+        return None, steps, ctx_err
+    assert run_ctx is not None
+
+    snapshot_ctx, snap_err = _create_apk_snapshot_step(
+        validated_apk, apk_sha256, run_ctx, run_id, analysis_started_at, steps
+    )
+    if snap_err is not None:
+        return None, steps, snap_err
+    assert snapshot_ctx is not None
+
+    return snapshot_ctx, steps, None
 
 
 def _artifact_entries(context: AnalysisRunContext) -> list[dict[str, Any]]:

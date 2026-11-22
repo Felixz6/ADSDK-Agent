@@ -115,24 +115,13 @@ class StaticStageResult:
     package_name: str | None = None
 
 
-def run_static_stage(
+def _execute_unpack_stage(
     context: AnalysisRunContext,
+    resolved_tools: PipelineTools,
     steps: list[StepResult],
-    *,
-    package_name_input: str | None = None,
-    tools: PipelineTools | None = None,
-) -> StaticStageResult:
-    """Execute the common static analysis stage: unpack, manifest parse, SDK scan."""
-    resolved_tools = tools or PipelineTools()
-    app_info = _manifest_application_fallback(package_name_input)
-    manifest_evidence: dict[str, Any] = {
-        "status": "not_evaluated",
-        "error_code": None,
-        "message": "Manifest evidence has not been evaluated",
-    }
-    sdk_hits: list[dict[str, Any]] = []
+) -> tuple[Path, bool]:
+    """Execute APK unpack stage and record its step result."""
     analysis_dir = context.unpacked_dir
-
     unpack_started = _utc_now()
     try:
         apktool_info = check_apktool()
@@ -199,97 +188,150 @@ def run_static_stage(
             ),
         )
     )
+    return analysis_dir, unpack_ok
+
+
+def _execute_manifest_stage(
+    context: AnalysisRunContext,
+    analysis_dir: Path,
+    package_name_input: str | None,
+    resolved_tools: PipelineTools,
+    steps: list[StepResult],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Parse AndroidManifest.xml and record its step result."""
+    manifest_started = _utc_now()
+    try:
+        parsed_app_info = _parse_manifest_application(
+            str(analysis_dir),
+            apk_filename=str(context.source_apk_display or ""),
+            parser=resolved_tools.parse_manifest_info,
+        )
+        app_info = {
+            **_manifest_application_fallback(package_name_input),
+            **parsed_app_info,
+        }
+        if not app_info.get("package_name") and package_name_input:
+            app_info["package_name"] = str(package_name_input or "").strip() or None
+        manifest_evidence = {
+            "status": "evaluated",
+            "error_code": None,
+            "message": None,
+        }
+        steps.append(
+            _step_result(
+                "manifest_parse",
+                StepStatus.SUCCESS,
+                manifest_started,
+                required=False,
+                outputs=[str(analysis_dir / "AndroidManifest.xml")],
+            )
+        )
+    except Exception as exc:
+        app_info = _manifest_application_fallback(package_name_input)
+        manifest_evidence = {
+            "status": "not_evaluated",
+            "error_code": "manifest_parse_failed",
+            "message": f"manifest parse failed: {type(exc).__name__}",
+        }
+        steps.append(
+            _step_result(
+                "manifest_parse",
+                StepStatus.FAILED,
+                manifest_started,
+                required=False,
+                error_code="manifest_parse_failed",
+                error_message=f"manifest parse failed: {type(exc).__name__}",
+            )
+        )
+    return app_info, manifest_evidence
+
+
+def _execute_sdk_scan_stage(
+    analysis_dir: Path,
+    resolved_tools: PipelineTools,
+    steps: list[StepResult],
+) -> list[dict[str, Any]]:
+    """Scan unpacked directory for SDK signatures and record its step result."""
+    sdk_started = _utc_now()
+    try:
+        scan_fn = resolved_tools.scan_for_sdks
+        sdk_hits = scan_fn(str(analysis_dir))
+        steps.append(
+            _step_result(
+                "sdk_scan",
+                StepStatus.SUCCESS,
+                sdk_started,
+                required=False,
+                details={"sdk_count": len(sdk_hits)},
+            )
+        )
+    except Exception as exc:
+        sdk_hits = []
+        steps.append(
+            _step_result(
+                "sdk_scan",
+                StepStatus.FAILED,
+                sdk_started,
+                required=False,
+                error_code="sdk_scan_failed",
+                error_message=f"SDK scan failed: {type(exc).__name__}",
+            )
+        )
+    return sdk_hits
+
+
+def _record_skipped_static_steps(
+    package_name_input: str | None,
+    steps: list[StepResult],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Record skipped manifest and SDK steps when unpack fails."""
+    now = _utc_now()
+    steps.extend(
+        [
+            _step_result(
+                "manifest_parse",
+                StepStatus.SKIPPED,
+                now,
+                required=False,
+                warnings=["manifest parse skipped because APK unpack failed"],
+            ),
+            _step_result(
+                "sdk_scan",
+                StepStatus.SKIPPED,
+                now,
+                required=False,
+                warnings=["SDK scan skipped because APK unpack failed"],
+            ),
+        ]
+    )
+    app_info = _manifest_application_fallback(package_name_input)
+    manifest_evidence: dict[str, Any] = {
+        "status": "not_evaluated",
+        "error_code": None,
+        "message": "Manifest evidence has not been evaluated",
+    }
+    return app_info, manifest_evidence
+
+
+def run_static_stage(
+    context: AnalysisRunContext,
+    steps: list[StepResult],
+    *,
+    package_name_input: str | None = None,
+    tools: PipelineTools | None = None,
+) -> StaticStageResult:
+    """Execute the common static analysis stage: unpack, manifest parse, SDK scan."""
+    resolved_tools = tools or PipelineTools()
+    analysis_dir, unpack_ok = _execute_unpack_stage(context, resolved_tools, steps)
 
     if unpack_ok:
-        manifest_started = _utc_now()
-        try:
-            parsed_app_info = _parse_manifest_application(
-                str(analysis_dir),
-                apk_filename=str(context.source_apk_display or ""),
-                parser=resolved_tools.parse_manifest_info,
-            )
-            app_info = {
-                **_manifest_application_fallback(package_name_input),
-                **parsed_app_info,
-            }
-            if not app_info.get("package_name") and package_name_input:
-                app_info["package_name"] = str(package_name_input or "").strip() or None
-            manifest_evidence = {
-                "status": "evaluated",
-                "error_code": None,
-                "message": None,
-            }
-            steps.append(
-                _step_result(
-                    "manifest_parse",
-                    StepStatus.SUCCESS,
-                    manifest_started,
-                    required=False,
-                    outputs=[str(analysis_dir / "AndroidManifest.xml")],
-                )
-            )
-        except Exception as exc:
-            manifest_evidence = {
-                "status": "not_evaluated",
-                "error_code": "manifest_parse_failed",
-                "message": f"manifest parse failed: {type(exc).__name__}",
-            }
-            steps.append(
-                _step_result(
-                    "manifest_parse",
-                    StepStatus.FAILED,
-                    manifest_started,
-                    required=False,
-                    error_code="manifest_parse_failed",
-                    error_message=f"manifest parse failed: {type(exc).__name__}",
-                )
-            )
-
-        sdk_started = _utc_now()
-        try:
-            scan_fn = resolved_tools.scan_for_sdks
-            sdk_hits = scan_fn(str(analysis_dir))
-            steps.append(
-                _step_result(
-                    "sdk_scan",
-                    StepStatus.SUCCESS,
-                    sdk_started,
-                    required=False,
-                    details={"sdk_count": len(sdk_hits)},
-                )
-            )
-        except Exception as exc:
-            sdk_hits = []
-            steps.append(
-                _step_result(
-                    "sdk_scan",
-                    StepStatus.FAILED,
-                    sdk_started,
-                    required=False,
-                    error_code="sdk_scan_failed",
-                    error_message=f"SDK scan failed: {type(exc).__name__}",
-                )
-            )
-    else:
-        now = _utc_now()
-        steps.extend(
-            [
-                _step_result(
-                    "manifest_parse",
-                    StepStatus.SKIPPED,
-                    now,
-                    required=False,
-                    warnings=["manifest parse skipped because APK unpack failed"],
-                ),
-                _step_result(
-                    "sdk_scan",
-                    StepStatus.SKIPPED,
-                    now,
-                    required=False,
-                    warnings=["SDK scan skipped because APK unpack failed"],
-                ),
-            ]
+        app_info, manifest_evidence = _execute_manifest_stage(
+            context, analysis_dir, package_name_input, resolved_tools, steps
         )
+        sdk_hits = _execute_sdk_scan_stage(analysis_dir, resolved_tools, steps)
+    else:
+        app_info, manifest_evidence = _record_skipped_static_steps(package_name_input, steps)
+        sdk_hits = []
 
     resolved_package_name = str(package_name_input or "").strip()
     if not resolved_package_name and app_info:
