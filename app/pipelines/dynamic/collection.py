@@ -27,6 +27,10 @@ from app.pipelines.common import (
     _redact_device_diagnostic,
     _step_result,
 )
+from app.pipelines.dynamic._shared import (
+    _traffic_failure_summary,
+    _traffic_summary_from_result,
+)
 from app.traffic.traffic_events import (
     TrafficCollectionOutcome,
 )
@@ -316,8 +320,6 @@ def _collect_session_traffic(
     mitm_session: Any,
     traffic_started: Any,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from app.pipelines.dynamic.report import _traffic_failure_summary, _traffic_summary_from_result
-
     try:
         traffic_result = mitm_session.validate_traffic()
         traffic_summary = _traffic_summary_from_result(traffic_result)
