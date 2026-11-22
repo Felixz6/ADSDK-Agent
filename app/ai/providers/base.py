@@ -124,7 +124,7 @@ def _detect_profile(base_url: str, explicit: str | None = None) -> ProviderCompa
             return PROFILE_DEEPSEEK
         return PROFILE_GENERIC_OPENAI
     if choice in _ALLOWED_PROFILES:
-        return choice  # type: ignore[return-value]
+        return choice
     # Unknown explicit value -> behave as auto (host-based).
     try:
         host = httpx.URL(base_url).host

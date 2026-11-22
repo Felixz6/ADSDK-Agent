@@ -178,7 +178,7 @@ def _balanced_object_slice(text: str) -> tuple[str, int] | None:
     return None
 
 
-def parse_plan_response(content: str | None) -> ParseOutcome:
+def parse_plan_response(content: str | dict[str, Any] | bytes | None) -> ParseOutcome:
     """Parse a model plan response into a single JSON object dict.
 
     Returns a :class:`ParseOutcome` rather than raising, so the orchestrator

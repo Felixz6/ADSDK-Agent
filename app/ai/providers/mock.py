@@ -50,16 +50,16 @@ class MockAIProvider:
         self.received_max_output: int | None = None
 
     @property
-    def model(self) -> str:  # type: ignore[override]
+    def model(self) -> str:
         return self._model
 
-    def is_configured(self) -> bool:  # type: ignore[override]
+    def is_configured(self) -> bool:
         return True
 
-    def configuration_error(self) -> dict[str, Any] | None:  # type: ignore[override]
+    def configuration_error(self) -> dict[str, Any] | None:
         return None
 
-    def call(  # type: ignore[override]
+    def call(
         self,
         *,
         system_prompt: str,
@@ -112,7 +112,7 @@ class MockAIProvider:
             return (self._plan or _default_mock_plan()), "mock plan"
         return (self._report or _default_mock_report()), "mock report"
 
-    def reachable(self) -> tuple[bool, str | None]:  # type: ignore[override]
+    def reachable(self) -> tuple[bool, str | None]:
         return True, None
 
 

@@ -355,9 +355,10 @@ def calculate_finding_confidence(
     if consent_state == "unknown":
         ceiling = min(ceiling, order["low"])
 
-    for name, value in (("high", 3), ("medium", 2), ("low", 1)):
-        if value == ceiling:
-            return name  # type: ignore[return-value]
+    if ceiling == 3:
+        return "high"
+    if ceiling == 2:
+        return "medium"
     return "low"
 
 
