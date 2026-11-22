@@ -24,6 +24,7 @@ from app.orchestration.cleanup_manager import (
     CleanupStep,
     ResourceOwnershipRegistry,
 )
+from app.orchestration.consent_checkpoint import ConsentCheckpointService
 from app.orchestration.device_ops import (
     _adb_cleanup_action,
     _device_package_pids,
@@ -196,6 +197,49 @@ def _register_owned_resources(
         )
 
 
+def _build_production_effects(
+    *,
+    task_id: str,
+    ai_service: AITaskService,
+    consent_svc: ConsentCheckpointService,
+    snapshot_factory: Any,
+    stop_registered_frida_session: Any,
+) -> ProductionSessionEffects:
+    """Wire atomic ADB and session lifecycle cleanup callbacks."""
+
+    def _safe_report_step(key: str, status: str, message: str | None = None) -> None:
+        report_step(key, status, message)
+
+    return ProductionSessionEffects(
+        task_id=task_id,
+        run_id=task_id,
+        ai_service=ai_service,
+        consent_service=consent_svc,
+        snapshot_factory=snapshot_factory,
+        clock=task_utc_now,
+        is_cancelled=_ai_cancelled,
+        report_step=_safe_report_step,
+        set_proxy_action=lambda device, value: _adb_cleanup_action(
+            device, ["shell", "settings", "put", "global", "http_proxy", value]
+        ),
+        delete_proxy_action=lambda device: _adb_cleanup_action(
+            device, ["shell", "settings", "delete", "global", "http_proxy"]
+        ),
+        kill_pid_action=lambda device, pid: _adb_cleanup_action(
+            device, ["shell", "kill", str(pid)]
+        ),
+        stop_mitm_pid_action=_stop_owned_host_pid,
+        stop_frida_session_action=stop_registered_frida_session,
+        read_proxy_action=_read_device_proxy,
+        resource_present_action=_resource_present,
+        resource_identity_matches_action=_resource_identity_matches,
+        force_stop_package_action=lambda device, package: _adb_cleanup_action(
+            device, ["shell", "am", "force-stop", package]
+        ),
+        consent_wait_seconds=CONSENT_CHECKPOINT_WAIT_SECONDS,
+    )
+
+
 def _build_full_analysis_session(
     *,
     task: TaskRecord,
@@ -301,36 +345,12 @@ def _build_full_analysis_session(
         environment_probe=lambda: env_check(payload.get("device_id")),
     )
 
-    def _safe_report_step(key: str, status: str, message: str | None = None) -> None:
-        report_step(key, status, message)
-
-    effects = ProductionSessionEffects(
+    effects = _build_production_effects(
         task_id=task.id,
-        run_id=task.id,
         ai_service=ai_service,
-        consent_service=consent_svc,
+        consent_svc=consent_svc,
         snapshot_factory=snapshot_factory,
-        clock=task_utc_now,
-        is_cancelled=_ai_cancelled,
-        report_step=_safe_report_step,
-        set_proxy_action=lambda device, value: _adb_cleanup_action(
-            device, ["shell", "settings", "put", "global", "http_proxy", value]
-        ),
-        delete_proxy_action=lambda device: _adb_cleanup_action(
-            device, ["shell", "settings", "delete", "global", "http_proxy"]
-        ),
-        kill_pid_action=lambda device, pid: _adb_cleanup_action(
-            device, ["shell", "kill", str(pid)]
-        ),
-        stop_mitm_pid_action=_stop_owned_host_pid,
-        stop_frida_session_action=stop_registered_frida_session,
-        read_proxy_action=_read_device_proxy,
-        resource_present_action=_resource_present,
-        resource_identity_matches_action=_resource_identity_matches,
-        force_stop_package_action=lambda device, package: _adb_cleanup_action(
-            device, ["shell", "am", "force-stop", package]
-        ),
-        consent_wait_seconds=CONSENT_CHECKPOINT_WAIT_SECONDS,
+        stop_registered_frida_session=stop_registered_frida_session,
     )
     session = FullAnalysisSession(
         task_id=task.id,
