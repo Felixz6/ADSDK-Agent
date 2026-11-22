@@ -21,7 +21,6 @@ from fastapi.testclient import TestClient
 
 import app.config as app_config
 import app.main as main_module
-import app.pipelines.dynamic as dynamic_module
 import app.pipelines.full_analysis as full_analysis_module
 import app.pipelines.task_runner as task_runner
 from app.ai.cache import AIResponseCache
@@ -1254,7 +1253,7 @@ def test_post_tasks_full_analysis_routes_only_through_m7b_session(
         },
     )
     monkeypatch.setattr(full_analysis_module.FullAnalysisSession, "run", run_session)
-    monkeypatch.setattr(dynamic_module, "dynamic_analyze", legacy_dynamic)
+    monkeypatch.setattr(task_runner, "dynamic_analyze", legacy_dynamic)
     monkeypatch.setitem(main_module.app.dependency_overrides, get_task_service, lambda: service)
     monkeypatch.setitem(
         main_module.app.dependency_overrides, get_task_repository, lambda: repository

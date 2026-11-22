@@ -125,12 +125,14 @@ def _process_diagnostics_stage(
         diagnostic_session = (
             runtime_failure_sessions[-1] if runtime_failure_sessions else frida_session
         )
-        logcat = LogcatCollector(
+        logcat_factory = getattr(environment.tools, "logcat_collector_factory", LogcatCollector)
+        logcat = logcat_factory(
             device=device_context,
             package_name=package_name,
             output_dir=dynamic_diagnostics_dir,
         ).collect(pid=getattr(diagnostic_session, "pid", None))
-        pid_result = run_cmd(
+        run_cmd_fn = getattr(environment.tools, "run_cmd", run_cmd)
+        pid_result = run_cmd_fn(
             device_context.adb_command("shell", "pidof", package_name),
             timeout=10,
         )
@@ -552,7 +554,10 @@ def _assemble_dynamic_report(
         dynamic_events,
         evidence_available=hook_evidence_available,
     )
-    strict_dynamic_findings = evaluate_timeline_rules(
+    evaluate_timeline_fn = getattr(
+        environment.tools, "evaluate_timeline_rules", evaluate_timeline_rules
+    )
+    strict_dynamic_findings = evaluate_timeline_fn(
         events_json_path=str(context.events_path),
         consent_time=execution.consent_time,
         pre_consent_seconds=req.pre_consent_seconds,

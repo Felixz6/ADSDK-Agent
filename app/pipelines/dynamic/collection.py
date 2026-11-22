@@ -207,10 +207,7 @@ def _run_collection_stage(
     mitm_session = environment.mitm_session
 
     if environment.install_ok and environment.device_context is not None:
-        import sys
-
-        dyn_mod = sys.modules.get("app.pipelines.dynamic")
-        run_fn = getattr(dyn_mod, "run_dynamic_collection", run_dynamic_collection)
+        run_fn = getattr(environment.tools, "run_dynamic_collection", run_dynamic_collection)
         collection_result = run_fn(
             frida_session=frida_session,
             mitm_session=mitm_session,

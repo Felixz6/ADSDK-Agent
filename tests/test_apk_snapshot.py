@@ -10,10 +10,10 @@ from typing import BinaryIO
 import pytest
 
 import app.config as app_config
-import app.pipelines.common as common_module
 from app.core import apk_snapshot as snapshot_module, apk_unpack
 from app.core.apk_snapshot import ApkSnapshotError, create_apk_snapshot
 from app.core.device import DeviceContext
+from app.pipelines.common import _prepare_run
 from app.tools import adb_runner, utils as tools_utils
 
 
@@ -344,7 +344,7 @@ def test_prepare_run_rebinds_all_downstream_reads_to_verified_snapshot(
         (tmp_path.resolve(),),
     )
 
-    context, steps, failure = common_module._prepare_run(
+    context, steps, failure = _prepare_run(
         str(source),
         device_id=None,
     )

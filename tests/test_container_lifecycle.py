@@ -266,3 +266,114 @@ def test_same_app_sees_identical_services_across_route_runner_and_pipeline(tmp_p
     assert len(captured_lease_reg) == 1
     assert captured_lease_reg[0] is container.device_lease_registry
     assert captured_consent_svc[0] is container.consent_checkpoint_service
+
+
+def test_container_tools_substitution_and_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Container tools must be injectable, called by pipelines, and isolated across containers."""
+    from datetime import UTC, datetime
+
+    from app import config as app_config
+    from app.container import build_container
+    from app.core.device import DeviceContext
+    from app.core.run_context import AnalysisRunContext
+    from app.pipelines.static_stage import run_static_stage
+    from app.pipelines.tools import PipelineTools
+
+    monkeypatch.setattr(app_config, "STATIC_UNPACK_CACHE_DIR", str(tmp_path / "cache"))
+
+    calls1 = []
+    calls2 = []
+
+    def fake_unpack1(apk, out_dir):
+        calls1.append((apk, out_dir))
+        p = Path(out_dir)
+        p.mkdir(parents=True, exist_ok=True)
+        (p / "AndroidManifest.xml").write_text(
+            "<manifest package='com.test.one'/>", encoding="utf-8"
+        )
+        return {"returncode": 0, "stdout": "", "stderr": "", "cmd": []}
+
+    def fake_unpack2(apk, out_dir):
+        calls2.append((apk, out_dir))
+        return {"returncode": -1, "stdout": "", "stderr": "failed", "cmd": []}
+
+    tools1 = PipelineTools(
+        unpack_apk=fake_unpack1,
+        parse_manifest_info=lambda _: {"package_name": "com.test.one"},
+        scan_for_sdks=lambda _: [],
+        select_device_context=lambda device_id=None: DeviceContext(serial="device-1"),
+    )
+    tools2 = PipelineTools(
+        unpack_apk=fake_unpack2,
+        select_device_context=lambda device_id=None: DeviceContext(serial="device-2"),
+    )
+
+    c1 = build_container(settings={"task_database_path": str(tmp_path / "c1.db")}, tools=tools1)
+    c2 = build_container(settings={"task_database_path": str(tmp_path / "c2.db")}, tools=tools2)
+
+    assert c1.tools is tools1
+    assert c2.tools is tools2
+    assert c1.tools.unpack_apk is fake_unpack1
+    assert c2.tools.unpack_apk is fake_unpack2
+
+    run_dir1 = tmp_path / "run1"
+    run_dir1.mkdir()
+    apk1 = tmp_path / "sample1.apk"
+    apk1.write_bytes(b"dummy1")
+    ctx1 = AnalysisRunContext(
+        run_id="run-1",
+        apk_path=apk1,
+        apk_sha256="1" * 64,
+        output_root=tmp_path,
+        run_dir=run_dir1,
+        unpacked_dir=run_dir1 / "unpacked",
+        hook_log_path=run_dir1 / "hook.log",
+        events_path=run_dir1 / "events.json",
+        traffic_dir=run_dir1 / "traffic",
+        traffic_summary_path=run_dir1 / "traffic" / "traffic-summary.json",
+        report_json_path=run_dir1 / "report.json",
+        report_markdown_path=run_dir1 / "report.md",
+        device_id=None,
+        normalized_apk_name="sample1.apk",
+        started_at=datetime.now(UTC),
+        flow_file_path=run_dir1 / "traffic" / "flows.mitm",
+        mitm_stream_log_path=run_dir1 / "traffic" / "mitm_stream.log",
+    )
+
+    steps1 = []
+    res1 = run_static_stage(ctx1, steps1, tools=c1.tools)
+    assert res1.unpack_ok is True
+    assert len(calls1) == 1
+    assert len(calls2) == 0
+
+    run_dir2 = tmp_path / "run2"
+    run_dir2.mkdir()
+    apk2 = tmp_path / "sample2.apk"
+    apk2.write_bytes(b"dummy2")
+    ctx2 = AnalysisRunContext(
+        run_id="run-2",
+        apk_path=apk2,
+        apk_sha256="2" * 64,
+        output_root=tmp_path,
+        run_dir=run_dir2,
+        unpacked_dir=run_dir2 / "unpacked",
+        hook_log_path=run_dir2 / "hook.log",
+        events_path=run_dir2 / "events.json",
+        traffic_dir=run_dir2 / "traffic",
+        traffic_summary_path=run_dir2 / "traffic" / "traffic-summary.json",
+        report_json_path=run_dir2 / "report.json",
+        report_markdown_path=run_dir2 / "report.md",
+        device_id=None,
+        normalized_apk_name="sample2.apk",
+        started_at=datetime.now(UTC),
+        flow_file_path=run_dir2 / "traffic" / "flows.mitm",
+        mitm_stream_log_path=run_dir2 / "traffic" / "mitm_stream.log",
+    )
+
+    steps2 = []
+    res2 = run_static_stage(ctx2, steps2, tools=c2.tools)
+    assert res2.unpack_ok is False
+    assert len(calls1) == 1
+    assert len(calls2) == 1

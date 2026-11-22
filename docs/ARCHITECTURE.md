@@ -95,6 +95,7 @@ ADSDK-Agent 是一个面向 Android APK 的本地隐私合规审计与取证分�
    - **依赖替换**：测试如需替换探针与抓包会话，使用 FastAPI 原生机制 `app.dependency_overrides`：
      ```python
      from app.api.deps import get_frida_session_factory, get_mitm_session_factory
+
      app.dependency_overrides[get_frida_session_factory] = lambda: FakeTestFridaSession
      app.dependency_overrides[get_mitm_session_factory] = lambda: FakeTestMitmSession
      ```

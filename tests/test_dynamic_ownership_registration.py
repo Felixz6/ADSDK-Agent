@@ -9,7 +9,13 @@ from typing import Any
 from app.core.device import DeviceContext
 from app.core.run_context import AnalysisRunContext
 from app.orchestration.cleanup_manager import ResourceOwnershipRegistry
-from app.pipelines import dynamic as dynamic_module
+from app.pipelines.dynamic.sessions import (
+    _make_collection_callbacks,
+    _make_launch_target_for_attach,
+    _noop_register_runtime_target,
+    _register_owned_target,
+)
+from app.pipelines.tools import PipelineTools
 
 
 def _context(tmp_path: Path) -> AnalysisRunContext:
@@ -47,8 +53,8 @@ def test_frida_started_spawn_registers_owned_target_and_helper(tmp_path: Path) -
     context = _context(tmp_path)
     device = DeviceContext(serial="emulator-5554")
     registry = ResourceOwnershipRegistry()
-    register = dynamic_module._register_owned_target(context, device, "com.example.app", registry)
-    _, register_frida_started = dynamic_module._make_collection_callbacks(
+    register = _register_owned_target(context, device, "com.example.app", registry)
+    _, register_frida_started = _make_collection_callbacks(
         context, device, "com.example.app", registry, register
     )
 
@@ -69,8 +75,8 @@ def test_frida_started_attach_registers_external_target(tmp_path: Path) -> None:
     context = _context(tmp_path)
     device = DeviceContext(serial="emulator-5554")
     registry = ResourceOwnershipRegistry()
-    register = dynamic_module._register_owned_target(context, device, "com.example.app", registry)
-    _, register_frida_started = dynamic_module._make_collection_callbacks(
+    register = _register_owned_target(context, device, "com.example.app", registry)
+    _, register_frida_started = _make_collection_callbacks(
         context, device, "com.example.app", registry, register
     )
 
@@ -87,12 +93,12 @@ def test_noop_registrar_never_claims_ownership(tmp_path: Path) -> None:
     context = _context(tmp_path)
     device = DeviceContext(serial="emulator-5554")
     registry = ResourceOwnershipRegistry()
-    _, register_frida_started = dynamic_module._make_collection_callbacks(
+    _, register_frida_started = _make_collection_callbacks(
         context,
         device,
         "com.example.app",
         registry,
-        dynamic_module._noop_register_runtime_target,
+        _noop_register_runtime_target,
     )
 
     register_frida_started(_FakeSession(pid=4242, mode="spawn_suspended", helper_pid=999))
@@ -103,18 +109,13 @@ def test_noop_registrar_never_claims_ownership(tmp_path: Path) -> None:
 
 
 def test_launch_target_registers_pid_after_successful_launch(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path,
 ) -> None:
     context = _context(tmp_path)
     device = DeviceContext(serial="emulator-5554")
     registry = ResourceOwnershipRegistry()
-    register = dynamic_module._register_owned_target(context, device, "com.example.app", registry)
+    register = _register_owned_target(context, device, "com.example.app", registry)
 
-    monkeypatch.setattr(
-        dynamic_module,
-        "launch_app",
-        lambda package, device_context=None: {"returncode": 0},
-    )
     pid_calls = {"count": 0}
 
     def fake_run_cmd(command: list[str], timeout: int = 10) -> dict[str, Any]:
@@ -123,11 +124,14 @@ def test_launch_target_registers_pid_after_successful_launch(
             return {"returncode": 1, "stdout": ""}
         return {"returncode": 0, "stdout": "4242"}
 
-    monkeypatch.setattr(dynamic_module, "run_cmd", fake_run_cmd)
-    monkeypatch.setattr(dynamic_module.time, "sleep", lambda _seconds: None)
+    tools = PipelineTools(
+        launch_app=lambda package, device_context=None: {"returncode": 0},
+        run_cmd=fake_run_cmd,
+        sleep=lambda _seconds: None,
+    )
 
-    launch = dynamic_module._make_launch_target_for_attach(
-        context, device, "com.example.app", register
+    launch = _make_launch_target_for_attach(
+        context, device, "com.example.app", register, tools=tools
     )
     payload = launch()
 

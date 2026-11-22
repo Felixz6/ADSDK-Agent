@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,7 @@ from app.frida import FridaDiagnosticsService, FridaServerManager
 from app.frida.frida_session import FridaSession
 from app.orchestration.consent_checkpoint import ConsentCheckpointService
 from app.orchestration.device_lease import LeaseRegistry
+from app.pipelines.tools import PipelineTools
 from app.repositories import TaskRepository
 from app.repositories.task_repository import utc_now as task_utc_now
 from app.services import TaskService
@@ -58,6 +59,7 @@ class Container:
     frida_session_factory: Any = default_frida_session_factory
     mitm_session_factory: Any = default_mitm_session_factory
     frida_real_device: bool = True
+    tools: PipelineTools = field(default_factory=PipelineTools)
 
 
 def _get_setting(settings: Any, key: str, default: Any) -> Any:
@@ -68,7 +70,7 @@ def _get_setting(settings: Any, key: str, default: Any) -> Any:
     return getattr(settings, key, default)
 
 
-def build_container(settings: Any = None) -> Container:
+def build_container(settings: Any = None, tools: PipelineTools | None = None) -> Container:
     """Build and wire application services without executing database or disk IO."""
     db_path = _get_setting(settings, "task_database_path", TASK_DATABASE_PATH)
     ai_settings_path = _get_setting(settings, "ai_settings_path", None)
@@ -102,6 +104,7 @@ def build_container(settings: Any = None) -> Container:
     )
 
     frida_real = _get_setting(settings, "frida_real_device", True)
+    resolved_tools = tools or _get_setting(settings, "tools", None) or PipelineTools()
 
     container = Container(
         task_repository=repository,
@@ -116,6 +119,7 @@ def build_container(settings: Any = None) -> Container:
         frida_session_factory=default_frida_session_factory,
         mitm_session_factory=default_mitm_session_factory,
         frida_real_device=frida_real,
+        tools=resolved_tools,
     )
 
     from functools import partial
@@ -128,6 +132,7 @@ def build_container(settings: Any = None) -> Container:
 
 __all__ = [
     "Container",
+    "PipelineTools",
     "build_container",
     "default_frida_session_factory",
     "default_mitm_session_factory",
