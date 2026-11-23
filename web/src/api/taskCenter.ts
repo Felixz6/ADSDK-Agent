@@ -5,6 +5,7 @@ import type {
   ComparisonCreateRequest,
   ComparisonResult,
   ConsentCheckpointAction,
+  ConsentCheckpointRequest,
   ConsentCheckpointState,
   TaskActionResponse,
   TaskAIArtifactResponse,
@@ -90,9 +91,10 @@ export async function resolveConsentCheckpoint(
   action: ConsentCheckpointAction,
   note = '',
 ): Promise<ConsentCheckpointState> {
+  const payload: ConsentCheckpointRequest = { action, note }
   const { data } = await api.post<ConsentCheckpointState>(
     `/tasks/${encodeURIComponent(taskId)}/consent-checkpoint`,
-    { action, note },
+    payload,
   )
   return data
 }

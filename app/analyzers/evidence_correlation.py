@@ -355,9 +355,9 @@ def build_evidence_correlations(
         if isinstance(raw, Mapping) and (model := _validate_dynamic(raw, index)) is not None
     ]
     requests = [
-        model
+        net_model
         for index, raw in enumerate(network_requests)
-        if isinstance(raw, Mapping) and (model := _validate_network(raw, index)) is not None
+        if isinstance(raw, Mapping) and (net_model := _validate_network(raw, index)) is not None
     ]
     comparable_time_seen = False
     items: list[CorrelationItem] = []
@@ -391,7 +391,7 @@ def build_evidence_correlations(
                 dynamic_consent_state=event_consent,
                 network_consent_state=request_consent,
             )
-            reasons = [
+            reasons: list[ReasonCode] = [
                 "monotonic_near" if time_source == "monotonic" else "utc_time_near",
             ]
             if event_consent != "unknown" and event_consent == request_consent:

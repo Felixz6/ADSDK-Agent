@@ -7,8 +7,14 @@ import type { AppInfo } from '@/types/api'
 export function PermissionSummaryPanel({ appInfo }: { appInfo?: AppInfo | null }) {
   const [expanded, setExpanded] = useState(false)
   const [sensitiveOnly, setSensitiveOnly] = useState(true)
-  const declared = appInfo?.declared_permissions ?? appInfo?.permissions ?? []
-  const sensitive = appInfo?.sensitive_permissions ?? []
+  const declared = useMemo(
+    () => appInfo?.declared_permissions ?? appInfo?.permissions ?? [],
+    [appInfo?.declared_permissions, appInfo?.permissions],
+  )
+  const sensitive = useMemo(
+    () => appInfo?.sensitive_permissions ?? [],
+    [appInfo?.sensitive_permissions],
+  )
   const highAttention = appInfo?.high_attention_permissions ?? []
   const custom = appInfo?.custom_permissions ?? []
   const component = appInfo?.component_permissions ?? []

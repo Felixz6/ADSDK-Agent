@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Literal
 
 from app.models import BehaviorTimeline, TimelineEvent
 
@@ -13,7 +13,9 @@ def _finite_number(value: Any) -> float | None:
     return number if math.isfinite(number) and number >= 0 else None
 
 
-def classify_timing(monotonic: Any, consent_monotonic: Any) -> str:
+def classify_timing(
+    monotonic: Any, consent_monotonic: Any
+) -> Literal["pre_consent", "post_consent", "unknown"]:
     event_time = _finite_number(monotonic)
     consent_time = _finite_number(consent_monotonic)
     if event_time is None or consent_time is None:
@@ -21,7 +23,7 @@ def classify_timing(monotonic: Any, consent_monotonic: Any) -> str:
     return "pre_consent" if event_time < consent_time else "post_consent"
 
 
-def _severity(category: str, consent_state: str) -> str:
+def _severity(category: str, consent_state: str) -> Literal["low", "medium", "high", "critical"]:
     if consent_state == "pre_consent" and category in {"identifier", "network", "permission"}:
         return "high"
     if category in {"protocol_error", "failure"}:
@@ -82,7 +84,9 @@ def build_timeline(report: dict[str, Any]) -> BehaviorTimeline:
         monotonic = _finite_number(raw.get("monotonic_ms"))
         state = classify_timing(monotonic, consent)
         category = str(raw.get("category") or raw.get("event_type") or "system")
-        source = "control" if raw.get("type") == "control" else "frida"
+        source: Literal["frida", "network", "system", "control"] = (
+            "control" if raw.get("type") == "control" else "frida"
+        )
         relative = None
         if monotonic is not None and start is not None and monotonic >= start:
             relative = int(round(monotonic - start))

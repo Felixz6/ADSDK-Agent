@@ -1,9 +1,14 @@
 import type { AnalyzeResponse } from './api'
+import type { components } from './openapi'
 
-export type TaskType = 'static' | 'dynamic' | 'comparison' | 'ai_orchestrated'
-export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-export type TaskStepStatus = 'success' | 'partial' | 'failed' | 'skipped' | 'running'
-export type AnalysisScope = 'static_only' | 'dynamic_only' | 'full_analysis' | 'report_only'
+type Schemas = components['schemas']
+type OptionalKeys<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
+type RequiredKeys<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>
+
+export type TaskType = Schemas['TaskRecord']['task_type']
+export type TaskStatus = Schemas['TaskRecord']['status']
+export type TaskStepStatus = Schemas['TaskStepRecord']['status']
+export type AnalysisScope = Schemas['TaskCreateRequest']['analysis_scope']
 
 /**
  * M7A — Consent 手动检查点。
@@ -11,113 +16,54 @@ export type AnalysisScope = 'static_only' | 'dynamic_only' | 'full_analysis' | '
  * 操作员在真机上人工完成 Consent 动作后回报结论。AI 不得自动确认,
  * 任何超时都不会产生 `confirmed`;看门狗只能 `cancelled`(退出等待并进入清理)。
  */
-export type ConsentCheckpointAction = 'confirmed' | 'not_found' | 'skipped'
-export type ConsentCheckpointStatus =
-  | ConsentCheckpointAction
-  | 'awaiting'
-  | 'cancelled'
-  | 'expired'
+export type ConsentCheckpointAction = Schemas['ConsentCheckpointRequest']['action']
+export type ConsentCheckpointStatus = Schemas['ConsentCheckpointState']['status']
+export type ConsentCheckpointRequest = OptionalKeys<Schemas['ConsentCheckpointRequest'], 'note'>
 
-export interface ConsentCheckpointState {
-  task_id: string
-  run_id: string
-  status: ConsentCheckpointStatus
-  entered_at: string
-  resolved_at: string | null
-  resolved_by_action: ConsentCheckpointAction | null
-  last_heartbeat_at: string | null
-  note: string
-}
+export type ConsentCheckpointState = RequiredKeys<
+  Schemas['ConsentCheckpointState'],
+  'resolved_at' | 'resolved_by_action' | 'last_heartbeat_at'
+>
 
-export interface TaskCreateRequest {
-  task_type: 'static' | 'dynamic' | 'ai_orchestrated'
-  apk_path: string
-  package_name?: string
-  device_id?: string
-  enable_traffic?: boolean
-  enable_ui_stimulation?: boolean
-  consent_after_seconds?: number | null
-  pre_consent_seconds?: number
-  post_consent_seconds?: number
-  collection_timeout_seconds?: number
-  dynamic_mode_policy?: 'strict' | 'balanced' | 'attach_only'
-  /** AI 编排分析(task_type='ai_orchestrated')专用字段 */
-  objective?: string
-  analysis_scope?: AnalysisScope
-  analysis_mode?: 'static_only' | 'full_analysis' | 'report_only'
-  allow_dynamic?: boolean
-  allow_network?: boolean
-  ai_enabled?: boolean
-  token_budget?: number
-  report_language?: string
-  confirmed_tools?: string[]
-}
+export type TaskCreateRequest = OptionalKeys<
+  Schemas['TaskCreateRequest'],
+  | 'enable_traffic'
+  | 'enable_ui_stimulation'
+  | 'pre_consent_seconds'
+  | 'post_consent_seconds'
+  | 'collection_timeout_seconds'
+  | 'dynamic_mode_policy'
+  | 'analysis_scope'
+  | 'allow_dynamic'
+  | 'allow_network'
+  | 'ai_enabled'
+  | 'token_budget'
+  | 'report_language'
+>
 
-export interface TaskStep {
-  id: number
-  task_id: string
-  step_key: string
-  step_name: string
-  status: TaskStepStatus
-  progress_percent: number
-  message: string | null
-  started_at: string | null
-  completed_at: string | null
-  updated_at: string
-}
+export type TaskStep = RequiredKeys<
+  Schemas['TaskStepRecord'],
+  'message' | 'started_at' | 'completed_at'
+>
 
-export interface TaskRecord {
-  id: string
-  task_type: TaskType
-  status: TaskStatus
-  apk_path: string | null
-  apk_snapshot_path: string | null
-  apk_sha256: string | null
-  package_name: string | null
-  app_name: string | null
-  version_name: string | null
-  version_code: string | null
-  device_id: string | null
-  enable_traffic: boolean
-  enable_ui_stimulation: boolean
-  progress_percent: number
-  current_stage: string | null
-  cancelled_at_stage?: string | null
-  error_code: string | null
-  error_message: string | null
-  report_json_path: string | null
-  report_markdown_path: string | null
-  report_html_path: string | null
-  risk_score: number | null
-  risk_level: string | null
-  request_payload: Record<string, unknown>
-  created_at: string
-  started_at: string | null
-  completed_at: string | null
-  updated_at: string
+export type TaskRecord = Required<
+  Omit<Schemas['TaskRecord'], 'cancelled_at_stage' | 'steps' | 'request_payload'>
+> & {
+  cancelled_at_stage?: Schemas['TaskRecord']['cancelled_at_stage']
   steps: TaskStep[]
+  request_payload: Record<string, unknown>
 }
 
-export interface TaskListResponse {
+export type TaskListResponse = Omit<Schemas['TaskListResponse'], 'items'> & {
   items: TaskRecord[]
-  total: number
-  page: number
-  page_size: number
-  pages: number
 }
 
-export interface TaskActionResponse {
+export type TaskActionResponse = Omit<Schemas['TaskActionResponse'], 'task'> & {
   task: TaskRecord
-  message: string
 }
 
-export interface TaskReportResponse {
-  task_id: string
-  status: TaskStatus
+export type TaskReportResponse = Omit<Required<Schemas['TaskReportResponse']>, 'report'> & {
   report: AnalyzeResponse | null
-  json_url: string | null
-  markdown_url: string | null
-  html_url: string | null
 }
 
 export interface TaskFilters {
@@ -129,13 +75,7 @@ export interface TaskFilters {
   sort?: '-created_at' | 'created_at' | '-updated_at' | 'updated_at'
 }
 
-export interface TaskSystemStatus {
-  database_ok: boolean
-  database_path: string
-  running_tasks: number
-  queued_tasks: number
-  occupied_devices: string[]
-}
+export type TaskSystemStatus = RequiredKeys<Schemas['TaskSystemStatus'], 'occupied_devices'>
 
 // --- AI 编排(M6A)-----------------------------------------------------------
 export type AISynthesisStatus =
@@ -153,20 +93,10 @@ export type AIToolStatus =
   | 'blocked_confirmation_required'
 
 /** GET /ai/status —— 绝不包含 API Key */
-export interface AIStatusResponse {
-  enabled: boolean
-  provider: string
-  model: string
-  configured: boolean
-  /** null 表示「未按需探测」,不是「不可达」 */
-  reachable: boolean | null
-  last_error_code: string | null
-  default_token_budget: number
-  max_rounds: number
-  max_tool_calls: number
-  report_language: string
-  allow_dynamic_tools: boolean
-}
+export type AIStatusResponse = RequiredKeys<
+  Schemas['AIStatusResponse'],
+  'reachable' | 'last_error_code'
+>
 
 export interface AIPlanStep {
   step_id: string
@@ -353,44 +283,32 @@ export interface AIOrchestrationSection {
   diagnostic: AIRuntimeDiagnostic | null
 }
 
-export interface TaskAIArtifactResponse {
-  task_id: string
-  status: TaskStatus
-  available: boolean
-  payload: Record<string, unknown> | null
-}
+export type TaskAIArtifactResponse = RequiredKeys<Schemas['TaskAIArtifactResponse'], 'payload'>
 
 /** POST /tasks/{id}/ai-report/regenerate 返回的精简摘要(无秘密/无模型文本)。 */
-export interface TaskAIArtifactSummary {
-  task_id: string
-  status: TaskStatus
-  ai_status: string
-  ai_section: Record<string, unknown>
-}
+export type TaskAIArtifactSummary = Schemas['TaskAIArtifactSummary']
 
-export interface DifferenceSet {
-  added: string[]
-  removed: string[]
-  unchanged: string[]
-  unavailable: boolean
-}
+export type DifferenceSet = RequiredKeys<
+  Schemas['DifferenceSet'],
+  'added' | 'removed' | 'unchanged'
+>
 
-export interface ComparisonCreateRequest {
-  base_task_id: string
-  target_task_id: string
-  allow_cross_app?: boolean
-}
+export type ComparisonCreateRequest = OptionalKeys<
+  Schemas['ComparisonCreateRequest'],
+  'allow_cross_app'
+>
 
-export interface ComparisonResult {
-  schema_version: 'comparison-v1'
-  id: string
-  task_id: string
-  base_task_id: string
-  target_task_id: string
-  created_at?: string | null
-  base_summary: Record<string, unknown>
-  target_summary: Record<string, unknown>
-  risk_score_delta: number | null
+export type ComparisonResult = Omit<
+  RequiredKeys<Schemas['ComparisonResult'], 'risk_score_delta' | 'highlights' | 'warnings'>,
+  | 'permissions'
+  | 'high_risk_permissions'
+  | 'sdks'
+  | 'sdk_vendors'
+  | 'sdk_categories'
+  | 'rules'
+  | 'domains'
+  | 'dynamic_behaviors'
+> & {
   permissions: DifferenceSet
   high_risk_permissions: DifferenceSet
   sdks: DifferenceSet
@@ -399,7 +317,4 @@ export interface ComparisonResult {
   rules: DifferenceSet
   domains: DifferenceSet
   dynamic_behaviors: DifferenceSet
-  evidence_complete: boolean
-  highlights: string[]
-  warnings: string[]
 }

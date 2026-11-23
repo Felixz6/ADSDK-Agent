@@ -66,11 +66,17 @@ class ComparisonService:
         target_task = self.repository.get_task(request.target_task_id)
         if base_task is None or target_task is None:
             raise KeyError("comparison input task not found")
-        for task in (base_task, target_task):
-            if task.status != "completed" or not task.report_json_path:
-                raise ValueError("comparison requires completed tasks with static reports")
-        base_report = self._read_report(base_task.report_json_path)
-        target_report = self._read_report(target_task.report_json_path)
+        base_report_path = base_task.report_json_path
+        target_report_path = target_task.report_json_path
+        if (
+            base_task.status != "completed"
+            or target_task.status != "completed"
+            or not base_report_path
+            or not target_report_path
+        ):
+            raise ValueError("comparison requires completed tasks with static reports")
+        base_report = self._read_report(base_report_path)
+        target_report = self._read_report(target_report_path)
         base_app = base_report.get("app_info") or {}
         target_app = target_report.get("app_info") or {}
         base_package = base_app.get("package_name")

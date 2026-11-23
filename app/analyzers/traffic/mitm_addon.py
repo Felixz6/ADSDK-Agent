@@ -13,11 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-try:  # pragma: no cover - exercised only when mitmproxy is installed.
-    from mitmproxy import ctx as _mitm_ctx
-except ImportError:  # Tests and static analysis do not require mitmproxy.
-    _mitm_ctx = None
-
 from app.core.clock import utc_now as _utc_now
 from app.traffic.traffic_events import (
     HttpRequestRecord,
@@ -25,6 +20,12 @@ from app.traffic.traffic_events import (
     build_http_request_record,
     extract_query_keys,
 )
+
+_mitm_ctx: Any
+try:  # pragma: no cover - exercised only when mitmproxy is installed.
+    from mitmproxy import ctx as _mitm_ctx
+except ImportError:  # Tests and static analysis do not require mitmproxy.
+    _mitm_ctx = None
 
 
 class SafeTrafficAddon:

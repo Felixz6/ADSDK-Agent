@@ -19,7 +19,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from app.ai.context_builder import (
@@ -446,7 +446,8 @@ class AITaskService:
                 ),
             )
         self._environment = payload
-        checks = payload.get("checks") if isinstance(payload.get("checks"), Mapping) else {}
+        raw_checks = payload.get("checks")
+        checks: Mapping[str, Any] = raw_checks if isinstance(raw_checks, Mapping) else {}
         passed = sum(1 for value in checks.values() if value)
         return ToolCompactResult(
             tool_name="environment_check",
@@ -501,10 +502,12 @@ class AITaskService:
                 ),
             )
         self._report_cache = report
-        status = "success" if report.get("status") != "failed" else "failed"
+        status: Literal["success", "failed"] = (
+            "success" if report.get("status") != "failed" else "failed"
+        )
         return ToolCompactResult(
             tool_name="static_analysis",
-            status=status,  # type: ignore[arg-type]
+            status=status,
             summary="静态分析完成",
             metrics=_static_summary_metrics(report),
             artifact_refs=make_artifact_refs({"report_json": self._artifacts.report_json}),
@@ -611,9 +614,8 @@ class AITaskService:
                 summary="本次没有可用的事件—请求关联结果",
                 limitations=["关联类结论未评估"],
             )
-        summary = (
-            correlation.get("summary") if isinstance(correlation.get("summary"), Mapping) else {}
-        )
+        raw_summary = correlation.get("summary")
+        summary: Mapping[str, Any] = raw_summary if isinstance(raw_summary, Mapping) else {}
         return ToolCompactResult(
             tool_name="evidence_correlation",
             status="success",
@@ -638,7 +640,8 @@ class AITaskService:
                 summary="本次没有可用的隐私发现结果",
                 limitations=["隐私发现未评估；未评估不代表不存在风险"],
             )
-        summary = findings.get("summary") if isinstance(findings.get("summary"), Mapping) else {}
+        raw_summary = findings.get("summary")
+        summary: Mapping[str, Any] = raw_summary if isinstance(raw_summary, Mapping) else {}
         evidence_ids = [
             str(item.get("finding_id"))
             for item in findings.get("findings") or []
@@ -770,8 +773,10 @@ def _static_evidence_valid(report: Mapping[str, Any]) -> bool:
 
 
 def _static_summary_metrics(report: Mapping[str, Any]) -> dict[str, Any]:
-    app_info = report.get("app_info") if isinstance(report.get("app_info"), Mapping) else {}
-    risk = report.get("risk_summary") if isinstance(report.get("risk_summary"), Mapping) else {}
+    raw_app_info = report.get("app_info")
+    app_info: Mapping[str, Any] = raw_app_info if isinstance(raw_app_info, Mapping) else {}
+    raw_risk = report.get("risk_summary")
+    risk: Mapping[str, Any] = raw_risk if isinstance(raw_risk, Mapping) else {}
     return {
         "sdk_count": int(report.get("sdk_count") or 0),
         "permission_count": len(app_info.get("permissions") or []),
@@ -784,11 +789,8 @@ def _static_summary_metrics(report: Mapping[str, Any]) -> dict[str, Any]:
 
 def _dynamic_summary_metrics(report: Mapping[str, Any]) -> dict[str, Any]:
     events = report.get("dynamic_events")
-    quality = (
-        report.get("dynamic_evidence_quality")
-        if isinstance(report.get("dynamic_evidence_quality"), Mapping)
-        else {}
-    )
+    raw_quality = report.get("dynamic_evidence_quality")
+    quality: Mapping[str, Any] = raw_quality if isinstance(raw_quality, Mapping) else {}
     return {
         "event_count": len(events) if isinstance(events, list) else 0,
         "collection_status": str(report.get("collection_status") or "unknown"),

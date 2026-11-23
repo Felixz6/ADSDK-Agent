@@ -102,6 +102,9 @@ jobs:
           npm --prefix web run gen:api
           git diff --exit-code web/src/types/openapi.ts
 
+      - name: Lint
+        run: npm --prefix web run lint
+
       - name: Typecheck
         run: npm --prefix web run typecheck
 

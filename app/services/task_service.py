@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import concurrent.futures
 import json
 import logging
@@ -306,7 +307,7 @@ class TaskService:
         result: dict[str, Any] | JSONResponse,
     ) -> dict[str, Any]:
         if isinstance(result, JSONResponse):
-            return json.loads(result.body.decode("utf-8"))
+            return json.loads(bytes(result.body).decode("utf-8"))
         return dict(result)
 
     def _record_progress(
@@ -527,6 +528,6 @@ class TaskService:
     def recover(self) -> int:
         return self.repository.recover_interrupted_tasks()
 
-    def occupied_devices(self) -> list[str]:
+    def occupied_devices(self) -> builtins.list[str]:
         with self._lock:
             return sorted(key for key, lock in self._device_locks.items() if lock.locked())

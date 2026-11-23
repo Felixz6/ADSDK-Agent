@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal
 
 from app.models import RiskCategoryScore, RiskSummary, TopRisk
 
@@ -74,7 +74,7 @@ CATEGORY_LABELS = {
 }
 
 
-def level_for_score(score: int) -> str:
+def level_for_score(score: int) -> Literal["low", "medium", "high", "critical"]:
     if score >= 80:
         return "critical"
     if score >= 60:
@@ -234,6 +234,7 @@ def calculate_risk_summary(report: dict[str, Any]) -> RiskSummary:
     if report.get("dynamic_events") is None:
         confidence_reasons.append("未执行动态行为采集")
 
+    confidence: Literal["low", "medium", "high"]
     if errors or collection_status == "failed" or len(confidence_reasons) >= 3:
         confidence = "low"
     elif unevaluated or confidence_reasons:

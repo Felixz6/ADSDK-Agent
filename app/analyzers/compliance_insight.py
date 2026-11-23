@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from app.models import (
     ComplianceFinding,
     ComplianceInsight,
@@ -45,7 +47,7 @@ def generate_compliance_insight(
                 evidence_refs=list(risk.evidence_refs),
             )
         )
-        priority = (
+        priority: Literal["P0", "P1", "P2"] = (
             "P0"
             if risk.severity in {"critical", "high"}
             else "P1"

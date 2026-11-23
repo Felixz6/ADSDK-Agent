@@ -26,7 +26,7 @@ from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-SCHEMA_VERSION = "privacy-findings-v2"
+SCHEMA_VERSION: Literal["privacy-findings-v2"] = "privacy-findings-v2"
 
 FINDINGS_DISCLAIMER = (
     "本结果是基于当前观察窗口和技术证据形成的风险提示，不构成法律合规结论。"

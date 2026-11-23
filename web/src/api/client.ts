@@ -71,7 +71,6 @@ const instance: AxiosInstance = axios.create({
 
 instance.interceptors.request.use((config) => {
   if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
     console.debug('[api] ->', config.method?.toUpperCase(), config.url)
   }
   return config
@@ -82,7 +81,6 @@ instance.interceptors.response.use(
   (error: AxiosError<unknown>) => {
     const apiError = toApiError(error)
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.warn('[api] error', {
         url: error.config?.url,
         status: apiError.status,
