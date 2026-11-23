@@ -186,6 +186,17 @@ class ConsentCheckpointService:
                 event.set()
             return state.model_copy()
 
+    def cancel_all(self) -> list[str]:
+        """Cancel all awaiting checkpoints (e.g. during application shutdown)."""
+        with self._registry_lock:
+            task_ids = list(self._states)
+        cancelled: list[str] = []
+        for task_id in task_ids:
+            state = self.cancel(task_id=task_id)
+            if state is not None and state.status == "cancelled":
+                cancelled.append(task_id)
+        return cancelled
+
     def expire(self, *, task_id: str) -> ConsentCheckpointState | None:
         """Bound an operator wait without ever manufacturing confirmation."""
         lock = self._lock_for(task_id)

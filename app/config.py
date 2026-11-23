@@ -67,6 +67,36 @@ def _parse_allowed_roots(raw: str | None) -> tuple[Path, ...]:
     return tuple(roots) or (Path(SAMPLES_DIR).resolve(),)
 
 
+_DEFAULT_ALLOWED_ORIGINS = (
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+)
+
+
+def _parse_allowed_origins(raw: str | None) -> tuple[str, ...]:
+    """Parse comma/semicolon-separated browser origins, stripping trailing slashes."""
+    if not raw or not raw.strip():
+        return _DEFAULT_ALLOWED_ORIGINS
+    origins: list[str] = []
+    for chunk in raw.replace(";", ",").split(","):
+        cleaned = chunk.strip().rstrip("/")
+        if cleaned and cleaned not in origins:
+            origins.append(cleaned)
+    return tuple(origins) or _DEFAULT_ALLOWED_ORIGINS
+
+
+ALLOWED_ORIGINS = _parse_allowed_origins(os.getenv("ALLOWED_ORIGINS"))
+ALLOW_REMOTE_WRITES = _env_bool("ALLOW_REMOTE_WRITES", default=False)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
+STATIC_UNPACK_CACHE_MAX_MB = _env_int_range(
+    "STATIC_UNPACK_CACHE_MAX_MB",
+    2048,
+    0,
+    1024 * 1024,
+)
+STATIC_UNPACK_CACHE_MAX_BYTES = STATIC_UNPACK_CACHE_MAX_MB * 1024 * 1024
+
+
 # APK input boundary. The default accepts only the project's samples directory;
 # additional local folders must be explicitly listed in .env.
 APK_ALLOWED_ROOTS = _parse_allowed_roots(os.getenv("APK_ALLOWED_ROOTS"))

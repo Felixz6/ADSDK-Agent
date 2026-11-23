@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import config as app_config
 from app.api.ai import router as ai_router
 from app.api.analysis import (
     analyze_endpoint,
@@ -20,6 +21,7 @@ from app.api.system import root, router as system_router
 from app.api.tasks import router as tasks_router
 from app.config import STATIC_UNPACK_CACHE_DIR
 from app.container import Container, build_container
+from app.core.logging import configure_logging
 from app.pipelines.dynamic import dynamic_analyze
 from app.pipelines.static import analyze
 from app.pipelines.task_runner import run_persisted_task
@@ -42,21 +44,20 @@ async def lifespan(app: FastAPI):
     )
     container.task_service.recover()
     yield
-    container.task_service.shutdown()
+    container.consent_checkpoint_service.cancel_all()
+    container.task_service.shutdown(wait=False, cancel_timeout=2.0)
 
 
 def create_app(container: Container | None = None) -> FastAPI:
     """Build the ASGI app: CORS, local-only guard, and domain routers."""
+    configure_logging()
     if container is None:
         container = build_container()
     app_instance = FastAPI(title="AdSDK Agent", version="0.2.0", lifespan=lifespan)
     app_instance.state.container = container
     app_instance.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://127.0.0.1:5173",
-            "http://localhost:5173",
-        ],
+        allow_origins=list(app_config.ALLOWED_ORIGINS),
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Accept", "Content-Type"],

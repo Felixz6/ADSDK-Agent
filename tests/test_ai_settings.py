@@ -19,9 +19,11 @@ Security invariants asserted across the suite:
 
 from __future__ import annotations
 
+import ctypes
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -49,6 +51,7 @@ from app.api.deps import (
     get_task_service,
 )
 from app.repositories import TaskRepository
+from tests.conftest import enable_test_secret_store_on_non_windows
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +72,7 @@ def ai_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     for key in list(os.environ.keys()):
         if key.startswith("AI_"):
             monkeypatch.delenv(key, raising=False)
+    enable_test_secret_store_on_non_windows(monkeypatch)
     settings_path, secret_path = _rewire(tmp_path)
     # Rebuild a fresh factory+service bound to the freshly re-wired store so
     # provider cache state never bleeds between tests.
@@ -816,6 +820,67 @@ def test_non_windows_no_cleartext_downgrade(tmp_path: Path, monkeypatch: pytest.
     assert exc.value.code == "secret_persistence_unsupported"
     # No file written.
     assert (tmp_path / "k.bin").exists() is False
+
+
+def test_non_windows_dpapi_unavailable_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(secret_store_module, "_IS_WINDOWS", False)
+    assert secret_store_module._dpapi_available() is False
+    s = SecretStore(tmp_path / "k.bin")
+    assert s.supported() is False
+    with pytest.raises(DPAPIError) as exc:
+        s.set(API_KEY)
+    assert exc.value.code == "secret_persistence_unsupported"
+    assert (tmp_path / "k.bin").exists() is False
+
+
+def test_windows_dpapi_uses_use_last_error(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(secret_store_module, "_IS_WINDOWS", True)
+    if not hasattr(ctypes, "wintypes"):
+        fake_wintypes = SimpleNamespace(
+            DWORD=ctypes.c_uint32,
+            BYTE=ctypes.c_ubyte,
+            BOOL=ctypes.c_int,
+        )
+        monkeypatch.setitem(sys.modules, "ctypes.wintypes", fake_wintypes)
+        monkeypatch.setattr(ctypes, "wintypes", fake_wintypes, raising=False)
+
+    dll_calls: list[tuple[str, bool]] = []
+
+    class _FakeFunc:
+        argtypes = None
+        restype = None
+
+        def __init__(self, result: int = 0) -> None:
+            self._result = result
+
+        def __call__(self, *_args) -> int:
+            return self._result
+
+    fake_crypt = SimpleNamespace(
+        CryptProtectData=_FakeFunc(0),
+        CryptUnprotectData=_FakeFunc(0),
+    )
+    fake_k32 = SimpleNamespace(LocalFree=_FakeFunc(0))
+
+    def _fake_windll(name: str, use_last_error: bool = False):
+        dll_calls.append((name, use_last_error))
+        return fake_crypt if name == "crypt32" else fake_k32
+
+    monkeypatch.setattr(ctypes, "WinDLL", _fake_windll, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 87, raising=False)
+
+    with pytest.raises(DPAPIError) as exc_protect:
+        secret_store_module._protect(b"secret")
+    assert exc_protect.value.code == "dpapi_protect_failed"
+    assert "WinError 87" in exc_protect.value.safe_message
+
+    with pytest.raises(DPAPIError) as exc_unprotect:
+        secret_store_module._unprotect(b"blob")
+    assert exc_unprotect.value.code == "dpapi_unprotect_failed"
+    assert "WinError 87" in exc_unprotect.value.safe_message
+
+    assert ("crypt32", True) in dll_calls
+    assert ("kernel32", True) in dll_calls
 
 
 # 40: API key max length.

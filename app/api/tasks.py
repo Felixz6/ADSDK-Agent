@@ -23,6 +23,7 @@ from app.api.deps import (
     get_task_service,
 )
 from app.api.errors import task_not_found
+from app.api.middleware import is_websocket_allowed
 from app.orchestration.consent_checkpoint import (
     ConsentCheckpointError,
     ConsentCheckpointRequest,
@@ -265,20 +266,43 @@ async def task_progress_websocket(
     task_id: str,
     task_svc: TaskService = Depends(get_task_service),
 ):
+    client_host = websocket.client.host if websocket.client else None
+    origin = websocket.headers.get("origin")
+    if not is_websocket_allowed(client_host, origin):
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
-    last_updated: str | None = None
+    loop = asyncio.get_running_loop()
+    notify_event = asyncio.Event()
+    task_svc.subscribe(task_id, loop, notify_event)
+    last_fingerprint: tuple[str, str, int, int] | None = None
     try:
         while True:
-            task = task_svc.get(task_id)
+            notify_event.clear()
+            task = await asyncio.to_thread(task_svc.get, task_id)
             if task is None:
                 await websocket.send_json(
                     {"error": {"code": "task_not_found", "message": "任务不存在"}}
                 )
                 await websocket.close(code=4404)
                 return
-            if task.updated_at != last_updated:
+            fingerprint = (
+                task.updated_at,
+                task.status,
+                task.progress_percent,
+                len(task.steps),
+            )
+            if fingerprint != last_fingerprint:
                 await websocket.send_json(task.model_dump(mode="json"))
-                last_updated = task.updated_at
-            await asyncio.sleep(0.5)
+                last_fingerprint = fingerprint
+            if task.status in {"completed", "failed", "cancelled"}:
+                await websocket.close(code=1000)
+                return
+            try:
+                await asyncio.wait_for(notify_event.wait(), timeout=5.0)
+            except TimeoutError:
+                pass
     except WebSocketDisconnect:
         pass
+    finally:
+        task_svc.unsubscribe(task_id, loop, notify_event)

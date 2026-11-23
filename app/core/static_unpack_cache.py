@@ -163,6 +163,85 @@ def _publish_cache_with_retries(
     ) from last_error
 
 
+def _dir_size_bytes(root: Path) -> int:
+    total = 0
+    try:
+        for dirpath, _dirnames, filenames in os.walk(root):
+            for filename in filenames:
+                try:
+                    total += os.path.getsize(os.path.join(dirpath, filename))
+                except OSError:
+                    pass
+    except OSError:
+        return 0
+    return total
+
+
+def _entry_last_used_mtime(cache_dir: Path) -> float:
+    metadata_path = cache_dir / "metadata.json"
+    try:
+        if metadata_path.is_file():
+            return metadata_path.stat().st_mtime
+    except OSError:
+        pass
+    try:
+        return cache_dir.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def evict_static_unpack_cache(
+    cache_root: Path,
+    *,
+    max_bytes: int,
+    preserve_keys: set[str] | None = None,
+) -> list[str]:
+    """Evict least-recently-used static unpack cache entries until total size <= max_bytes."""
+    if max_bytes <= 0:
+        return []
+    resolved_root = cache_root.resolve(strict=False)
+    if not resolved_root.is_dir():
+        return []
+
+    preserved = set(preserve_keys or ())
+    entries: list[tuple[float, str, Path, int]] = []
+    total_size = 0
+    try:
+        children = list(resolved_root.iterdir())
+    except OSError:
+        return []
+
+    for entry in children:
+        if entry.name.startswith(".") or not entry.is_dir() or entry.is_symlink():
+            continue
+        size = _dir_size_bytes(entry)
+        total_size += size
+        entries.append((_entry_last_used_mtime(entry), entry.name, entry, size))
+
+    if total_size <= max_bytes:
+        return []
+
+    evicted: list[str] = []
+    entries.sort(key=lambda item: (item[0], item[1]))
+    for _mtime, key, entry_path, size in entries:
+        if total_size <= max_bytes:
+            break
+        if key in preserved:
+            continue
+        lock = _key_lock(key)
+        if not lock.acquire(blocking=False):
+            continue
+        try:
+            if entry_path.exists():
+                _cleanup_tree_best_effort(entry_path)
+                if not entry_path.exists():
+                    total_size -= size
+                    evicted.append(key)
+        finally:
+            lock.release()
+    return evicted
+
+
 def prepare_static_unpack(
     *,
     snapshot_path: Path,
@@ -170,11 +249,13 @@ def prepare_static_unpack(
     cache_root: Path,
     apktool_version: str,
     unpacker: Unpacker,
+    max_cache_bytes: int | None = None,
 ) -> StaticUnpackCacheResult:
     """Return a verified cache entry, atomically building it on a miss."""
     normalized_sha256 = apk_sha256.strip().lower()
     cache_root = cache_root.resolve(strict=False)
     cache_dir = cache_root / normalized_sha256
+    built_result: StaticUnpackCacheResult | None = None
 
     with _key_lock(normalized_sha256):
         if _metadata_valid(
@@ -182,6 +263,10 @@ def prepare_static_unpack(
             apk_sha256=normalized_sha256,
             apktool_version=apktool_version,
         ):
+            try:
+                os.utime(cache_dir / "metadata.json", None)
+            except OSError:
+                pass
             return StaticUnpackCacheResult(
                 unpacked_dir=cache_dir / "unpacked",
                 cache_hit=True,
@@ -238,7 +323,7 @@ def prepare_static_unpack(
                 apktool_version=apktool_version,
             )
 
-            return StaticUnpackCacheResult(
+            built_result = StaticUnpackCacheResult(
                 unpacked_dir=cache_dir / "unpacked",
                 cache_hit=False,
                 cache_key=normalized_sha256,
@@ -247,3 +332,12 @@ def prepare_static_unpack(
         except BaseException:
             _cleanup_tree_best_effort(temporary_dir)
             raise
+
+    if max_cache_bytes is not None and max_cache_bytes > 0:
+        evict_static_unpack_cache(
+            cache_root,
+            max_bytes=max_cache_bytes,
+            preserve_keys={normalized_sha256},
+        )
+    assert built_result is not None
+    return built_result

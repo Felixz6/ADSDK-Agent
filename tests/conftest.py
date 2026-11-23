@@ -8,8 +8,30 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
+from app.ai import secret_store as secret_store_module
+from app.ai.secret_store import DPAPIError
 from app.container import build_container
 from app.main import create_app
+
+
+def enable_test_secret_store_on_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Allow non-Windows CI test runs to exercise SecretStore round-trips via a test seam."""
+    if secret_store_module._IS_WINDOWS:
+        return
+
+    prefix = b"TEST_SEALED:"
+
+    def _fake_protect(data: bytes) -> bytes:
+        return prefix + data[::-1]
+
+    def _fake_unprotect(data: bytes) -> bytes:
+        if not data.startswith(prefix):
+            raise DPAPIError("dpapi_unprotect_failed", "corrupted test secret blob")
+        return data[len(prefix) :][::-1]
+
+    monkeypatch.setattr(secret_store_module, "_dpapi_available", lambda: True)
+    monkeypatch.setattr(secret_store_module, "_protect", _fake_protect)
+    monkeypatch.setattr(secret_store_module, "_unprotect", _fake_unprotect)
 
 
 def make_test_app(tmp_path: Path, **settings: Any) -> FastAPI:

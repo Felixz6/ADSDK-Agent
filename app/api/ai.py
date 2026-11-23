@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
     from app.services import TaskService
 
 router = APIRouter(tags=["ai"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/ai/status", response_model=AIStatusResponse)
@@ -92,7 +94,8 @@ def get_ai_settings(
     """
     try:
         return ai_settings_service.get_effective_settings()
-    except Exception:  # pragma: no cover - defensive, never leaks key
+    except Exception as exc:  # pragma: no cover - defensive, never leaks key
+        logger.warning("Failed to load AI settings: %s", type(exc).__name__)
         return JSONResponse(
             status_code=500,
             content={
@@ -129,6 +132,7 @@ def update_ai_settings(
             content={"detail": exc.safe_message, **exc.to_dict()},
         )
     except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to save AI settings: %s", type(exc).__name__)
         return JSONResponse(
             status_code=500,
             content={
@@ -159,6 +163,7 @@ def test_ai_settings(
             content={"detail": exc.safe_message, **exc.to_dict()},
         )
     except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to test AI settings connection: %s", type(exc).__name__)
         return JSONResponse(
             status_code=500,
             content={
@@ -198,7 +203,13 @@ def _read_task_ai_artifact(
         if candidate.is_relative_to(allowed) and candidate.is_file():
             try:
                 loaded = json.loads(candidate.read_text(encoding="utf-8"))
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Failed to read AI artifact %s for task %s: %s",
+                    filename,
+                    task_id,
+                    type(exc).__name__,
+                )
                 loaded = None
             if isinstance(loaded, dict):
                 payload = loaded

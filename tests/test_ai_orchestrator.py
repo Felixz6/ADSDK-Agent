@@ -66,6 +66,7 @@ from app.repositories import TaskRepository
 from app.services import TaskService
 from app.services.ai_task_service import AITaskService
 from app.tasks.models import TaskCreateRequest
+from tests.conftest import enable_test_secret_store_on_non_windows
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +80,7 @@ def _install_local_ai_settings(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, model: str = "test-model"
 ) -> AISettingsService:
     """Install an isolated, configured service without external I/O."""
+    enable_test_secret_store_on_non_windows(monkeypatch)
 
     store = AISettingsStore(
         settings_path=tmp_path / "ai-settings.json",

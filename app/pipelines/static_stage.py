@@ -134,6 +134,7 @@ def _execute_unpack_stage(
             cache_root=cache_root,
             apktool_version=apktool_version,
             unpacker=unpacker_fn,
+            max_cache_bytes=app_config.STATIC_UNPACK_CACHE_MAX_BYTES,
         )
         analysis_dir = cache_result.unpacked_dir
         unpack_result = {

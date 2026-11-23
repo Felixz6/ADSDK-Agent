@@ -47,6 +47,10 @@ import type {
 const terminal = (status: TaskRecord['status'] | undefined) =>
   status === 'completed' || status === 'failed' || status === 'cancelled'
 
+const WS_MAX_RECONNECT_ATTEMPTS = 5
+const WS_BASE_RECONNECT_DELAY_MS = 1_000
+const WS_MAX_RECONNECT_DELAY_MS = 15_000
+
 export function useTasks(filters: TaskFilters = {}) {
   return useQuery<TaskListResponse, ApiError>({
     queryKey: ['tasks', filters],
@@ -81,28 +85,94 @@ export function useLiveTask(taskId: string | undefined) {
     },
   })
 
+  const isActive = Boolean(taskId && query.data && !terminal(query.data.status))
+
   useEffect(() => {
-    if (!taskId || !query.data || terminal(query.data.status) || typeof WebSocket === 'undefined') return
-    const socket = new WebSocket(taskWebSocketUrl(taskId))
-    socket.onopen = () => setSocketConnected(true)
-    socket.onmessage = (event) => {
-      try {
-        const task = JSON.parse(String(event.data)) as TaskRecord
-        if (task.id !== taskId) return
-        queryClient.setQueryData(['tasks', 'detail', taskId], task)
-        if (terminal(task.status)) socket.close()
-      } catch {
-        setSocketConnected(false)
+    if (!isActive || !taskId || typeof WebSocket === 'undefined') {
+      setSocketConnected(false)
+      return
+    }
+
+    let disposed = false
+    let reachedTerminal = false
+    let attempt = 0
+    let socket: WebSocket | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
       }
     }
-    socket.onerror = () => setSocketConnected(false)
-    socket.onclose = () => setSocketConnected(false)
+
+    const connect = () => {
+      if (disposed || reachedTerminal) return
+      const current = new WebSocket(taskWebSocketUrl(taskId))
+      socket = current
+
+      current.onopen = () => {
+        if (disposed || socket !== current) return
+        attempt = 0
+        setSocketConnected(true)
+      }
+
+      current.onmessage = (event) => {
+        if (disposed || socket !== current) return
+        try {
+          const task = JSON.parse(String(event.data)) as TaskRecord
+          if (task.id !== taskId) return
+          queryClient.setQueryData(['tasks', 'detail', taskId], task)
+          if (terminal(task.status)) {
+            reachedTerminal = true
+            clearReconnectTimer()
+            current.close()
+          }
+        } catch {
+          setSocketConnected(false)
+        }
+      }
+
+      current.onerror = () => {
+        if (disposed || socket !== current) return
+        setSocketConnected(false)
+      }
+
+      current.onclose = () => {
+        if (disposed || socket !== current) return
+        socket = null
+        setSocketConnected(false)
+        if (reachedTerminal) return
+        if (attempt >= WS_MAX_RECONNECT_ATTEMPTS) return
+        const delay = Math.min(
+          WS_BASE_RECONNECT_DELAY_MS * 2 ** attempt,
+          WS_MAX_RECONNECT_DELAY_MS,
+        )
+        attempt += 1
+        clearReconnectTimer()
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null
+          connect()
+        }, delay)
+      }
+    }
+
+    connect()
+
     return () => {
-      socket.onclose = null
-      socket.close()
+      disposed = true
+      clearReconnectTimer()
+      if (socket) {
+        socket.onopen = null
+        socket.onmessage = null
+        socket.onerror = null
+        socket.onclose = null
+        socket.close()
+        socket = null
+      }
       setSocketConnected(false)
     }
-  }, [query.data?.status, queryClient, taskId])
+  }, [isActive, queryClient, taskId])
 
   return { ...query, socketConnected }
 }

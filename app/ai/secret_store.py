@@ -22,11 +22,7 @@ Design invariants (enforced everywhere):
 
 from __future__ import annotations
 
-import getpass
-import hashlib
-import hmac
 import os
-import platform
 import sys
 import tempfile
 from pathlib import Path
@@ -48,7 +44,7 @@ class DPAPIError(Exception):
 
 
 def _dpapi_available() -> bool:
-    return True
+    return _IS_WINDOWS
 
 
 def _free_blob(k32, blob) -> None:
@@ -61,59 +57,14 @@ def _free_blob(k32, blob) -> None:
         pass
 
 
-def _posix_key(salt: bytes) -> bytes:
-    try:
-        user = getpass.getuser()
-    except Exception:
-        user = "adsdk"
-    try:
-        node = platform.node()
-    except Exception:
-        node = "localhost"
-    seed = f"{user}@{node}".encode()
-    return hashlib.sha256(seed + salt).digest()
-
-
-def _protect_posix(data: bytes) -> bytes:
-    salt = os.urandom(16)
-    key = _posix_key(salt)
-    n = len(data)
-    blocks = (n + 31) // 32
-    keystream = b"".join(
-        hashlib.sha256(key + i.to_bytes(4, "big")).digest() for i in range(blocks)
-    )[:n]
-    ciphertext = bytes(a ^ b for a, b in zip(data, keystream))
-    mac = hmac.new(key, salt + ciphertext, hashlib.sha256).digest()
-    return b"ADSDK_SEC1:" + salt + mac + ciphertext
-
-
-def _unprotect_posix(data: bytes) -> bytes:
-    prefix = b"ADSDK_SEC1:"
-    if not data.startswith(prefix):
-        raise DPAPIError("dpapi_unprotect_failed", "unrecognized secret blob format")
-    payload = data[len(prefix) :]
-    if len(payload) < 48:
-        raise DPAPIError("dpapi_unprotect_failed", "corrupted secret blob")
-    salt = payload[:16]
-    expected_mac = payload[16:48]
-    ciphertext = payload[48:]
-    key = _posix_key(salt)
-    actual_mac = hmac.new(key, salt + ciphertext, hashlib.sha256).digest()
-    if not hmac.compare_digest(expected_mac, actual_mac):
-        raise DPAPIError("dpapi_unprotect_failed", "secret integrity verification failed")
-    n = len(ciphertext)
-    blocks = (n + 31) // 32
-    keystream = b"".join(
-        hashlib.sha256(key + i.to_bytes(4, "big")).digest() for i in range(blocks)
-    )[:n]
-    return bytes(a ^ b for a, b in zip(ciphertext, keystream))
-
-
 def _protect(data: bytes) -> bytes:
-    """DPAPI ``CryptProtectData`` wrapper (Windows) or POSIX authenticated encryption."""
+    """Windows DPAPI ``CryptProtectData`` wrapper. Refuses non-Windows persistence."""
 
     if not _IS_WINDOWS:
-        return _protect_posix(data)
+        raise DPAPIError(
+            "secret_persistence_unsupported",
+            "DPAPI-backed secret storage is only supported on Windows; set AI_API_KEY via environment variable",
+        )
 
     import ctypes  # local import: only needed on Windows
     import ctypes.wintypes
@@ -125,10 +76,10 @@ def _protect(data: bytes) -> bytes:
         ]
 
     # Bind CryptProtectData / CryptUnprotectData / LocalFree with explicit
-    # argtypes so ctypes marshals pointers correctly (a bare c_void_p travels
-    # as a Python int and overflows on 64-bit LocalFree).
-    crypt = ctypes.windll.crypt32
-    k32 = ctypes.windll.kernel32
+    # argtypes and use_last_error=True so ctypes marshals pointers and surfaces
+    # real Win32 error codes cleanly.
+    crypt = ctypes.WinDLL("crypt32", use_last_error=True)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     crypt.CryptProtectData.argtypes = [
         ctypes.POINTER(DATA_BLOB),
         ctypes.c_wchar_p,
@@ -170,12 +121,13 @@ def _protect(data: bytes) -> bytes:
 
 
 def _unprotect(data: bytes) -> bytes:
-    """DPAPI ``CryptUnprotectData`` wrapper (Windows) or POSIX authenticated decryption."""
+    """Windows DPAPI ``CryptUnprotectData`` wrapper. Refuses non-Windows persistence."""
 
-    if data.startswith(b"ADSDK_SEC1:"):
-        return _unprotect_posix(data)
     if not _IS_WINDOWS:
-        return _unprotect_posix(data)
+        raise DPAPIError(
+            "secret_persistence_unsupported",
+            "DPAPI-backed secret storage is only supported on Windows; set AI_API_KEY via environment variable",
+        )
 
     import ctypes
     import ctypes.wintypes
@@ -186,8 +138,8 @@ def _unprotect(data: bytes) -> bytes:
             ("pbData", ctypes.POINTER(ctypes.wintypes.BYTE)),
         ]
 
-    crypt = ctypes.windll.crypt32
-    k32 = ctypes.windll.kernel32
+    crypt = ctypes.WinDLL("crypt32", use_last_error=True)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     crypt.CryptUnprotectData.argtypes = [
         ctypes.POINTER(DATA_BLOB),
         ctypes.c_wchar_p,
@@ -240,12 +192,13 @@ def _try_restrict_file_perms(path: Path) -> None:
 
 
 class SecretStore:
-    """Persists a single secret (the AI API key) via Windows DPAPI or POSIX secret store.
+    """Persists a single secret (the AI API key) via Windows DPAPI.
 
     The store owns one file. ``set`` writes atomically; ``get`` reads and
-    decrypts. A corrupt or undecryptable blob is treated as "no secret
-    present" — the file is removed and ``get`` returns ``None`` rather than
-    failing the caller.
+    decrypts. On non-Windows platforms, persistence is explicitly refused
+    (``secret_persistence_unsupported``). A corrupt or undecryptable blob is
+    treated as "no secret present" — the file is removed and ``get`` returns
+    ``None`` rather than failing the caller.
     """
 
     def __init__(self, path: Path | str | None = None) -> None:
@@ -332,6 +285,7 @@ class SecretStore:
                 stream.write(payload)
                 stream.flush()
                 os.fsync(stream.fileno())
+            _try_restrict_file_perms(tmp)
             os.replace(tmp, self._path)
         except BaseException:
             tmp.unlink(missing_ok=True)
